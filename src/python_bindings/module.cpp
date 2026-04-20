@@ -64,15 +64,40 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                  self.step(arr);
              },
              py::arg("actions"))
+        .def("step_decision",
+             [](xushi2::sim::Sim& self, std::vector<xushi2::common::Action> actions) {
+                 if (actions.size() != xushi2::sim::kAgentsPerMatch) {
+                     throw std::invalid_argument(
+                         "actions length must equal kAgentsPerMatch (= 6)");
+                 }
+                 std::array<xushi2::common::Action, xushi2::sim::kAgentsPerMatch> arr{};
+                 for (std::size_t i = 0; i < arr.size(); ++i) {
+                     arr[i] = actions[i];
+                 }
+                 self.step_decision(arr);
+             },
+             py::arg("actions"))
         .def_property_readonly("tick",
                                [](const xushi2::sim::Sim& s) { return s.state().tick; })
+        .def_property_readonly("team_a_score_ticks",
+                               [](const xushi2::sim::Sim& s) {
+                                   return s.state().objective.team_a_score_ticks;
+                               })
+        .def_property_readonly("team_b_score_ticks",
+                               [](const xushi2::sim::Sim& s) {
+                                   return s.state().objective.team_b_score_ticks;
+                               })
         .def_property_readonly("team_a_score",
                                [](const xushi2::sim::Sim& s) {
-                                   return s.state().objective.team_a_score;
+                                   return static_cast<double>(
+                                              s.state().objective.team_a_score_ticks) /
+                                          static_cast<double>(xushi2::sim::kTickHz);
                                })
         .def_property_readonly("team_b_score",
                                [](const xushi2::sim::Sim& s) {
-                                   return s.state().objective.team_b_score;
+                                   return static_cast<double>(
+                                              s.state().objective.team_b_score_ticks) /
+                                          static_cast<double>(xushi2::sim::kTickHz);
                                })
         .def_property_readonly("episode_over", &xushi2::sim::Sim::episode_over)
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);

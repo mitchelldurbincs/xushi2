@@ -39,9 +39,9 @@ int main() {
 
         DrawText("xushi2 — viewer scaffold", 40, 40, 24, RAYWHITE);
         DrawText(TextFormat("tick: %u", sim.state().tick), 40, 80, 18, LIGHTGRAY);
-        DrawText(TextFormat("score  A: %d   B: %d",
-                            sim.state().objective.team_a_score,
-                            sim.state().objective.team_b_score),
+        DrawText(TextFormat("score  A: %u   B: %u",
+                            sim.state().objective.team_a_score_ticks,
+                            sim.state().objective.team_b_score_ticks),
                  40, 110, 18, LIGHTGRAY);
         DrawText("sim pipeline not yet implemented — see src/sim/src/sim.cpp",
                  40, kWindowHeight - 40, 14, GRAY);

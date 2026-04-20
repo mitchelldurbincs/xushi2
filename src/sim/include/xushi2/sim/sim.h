@@ -1,14 +1,15 @@
 #pragma once
 
 // Xushi2 simulation core. Deterministic, headless, pure game-state update.
-// See docs/game_design.md for rules and docs/determinism_rules.md for the
-// float-determinism discipline.
+// See docs/game_design.md for rules, docs/determinism_rules.md for the
+// float-determinism discipline, docs/action_spec.md for the action contract,
+// and docs/coding_philosophy.md for the Tier 0 rules this file obeys.
 
 #include <array>
 #include <cstdint>
 #include <random>
-#include <vector>
 
+#include <xushi2/common/limits.hpp>
 #include <xushi2/common/types.h>
 
 namespace xushi2::sim {
@@ -22,11 +23,20 @@ using common::Tick;
 using common::Vec2;
 
 // Tick pipeline (see game-design.md §11). 30 Hz fixed.
-inline constexpr int kTickHz = 30;
+inline constexpr int kTickHz = static_cast<int>(common::kTickHz);
 inline constexpr float kDt = 1.0F / static_cast<float>(kTickHz);
 
-inline constexpr int kTeamSize = 3;
+inline constexpr int kTeamSize = static_cast<int>(common::kTeamSize);
 inline constexpr int kAgentsPerMatch = 2 * kTeamSize;
+
+// Phase-0 playable slice: a tiny rectangular arena with fixed bounds.
+// The real map comes online at Phase 5 (game_design.md §5).
+struct MapBounds {
+    float min_x = 0.0F;
+    float min_y = 0.0F;
+    float max_x = 50.0F;
+    float max_y = 50.0F;
+};
 
 // Per-agent full state. Actor-side observations are a *subset* of this;
 // critic-side observations can use all of it. See docs/observation_spec.md.
@@ -52,16 +62,19 @@ struct HeroState {
     bool ranger_reloading = false;
     common::MenderWeapon mender_weapon = common::MenderWeapon::Staff;
     EntityId mender_beam_locked_on = 0;  // 0 = not locked
+    // Whether this slot is actually occupied in the Phase-0 playable slice.
+    // At Phase 1+, all six slots are occupied.
+    bool present = false;
 };
 
-// Control-point state machine (see game-design.md §3).
+// Control-point state machine (see game-design.md §3). Integer tick math.
 struct ObjectiveState {
     Team owner = Team::Neutral;
-    Team cap_team = Team::Neutral;  // Neutral = "None" here
-    float cap_progress = 0.0F;
-    int team_a_score = 0;
-    int team_b_score = 0;
-    bool unlocked = false;          // true after the 15s lock window
+    Team cap_team = Team::Neutral;              // Neutral == "None"
+    std::uint32_t cap_progress_ticks = 0;       // 0..CAPTURE_TICKS
+    std::uint32_t team_a_score_ticks = 0;       // 0..WIN_TICKS
+    std::uint32_t team_b_score_ticks = 0;
+    bool unlocked = false;                      // true after the 15s lock window
 };
 
 // Match configuration — seed, match length, fog-of-war toggle, etc.
@@ -70,6 +83,9 @@ struct MatchConfig {
     int round_length_seconds = 180;
     bool fog_of_war_enabled = true;
     bool randomize_map = false;     // per-episode wall randomization (default off until Phase 8)
+    // Sim ticks held per policy decision (see action_spec.md).
+    std::uint32_t action_repeat = common::kDefaultActionRepeat;
+    MapBounds map{};
 };
 
 // Opaque match state. Copyable so snapshots can be taken trivially.
@@ -92,8 +108,15 @@ class Sim {
     void reset(std::uint64_t seed);
 
     // Advance one simulation tick by applying the provided per-agent actions.
-    // `actions` length must equal kAgentsPerMatch.
+    // `actions` length must equal kAgentsPerMatch. Actions are canonicalized
+    // before use (action_spec.md); the canonical form is what the sim sees.
     void step(std::array<Action, kAgentsPerMatch> actions);
+
+    // Advance one policy decision (config.action_repeat sim ticks). Aim
+    // delta is applied once at the start of the window; movement/held inputs
+    // are applied every tick. See docs/action_spec.md "Per-decision vs
+    // per-tick."
+    void step_decision(std::array<Action, kAgentsPerMatch> actions);
 
     // Read-only accessors.
     const MatchState& state() const noexcept { return state_; }
@@ -101,7 +124,8 @@ class Sim {
     bool episode_over() const noexcept;
 
     // Deterministic hash of the match state. Used by the golden-replay tests
-    // (docs/determinism_rules.md).
+    // (docs/determinism_rules.md). Manifest of included fields lives in
+    // determinism_rules.md §"state_hash() manifest".
     std::uint64_t state_hash() const noexcept;
 
    private:

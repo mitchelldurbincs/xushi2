@@ -14,6 +14,7 @@ endfunction()
 
 xushi2_add_test(test_sim_smoke       sim/test_smoke.cpp)
 xushi2_add_test(test_determinism     sim/test_determinism.cpp)
+xushi2_add_test(test_movement        sim/test_movement.cpp)
 xushi2_add_test(test_golden_replay   replay/test_golden_replay.cpp)
 xushi2_add_test(test_actor_leak      observations/test_actor_leak.cpp)
 xushi2_add_test(test_integration     integration/test_smoke.cpp)
