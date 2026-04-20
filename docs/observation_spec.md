@@ -4,6 +4,11 @@ Companion to `rl_design.md` §2–§3. Defines the exact layout of the
 actor-side (per-agent, partial) and critic-side (centralized, full)
 observation tensors for each curriculum phase.
 
+**Coding philosophy:** Observation builders are Tier 0 code (see
+`coding_philosophy.md`). Actor-observation leak checks are mandatory
+in CI — any code path that iterates hidden enemies must not be
+callable from `actor_obs_builder`.
+
 **Status: Phase 0 — skeleton. Fill in as each curriculum phase gates.**
 
 ## Observation invariants

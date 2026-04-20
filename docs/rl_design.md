@@ -6,6 +6,8 @@
 
 Companion to `2026-04-20-game-design.md`. This document covers the training algorithm, observation and action spaces, neural architecture, curriculum, self-play setup, evaluation, and implementation hazards.
 
+**Coding philosophy:** Sim, replay, observation, and Python-boundary code follow `coding_philosophy.md` Tier 0 rules (bounded loops, no post-init allocation, `Result<T>` returns, strict assertions, actor/critic leak tests). Python trainer code follows Tier 2 (shape/dtype/NaN checks, seed logging, replay export).
+
 ## 1. Algorithm choice
 
 **Recurrent MAPPO with self-play and a snapshot opponent pool.**

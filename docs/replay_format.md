@@ -1,5 +1,10 @@
 # Xushi2 — Replay Format
 
+**Coding philosophy:** Replay parsing is Tier 0 code (see
+`coding_philosophy.md`). Invalid replay files must return an error,
+never a partial or undefined `Replay`. Fuzz the parser; do not trust
+any byte in the file until the header has been validated.
+
 On-disk format for deterministic match replays and debug traces. Used
 by:
 

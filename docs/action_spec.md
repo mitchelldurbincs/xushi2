@@ -3,6 +3,11 @@
 Companion to `rl_design.md` §4 and `game_design.md` §6, §9. Defines the
 exact action schema emitted by RL agents and the human viewer.
 
+**Coding philosophy:** Action canonicalization is a Tier 0 boundary
+(see `coding_philosophy.md`). All action values are clamped, quantized,
+and validated exactly once at this boundary before entering the sim.
+The canonical stored form and the live-sim form are bit-identical.
+
 ## Schema
 
 One fixed-size `Action` struct per agent per policy decision.

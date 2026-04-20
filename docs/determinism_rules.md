@@ -1,5 +1,9 @@
 # Xushi2 — Determinism Rules
 
+**Coding philosophy:** Tier 0 sim code follows `coding_philosophy.md`.
+This document is the canonical source for determinism-specific flags,
+PRNG discipline, the `state_hash()` manifest, and golden-replay policy.
+
 Canonical rulebook for the C++ simulation's determinism guarantees.
 **This document is the single source of truth for compiler flags,
 source-level rules, PRNG discipline, the state-hash manifest, and
