@@ -40,9 +40,27 @@ per-entity tokens ─► shared MLP ─► attention pool ─┐
 local 32×32 grid  ─► small CNN ─► flatten         ─┘
 ```
 
-**Entity tokens:** self, ally × 2, visible enemy × up to 3, last-seen enemy marker × up to 3, objective, active allied shield, active healing zone, active recon reveal zone. Variable-count tokens use explicit masking in attention.
+**Phase 1 entity tokens** (Phase 1 hero kits: Vanguard / Ranger / Mender; no team-reveal abilities, no zone healing):
 
-**Grid channels (32×32 egocentric):** walls, objective area, allies (3 role channels), visible enemies (3 role channels), allied shield, enemy shield (if visible), healing zone, last-seen enemy markers. Egocentric, agent-oriented.
+- self
+- allies × 2
+- visible enemies × up to 3
+- last-seen enemy markers × up to 3
+- objective
+- active allied Barrier
+- active enemy Barrier (if visible)
+- active Mender beam relationship (source/target entity IDs, beam active flag) — optional, see §3
+
+**Future entity tokens** (introduced at their respective phases, not Phase 1):
+
+- healing zone (no hero in MVP provides one)
+- recon reveal zone (no hero in MVP provides one)
+- deployables
+- status zones
+
+Variable-count tokens use explicit masking in attention.
+
+**Grid channels (32×32 egocentric):** walls, objective area, allies (3 role channels), visible enemies (3 role channels), allied Barrier, enemy Barrier (if visible), last-seen enemy markers. Egocentric, agent-oriented. No `healing zone` channel in Phase 1 — Mender's healing is a beam relationship, not a spatial zone, and is represented on the entity side.
 
 ### RNN
 
@@ -70,15 +88,22 @@ Critic input includes **everything**:
 - True positions, velocities, aim directions of all 6 heroes
 - All health and shield values
 - All cooldowns, ability activation states
-- Active barriers, healing zones, recon reveal zones
-- Objective ownership, progress, contested state
+- Active Barriers, active Mender beam relationships (source/target)
+- Objective ownership, progress, contested state, integer score/cap ticks
 - Round timer
 - Map seed / layout ID
 - Team side (A or B)
+- Future-phase: healing zones, recon reveal zones, deployables, status zones (none in MVP)
 
 ### Core discipline: strict actor/critic separation
 
-The actor must never receive any hidden-enemy fields. Actor and critic observation builders are **separate code paths** with explicit leak tests (§10). This is the single most important piece of infrastructure in the project — a leak here silently invalidates the entire research contribution.
+The actor must never receive any hidden-enemy fields. Actor and critic observation builders have **separate top-level functions and separate manifests**. They may share low-level pure utilities that cannot access hidden entities (team-frame coordinate transform, angle normalization, scalar normalization, enum encoding). The hard rule is:
+
+> No function that iterates over hidden enemies or full state may be called by `actor_obs_builder`.
+
+This preserves leak prevention without forcing harmful duplication of transforms that would otherwise drift between actor and critic.
+
+Explicit leak tests (§10) enforce this. A leak here silently invalidates the entire research contribution — the single most important piece of infrastructure in the project.
 
 ### Zero-sum and the V_B ≈ −V_A shortcut
 
@@ -96,7 +121,7 @@ Per-agent, per decision step:
 | `primary_fire` | Bernoulli | |
 | `ability_1` | Bernoulli | |
 | `ability_2` | Bernoulli | |
-| `target_slot` | Categorical(K) | **Deferred to Phase 7.** Not needed by Phase 1 heroes. |
+| `target_slot` | Categorical(K) | **Phase 1–9: omitted or always 0. Phase 10+: enabled** for explicit ally/enemy targeted abilities. |
 
 Factorization:
 ```
@@ -107,26 +132,28 @@ Factorization:
 
 - **Aim is angular delta applied per *policy decision*, not per sim tick.** ±45° per decision cap. During the action-repeat window, aim is held constant — it only advances on the next decision. At action-repeat 3 (policy rate 10 Hz), max turn rate is 450°/sec. At action-repeat 2 (policy rate 15 Hz), it is 675°/sec. Absolute aim direction lives in simulator state and is observable to the agent.
 - **tanh-squashed Gaussian** for all continuous actions. Avoids boundary mode collapse that raw-Gaussian-plus-clamp produces.
-- **target_slot is omitted in Phase 1.** All Phase 1 heroes use direction-based or aim-cone targeting: Barrier points where Vanguard aims, Combat Roll dashes along movement direction, Mender's Beam auto-locks the nearest ally in the aim cone, Mender's Tether zips to the ally in the aim cone. No ability requires explicit ally-slot selection. Later-phase heroes with ally-targeted abilities (Warden's Projected Guard, a classic Burst Heal) reintroduce `target_slot` via attention over the entity tokens already encoded for observation.
+- **`target_slot` is omitted in Phase 1–9.** All Phase 1 heroes use direction-based or aim-cone targeting: Barrier points where Vanguard aims, Combat Roll dashes along movement direction, Mender's Beam auto-locks the nearest ally in the aim cone, Mender's Tether zips to the ally in the aim cone. No ability requires explicit ally-slot selection. At Phase 10 (second heroes), ally-targeted abilities (Warden's Projected Guard, a classic Burst Heal) enable `target_slot` via attention over the entity tokens already encoded for observation, with a valid-target mask (see `observation_spec.md`).
 - **Invalid actions are masked to no-op** (ability on cooldown, firing while dead). Cooldown state is in the observation so the policy can learn to avoid wasted probability mass on unavailable abilities.
 
-### Held vs edge-triggered actions
+### Held vs impulse actions
 
-The `primary_fire`, `ability_1`, and `ability_2` Bernoulli outputs have different semantics per hero per ability. The sim interprets each one as either held or edge-triggered; the policy sees the raw binary output.
+The `primary_fire`, `ability_1`, and `ability_2` Bernoulli outputs have different semantics per hero per ability. The sim interprets each one as either **held** or **impulse**; the policy sees the raw binary output.
+
+**Impulse semantics, not edge-triggered.** For abilities that fire once per activation (Guard Step, Combat Roll, Weapon Swap, Tether), the action value `1` means "attempt the ability once at the start of this policy decision" and `0` means "do not attempt." No previous-button state lives in the sim. This keeps the action interface Markovian: identical `(obs, action)` pairs produce identical outcomes. Held abilities (Warhammer, Barrier, Ranger Revolver, Mender current weapon) behave as a button held for the whole decision window.
 
 | Hero | Action | Ability | Mode |
 |---|---|---|---|
 | Vanguard | primary_fire | Warhammer | **Held** (strikes while held, fire-rate gated; **suppressed while Barrier is active**) |
 | Vanguard | ability_1 | Barrier | **Held** (active while held, subject to HP/lockout) |
-| Vanguard | ability_2 | Guard Step | **Edge-triggered** (one dash per rising edge) |
+| Vanguard | ability_2 | Guard Step | **Impulse** (one dash if 1 at decision start) |
 | Ranger | primary_fire | Revolver | **Held** (fire-rate gated; no-op when magazine empty) |
-| Ranger | ability_1 | Combat Roll | **Edge-triggered** (dash + instant reload) |
+| Ranger | ability_1 | Combat Roll | **Impulse** (one dash + instant reload if 1 at decision start) |
 | Ranger | ability_2 | — (deferred) | — |
 | Mender | primary_fire | Beam *or* Sidearm | **Held** (whichever weapon is currently equipped) |
-| Mender | ability_1 | Weapon Swap | **Edge-triggered** (STAFF ↔ SIDEARM) |
-| Mender | ability_2 | Tether | **Edge-triggered** (zip to aimed ally) |
+| Mender | ability_1 | Weapon Swap | **Impulse** (one swap STAFF ↔ SIDEARM if 1 at decision start) |
+| Mender | ability_2 | Tether | **Impulse** (one zip to aimed ally if 1 at decision start) |
 
-The sim tracks previous-tick button state per agent to detect rising edges. The previous-tick button state is **not** part of the policy's observation — agents can hold a button without penalty; the sim only fires the edge-triggered effect on a 0→1 transition.
+The viewer converts real human key/mouse rising edges into single one-decision impulses, so human play and RL play emit identical `Action` structs. See `action_spec.md` for the canonical specification.
 
 **Vanguard's Barrier/Warhammer mutual exclusion** is enforced in the sim. The policy can output `primary_fire == 1` while `ability_1 == 1`, but the sim will suppress the Warhammer strike. This shows up in the `fire-while-shielding rate` metric (§11); the policy is expected to learn to not emit both simultaneously.
 
@@ -172,7 +199,7 @@ Note: objective shaping is per **score point** gained, not per tick. Since scori
 - Shaped-reward magnitude clipped per-episode; terminal reward always dominates
 - No reward for raw damage without context
 - No reward for overhealing full-HP allies
-- No reward for objective-standing while team is dead
+- **Objective-score reward is always awarded when team score increases**, even if only one ally is alive. Score is part of winning; suppressing it would create a weirder exception than it fixes. No extra per-agent reward for merely standing on point. A diagnostic metric tracks solo objective time while allies are dead, so stagger-feeding behaviors can be detected in eval.
 - No reward for shield-damage farming
 - Periodic evaluation with shaping disabled — if win rate collapses, shaping is too strong
 
@@ -297,22 +324,14 @@ Conservative by intent. MAPPO-paper findings that drove these: keep PPO clip wel
 
 ### Determinism discipline (C++-specific)
 
-C++ reaches the same determinism guarantees as Rust but requires more care. Enforce at project level:
-
-- Compile with `-ffloat-store` / `-fno-fast-math` / `-fno-associative-math` (or the MSVC equivalent `/fp:precise`). **Do not** enable `-ffast-math` anywhere in the sim.
-- No `std::unordered_map` / `std::unordered_set` iteration in any path that affects game state. Use `std::map`, sorted `std::vector`, or explicit ID-ordered iteration.
-- No use of `std::chrono`, `std::random_device`, `time()`, or any wall-clock source inside the sim — all randomness from a seeded PRNG (`std::mt19937_64` or similar, seed stored in the match state).
-- No reliance on address-order or allocator behavior. Entity IDs are stable integers assigned at spawn.
-- Avoid floating-point intrinsics that may differ between compilers (e.g., `std::sin` vs SSE `_mm_sin_ps`). If portability matters, ship a single math implementation.
-- Quantize position and HP at tick-end (per game-design §10).
-- Add a compile-time assertion / CI check that the golden-replay determinism tests (§10) pass on every build.
+See `determinism_rules.md` for the canonical compiler/build flags, source-level rules, PRNG helpers, `state_hash()` manifest, and golden-replay policy. **Do not duplicate that list here.** At a summary level: MVP guarantees same-machine, same-binary, same-compiler reproducibility only; a WASM viewer is treated as visual-only and not expected to replay bit-identically across targets.
 
 ### Viewer (C++, raylib)
 - **raylib** as the rendering library — simple immediate-mode 2D, tiny dependency footprint, fits the project's minimalist aesthetic
 - Reads the same deterministic sim state — the viewer links against the sim as a library, no duplicate game logic
 - Must support debug overlays: per-agent vision cones, fog of war, raycasts, shields, cooldowns, last-seen ghosts, reward event flashes, current weapon state (Mender), Vanguard barrier state
 - Human input path: keyboard + mouse → action struct → sim (same action schema the RL agents use)
-- Stretch: compile viewer + sim to WASM via emscripten for a browser-shareable demo (raylib supports this)
+- Stretch: compile viewer + sim to WASM via emscripten for a browser-shareable demo (raylib supports this). Replay exactness is **not** guaranteed across native ↔ WASM; treat the browser viewer as visual-only. See `determinism_rules.md` and `replay_format.md`.
 
 ### Trainer (Python / PyTorch)
 - **Start with CleanRL-style single-file PPO** (feedforward, flat obs) — the smallest trainer that can run. This is Phase 1 of the curriculum.
@@ -338,13 +357,26 @@ The main C++-specific hazard is floating-point determinism (addressed above unde
 Any leak of hidden enemy state into the actor silently degrades the entire research contribution with no error. Required explicit tests, run in CI:
 
 ```
-- actor_obs does not change when a hidden enemy moves behind a wall
-- actor_obs changes only when an enemy becomes visible OR triggers an event (fire, death, objective contest)
+- actor_obs does not change when a hidden enemy:
+      moves
+      aims
+      changes cooldowns
+      reloads
+      swaps weapon
+      fires                 # unless explicit hidden-fire perception is enabled
+- actor_obs changes only when:
+      a hidden enemy becomes visible via LoS
+      a public event fires: objective contested flag flips,
+          kill feed entry, score change, objective ownership change
 - critic_state DOES see hidden enemies (sanity check the centralized side works)
-- actor and critic observation builders are in separate code paths
+- actor and critic observation builders are in separate top-level code paths
+      (shared low-level utilities must not touch hidden state — see
+       observation_spec.md)
 - RNN hidden state is reset to zero on episode boundary
 - RNN hidden state is not reused across PPO epochs — stored at rollout, replayed exactly during training
 ```
+
+"Public events" is an explicit, small allowlist. There is no generic "enemy triggered an event" loophole: any new event that could reveal hidden enemy presence needs an explicit design decision and an updated leak test. In particular, **muzzle traces from hidden enemy fire are renderer-only in MVP** — they appear in the omniscient viewer but are not part of any actor observation. A deliberate hidden-fire perception ablation (approximate direction / distance band, no exact position) may be added later.
 
 ### Recurrent MAPPO silent failure modes
 
@@ -361,14 +393,19 @@ Any of these silently degrades training to effectively-feedforward with no error
 
 ### Golden replay determinism tests
 
-Determinism bugs in the sim silently invalidate everything downstream (replay, eval, reproducibility). Build a test harness that pins this down:
+Determinism bugs in the sim silently invalidate everything downstream (replay, eval, reproducibility). See `determinism_rules.md` for canonical policy. Summary:
 
 ```
-- Record a "golden" 240-second episode with a fixed seed and fixed scripted policies, checkpointed as a list of (tick, full_state_hash).
-- CI test re-runs the same seed and scripted policies, asserts every state hash matches the golden.
-- Separate test: run the same seed twice in the same process, assert identical state hashes (intra-process determinism).
-- Separate test: run the same seed in two fresh processes, assert identical state hashes (cross-process determinism).
-- Separate test: after a sim refactor, regenerate the golden only with explicit human confirmation; never silently update it.
+- Sim golden replay: feeds a recorded canonical action stream into a
+  fresh Sim and asserts state_hash matches every sim tick
+  (hash_mode = dense_golden). Does NOT call bot policy code —
+  bot refactors must not break this.
+- Bot regression test (separate): runs scripted bots from seed/config
+  and checks bot behavior. Allowed to change when bot logic changes.
+- Intra-process determinism: run the same seed twice in the same
+  process; hashes must match.
+- Cross-process determinism (future): spawn two fresh processes; compare.
+- Regenerating the golden requires explicit human confirmation.
 ```
 
 Running these in CI prevents a class of "the training loop got weirdly unstable three weeks ago and we don't know why" incidents.

@@ -10,11 +10,15 @@ observation tensors for each curriculum phase.
 
 Two invariants hold across every phase:
 
-1. **Actor and critic observations are built by separate functions.**
-   Never share code between them. This is the single most important
-   rule in the project (see `rl_design.md` §10). Sharing a code path is
-   the most likely way to accidentally leak hidden enemy state to the
-   actor.
+1. **Actor and critic observations have separate top-level builders and
+   separate manifests.** They MAY share low-level pure utilities that
+   cannot access hidden entities — team-frame coordinate transform,
+   angle normalization, scalar normalization, enum encoding. The hard
+   rule is: **no function that iterates over hidden enemies or full
+   state may be called by `actor_obs_builder`.** This is the single
+   most important rule in the project (see `rl_design.md` §10). Sharing
+   a code path that touches hidden state is the most likely way to
+   accidentally leak enemy information to the actor.
 2. **All spatial features are in team-relative coordinates.** Team A sees
    the map from the A-side orientation; Team B sees it mirrored. The
    sim runs in world coordinates; the mirroring happens in the obs
@@ -27,26 +31,45 @@ Two invariants hold across every phase:
 Minimal flat vector. One agent controls a single Ranger vs a scripted
 opponent or a symmetric Ranger.
 
-| Field                   | Dim | Range / Encoding |
-|-------------------------|-----|------------------|
-| own HP (normalized)     | 1   | [0, 1] |
-| own velocity            | 2   | [-1, 1] team-frame |
-| own aim direction       | 2   | unit vector `(sin θ, cos θ)` |
-| own position            | 2   | team-frame, [-1, 1] normalized to map extent |
-| own revolver ammo       | 1   | [0, 1] = magazine / 6 |
-| own reloading           | 1   | {0, 1} |
-| own combat-roll cd      | 1   | [0, 1] = ticks_remaining / max_cd |
-| enemy relative position | 2   | team-frame, [-1, 1] |
-| enemy HP (normalized)   | 1   | [0, 1] |
-| enemy velocity          | 2   | team-frame |
-| objective progress      | 1   | signed, [-1, 1]: +1 = fully owned by us |
-| round timer             | 1   | [0, 1] = elapsed / total |
+| Field                                        | Dim | Range / Encoding |
+|----------------------------------------------|-----|------------------|
+| own HP (normalized)                          | 1   | [0, 1] |
+| own velocity                                 | 2   | [-1, 1] team-frame |
+| own aim direction                            | 2   | unit vector `(sin θ, cos θ)` |
+| own position                                 | 2   | team-frame, [-1, 1] normalized to map extent |
+| own revolver ammo                            | 1   | [0, 1] = magazine / 6 |
+| own reloading                                | 1   | {0, 1} |
+| own combat-roll cd                           | 1   | [0, 1] = ticks_remaining / max_cd |
+| enemy alive                                  | 1   | {0, 1} |
+| enemy respawn timer                          | 1   | [0, 1] |
+| enemy relative position                      | 2   | team-frame, [-1, 1] |
+| enemy HP (normalized)                        | 1   | [0, 1] |
+| enemy velocity                               | 2   | team-frame |
+| objective owner one-hot                      | 3   | {Neutral, Us, Them} |
+| cap_team one-hot                             | 3   | {None, Us, Them} |
+| cap progress                                 | 1   | [0, 1] |
+| contested                                    | 1   | {0, 1} |
+| objective unlocked                           | 1   | {0, 1} |
+| own score                                    | 1   | [0, 1] |
+| enemy score                                  | 1   | [0, 1] |
+| self on point                                | 1   | {0, 1} |
+| enemy on point (public / no-fog phase)       | 1   | {0, 1} |
+| round timer                                  | 1   | [0, 1] = elapsed / total |
 
-Total: ~17 floats. Feedforward MLP, no memory required.
+Total: ~28 floats. Feedforward MLP, no memory required.
+
+Presence/alive fields:
+
+- `enemy_alive = 0` zeros out enemy position / HP / velocity features.
+- `enemy_respawn_timer` is `ticks_remaining / max_respawn_ticks`, or 0
+  when alive.
+- In no-fog phases, `enemy_alive` is ground truth. In fog phases (Phase
+  7+), it is replaced with `(enemy_visible, enemy_last_seen_valid,
+  enemy_alive_public_if_known)` — see Phase 7.
 
 **Leak-prevention at Phase 1:** No fog of war yet, so no leak risk. But
-the actor / critic code paths must already be separate; this is the
-phase that establishes the contract.
+the actor / critic builders must already be separate top-level
+functions; this is the phase that establishes the contract.
 
 ### Phase 2 (recurrent PPO on 1v1 memory toy)
 
@@ -67,7 +90,7 @@ padded with a presence flag.
 |---------------------------------|--------------|-------|
 | ally presence flag              | 1            | × 1 (one teammate) |
 | ally HP, position, velocity, aim| ≈ 7          | × 1 |
-| enemy presence flag             | 1            | × 1 |
+| enemy presence/alive flag       | 1            | × 1 |
 | enemy HP, pos, vel, aim         | ≈ 7          | × 1 |
 
 Critic obs at Phase 4: flat vector containing the full sim state
@@ -90,14 +113,30 @@ Enable per-agent line-of-sight (game-design §4). From here, the actor's
 visible-enemy slots only fill when that specific agent has LoS, and
 last-seen decay begins.
 
+Enemy presence becomes three separate fields:
+
+- `enemy_visible` — this agent has current LoS
+- `enemy_last_seen_valid` — last-seen ghost is still within the
+  ~1.5-second decay window
+- `enemy_alive_public_if_known` — alive/dead status derived from public
+  kill feed only (never from hidden enemy state)
+
 This is the phase where leak-prevention tests start earning their keep.
 See `tests/observations/test_actor_leak.cpp`.
 
 ### Phase 8+ (map randomization, snapshot self-play, second heroes)
 
 No observation-space changes from Phase 7 except:
-- At Phase 10 (second heroes), re-enable `target_slot` action and add
+- At Phase 10 (second heroes), enable the `target_slot` action and add
   entity-attention-based target selection for ally-targeted abilities.
+  Also surface the `target_slot` valid-target mask:
+
+  ```
+  target_slot valid-target mask:
+      fixed order over entity tokens
+      invalid/dead/hidden targets masked
+      no hidden enemy target slots exposed to actor
+  ```
 
 ## Field canonical order
 
@@ -110,7 +149,8 @@ Changing the order is a breaking change — old checkpoints become invalid.
 Critic always sees:
 - True hidden-enemy positions (regardless of per-agent LoS)
 - All cooldowns, ammo, weapon states, beam-lock targets
-- Objective state machine internals (`cap_team`, `cap_progress`)
+- Objective state machine internals (`cap_team`, `cap_progress_ticks`,
+  `team_score_ticks` — see `game_design.md` §3)
 - Map layout / seed
 - Team side (A or B)
 

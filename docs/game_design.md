@@ -52,13 +52,13 @@ Research framing: *A deterministic multi-agent RL benchmark for studying teamfig
 
 ### Control-point state machine
 
-The objective has four state variables:
+The objective has four state variables, all integer-typed for exact determinism at 30 Hz. The UI converts to floats for display; sim math stays in integer ticks.
 
 ```
-owner          ∈ {Neutral, A, B}                       # who currently holds the point
-cap_team       ∈ {None, A, B}                          # which team currently has capture progress
-cap_progress   ∈ [0.0, 1.0]                            # cap_team's progress toward taking the point
-team_score     : integer per team, 0..100              # win progression
+owner              ∈ {Neutral, A, B}                   # who currently holds the point
+cap_team           ∈ {None, A, B}                      # which team currently has capture progress
+cap_progress_ticks : integer, 0..CAPTURE_TICKS         # cap_team's progress in sim ticks
+team_score_ticks   : integer per team, 0..WIN_TICKS    # win progression in sim ticks
 ```
 
 Per-tick occupancy (only *living* heroes inside the capture circle count):
@@ -68,20 +68,29 @@ present_B = (count of living B heroes on point) > 0
 contested = present_A AND present_B
 ```
 
-Constants:
+Constants (at TICK_HZ = 30):
 ```
-CAP_RATE    = 1 / 8.0   per second     # 8 seconds to fully capture from 0
-DECAY_RATE  = 1 / 8.0   per second     # 8 seconds to fully decay from 1 while empty
-SCORE_RATE  = 1         per second     # score accumulation rate
+CAPTURE_TICKS  = 8  · TICK_HZ = 240     # 8 seconds to fully capture from 0
+DECAY_TICKS    = 8  · TICK_HZ = 240     # 8 seconds to fully decay from 1 while empty
+WIN_TICKS      = 100 · TICK_HZ = 3000   # 100 seconds of scoring = win
+SCORE_STEP     = 1                      # +1 score tick per sim tick while scoring
 ```
 
-Initial state at round start: `owner = Neutral`, `cap_team = None`, `cap_progress = 0`. Scoring is frozen during the first 15 seconds (objective lock). After unlock, each tick applies exactly one of the following five cases:
+Display values are derived:
+```
+display_cap_progress = cap_progress_ticks / CAPTURE_TICKS   ∈ [0.0, 1.0]
+display_score         = team_score_ticks / TICK_HZ          ∈ [0.0, 100.0]
+```
+
+All state transitions below are written in integer-tick arithmetic. There is no fractional `+= 1/30` accumulator; rounding edge cases do not exist, and the match outcome is exact and deterministic.
+
+Initial state at round start: `owner = Neutral`, `cap_team = None`, `cap_progress_ticks = 0`, `team_score_ticks = 0` for both teams. Scoring is frozen during the first 15 seconds (objective lock). After unlock, each tick applies exactly one of the following five cases:
 
 #### Case 1 — Contested (both teams present)
 
 ```
 no scoring this tick
-cap_progress freezes (no change)
+cap_progress_ticks freezes (no change)
 cap_team unchanged
 ```
 
@@ -91,8 +100,8 @@ Freezing (rather than resetting) rewards defending a near-complete capture again
 
 ```
 no scoring this tick
-cap_progress = max(0, cap_progress - DECAY_RATE · dt)
-if cap_progress == 0:
+cap_progress_ticks = max(0, cap_progress_ticks - 1)
+if cap_progress_ticks == 0:
     cap_team = None
 ```
 
@@ -103,17 +112,17 @@ Ownership (`owner`) does **not** change when the point goes empty. A team that c
 ```
 precondition: present_X only, and owner == X, and X ∈ {A, B}
 
-team_X_score += SCORE_RATE · dt
-if team_X_score >= 100:
+team_X_score_ticks += SCORE_STEP
+if team_X_score_ticks >= WIN_TICKS:
     X wins immediately; round ends at this tick
 
 # Clean up any stale opposing-team capture progress:
 if cap_team == opponent(X):
-    cap_progress = max(0, cap_progress - DECAY_RATE · dt)
-    if cap_progress == 0:
+    cap_progress_ticks = max(0, cap_progress_ticks - 1)
+    if cap_progress_ticks == 0:
         cap_team = None
 else:
-    cap_progress = 0
+    cap_progress_ticks = 0
     cap_team = None
 ```
 
@@ -126,22 +135,22 @@ precondition: present_X only, and owner != X, and X ∈ {A, B}
 no scoring this tick
 
 if cap_team == X:
-    cap_progress = min(1, cap_progress + CAP_RATE · dt)
-    if cap_progress == 1.0:
+    cap_progress_ticks = min(CAPTURE_TICKS, cap_progress_ticks + 1)
+    if cap_progress_ticks == CAPTURE_TICKS:
         owner = X
-        cap_progress = 0
+        cap_progress_ticks = 0
         cap_team = None
         # Next tick falls into Case 3 (new owner scoring)
 
 elif cap_team == opponent(X):
     # Stale progress from the other team — reset first, don't let X build progress through it
-    cap_progress = 0
+    cap_progress_ticks = 0
     cap_team = X
     # Next tick, X starts capturing from 0
 
 else:  # cap_team == None
     cap_team = X
-    cap_progress = 0
+    cap_progress_ticks = 0
     # Next tick, X starts accumulating capture progress
 ```
 
@@ -154,13 +163,13 @@ The control-point state machine runs at tick-pipeline step 15 ("Update objective
 ### Edge cases covered
 
 - **Kill on point at the moment of capture**: the killed hero is removed from the occupancy count *before* the state machine runs, so a 1v1 trade on the point that leaves only one team standing is correctly credited.
-- **Exact-tick capture completion**: the tick that brings `cap_progress` to 1.0 does not score. The *next* tick is Case 3 and begins scoring. One-tick latency on capture; negligible at 30 Hz but explicit.
-- **Exact-tick score reaches 100**: win condition is checked inside Case 3 after the score increment. The round ends immediately at that tick.
-- **Contested while owner score = 99.x**: Case 1 applies (contested). No scoring. The near-win does not decay; owner keeps their 99.x score. They just can't cross 100 while contested.
+- **Exact-tick capture completion**: the tick that brings `cap_progress_ticks` to `CAPTURE_TICKS` does not score. The *next* tick is Case 3 and begins scoring. One-tick latency on capture; negligible at 30 Hz but explicit.
+- **Exact-tick score reaches WIN_TICKS**: win condition is checked inside Case 3 after the score increment. The round ends immediately at that tick.
+- **Contested while owner near win**: Case 1 applies (contested). No scoring. The near-win does not decay; owner keeps their `team_score_ticks`. They just can't cross `WIN_TICKS` while contested.
 
 ### Timeout resolution
 
-If neither team reaches 100 before the round timer expires, the team with the higher `team_score` at the timeout tick wins. If `team_A_score == team_B_score` exactly, the round is a draw (terminal reward 0.0 for both teams).
+If neither team reaches `WIN_TICKS` before the round timer expires, the team with the higher `team_score_ticks` at the timeout tick wins. If `team_A_score_ticks == team_B_score_ticks` exactly, the round is a draw (terminal reward 0.0 for both teams).
 
 ## 4. Fog of war model
 
@@ -173,6 +182,7 @@ The fog model is the strongest single determinant of this project's research ide
 - **No sound-based perception** in MVP.
 - **No learned agent-to-agent communication** in MVP.
 - **No team-level enemy-reveal abilities in MVP.** The Phase 1 hero kits (Vanguard, Ranger, Mender) do not include any ability that shares enemy vision across allies. This is a deliberate Phase-1 simplification and makes the partial-observation problem strictly harder: the *only* cross-agent information channel is positioning (allies visible through walls). Reveal abilities can be reintroduced in later phases (e.g., a Cassidy-style Flashbang with a vision-reduction effect, or a Ranger "Mark Target" returning in Phase 10) and become a natural ablation target.
+- **Muzzle traces are renderer-only in MVP.** The omniscient viewer/debug view may draw a short line where any weapon fires, but muzzle traces are **not** part of actor observations and do not reveal hidden enemies. A deliberate "hidden-fire perception" ablation (approximate direction / distance band, no exact position) may be added in a later phase.
 
 ### Why per-agent fog matters
 
@@ -245,10 +255,58 @@ Three heroes total, one per role. No hero selection yet — team composition is 
 
 **Primary: Revolver.** Long-range hitscan, range 22 u, high per-shot damage, low spread, mild falloff. *Held* (fires while `primary_fire` is held, gated by fire rate). **6-shot magazine.** When empty, `primary_fire` is a no-op until reloaded.
 
-**Reload behavior:**
-- **Auto-reload** after 2 seconds of not firing. During auto-reload Ranger is vulnerable; cannot fire during the reload window.
-- **Instant reload** via Combat Roll (ability 1) — see below.
-- Current ammo count is exposed in the agent's observation.
+**Reload behavior (explicit state machine):**
+
+```
+magazine              ∈ {0..6}
+reload_state          ∈ {Ready, ReloadWindup}
+ticks_since_last_shot : integer (reset on successful shot)
+reload_ticks_left     : integer
+```
+
+Constants:
+
+```
+AUTO_RELOAD_DELAY_TICKS = 2.0 · TICK_HZ = 60   # inactivity before auto-reload begins
+RELOAD_DURATION_TICKS   = 1.5 · TICK_HZ = 45   # time to fill the magazine
+```
+
+Transitions per sim tick:
+
+```
+On successful primary_fire shot (held, fire-rate gate open, magazine > 0):
+    magazine -= 1
+    ticks_since_last_shot = 0
+    reload_state = Ready
+
+If reload_state == Ready, magazine < 6,
+   and ticks_since_last_shot >= AUTO_RELOAD_DELAY_TICKS:
+    reload_state = ReloadWindup
+    reload_ticks_left = RELOAD_DURATION_TICKS
+
+If reload_state == ReloadWindup:
+    primary_fire does nothing (no-op)
+    reload_ticks_left -= 1
+    if reload_ticks_left == 0:
+        magazine = 6
+        reload_state = Ready
+
+On Combat Roll impulse (ability_1):
+    magazine = 6
+    reload_state = Ready
+    reload_ticks_left = 0          # cancels any in-progress auto-reload
+
+Else (ready, magazine > 0, not firing this tick):
+    ticks_since_last_shot += 1
+```
+
+Clarifications:
+- **Holding `primary_fire` with empty magazine counts as "not firing."** `ticks_since_last_shot` continues to advance; auto-reload begins after the usual delay.
+- **Auto-reload reloads the full magazine**, not a partial amount. There is no per-bullet refill.
+- **Combat Roll cancels an in-progress auto-reload** and instantly fills to 6.
+- **Taking damage does not interrupt reload.** The only interrupters are Combat Roll (which completes it instantly) and death.
+
+Current ammo count and `reload_state` are exposed in the agent's observation.
 
 **Ability 1: Combat Roll.** Dashes 3.0 u in the current **movement-input direction**, or in the aim direction if no movement input is being given. Instantly refills the Revolver magazine to 6 shots. 5-second cooldown. *Edge-triggered* (one roll per `ability_1` rising edge).
 
@@ -279,7 +337,13 @@ Beam targeting rules:
 
 **Ability 1: Weapon Swap.** Toggles between STAFF and SIDEARM. *Edge-triggered.* 0.5-second swap cooldown to prevent bounce-toggling. Current weapon state is exposed in the observation.
 
-**Ability 2: Tether.** Zips Mender toward an aimed-at ally within 18 u and line-of-sight. Instant movement (no flight physics in MVP — teleport over 4 ticks with interpolation). 8-second cooldown. *Edge-triggered.* If no valid ally is aimed at, the ability is wasted (observable through the cooldown-waste metric in rl-design.md §11).
+**Ability 2: Tether.** Zips Mender to an aimed-at ally within 18 u and line-of-sight. 8-second cooldown. *Impulse.* If no valid ally is aimed at, the ability is wasted (observable through the cooldown-waste metric in rl-design.md §11).
+
+**Sim semantics (instantaneous):** on a valid Tether activation, Mender's position snaps at the activation tick to the nearest legal point within 1.5 u of the target ally, along the line from Mender to the ally, not inside a wall. Collision is resolved immediately. Mender is not invulnerable or immaterial in flight — there is no flight.
+
+**Viewer semantics (cosmetic only):** the renderer may interpolate Mender's sprite between old and new positions over 4 render frames for visual readability. The interpolation is purely visual and never affects sim state, LoS, hitscan, damage timing, or anything else the sim observes.
+
+This split (instant sim, interpolated visual) avoids having to define mid-flight collision, vulnerability, LoS, and damage timing — and keeps the sim simple and deterministic.
 
 *Deferred Mercy-style abilities: Damage Boost (alternate staff mode), Resurrect, Valkyrie (ult).*
 
@@ -438,8 +502,8 @@ None of these is required to prove the core concept. Deferred items may enter la
 |---|---|
 | Agents ignore objective and deathmatch | Terminal reward dominates, short round timer, objective reward scaled appropriately |
 | Shield tank causes stalemates | Shield slows tank, finite HP, regen delay, flank routes bypass |
-| Support makes fights endless | Zone healing over beam healing in Phase 1; damage > heal under focus fire |
-| Fog causes camping | Objective forces exposure; firing produces a visible muzzle trace; no team-reveal abilities in MVP means coordinated pressure must come from positioning, not scouting spells |
+| Support makes fights endless | Mender beam is single-target, LoS/range-limited, no overheal, no damage boost, breaks on weapon swap; focus fire must exceed beam HPS. Explicit eval metrics track beam uptime, effective / potential healing, overheal discarded, beam break reason, time-to-kill healed target, time-to-kill shielded + healed Vanguard, and fight duration after first pick. |
+| Fog causes camping | Objective forces exposure; no team-reveal abilities in MVP means coordinated pressure must come from positioning, not scouting spells. **Muzzle traces are renderer-only** and do not reveal hidden enemies to actor observations (see §4 and rl-design.md §10). |
 | RL agents learn reward hacks | Terminal win reward dominates, shaped rewards capped, evaluate with shaping disabled, watch replays |
 | Single map overfitting | Implement map randomization early; train fixed-map first; enable randomization in Phase 8 |
 
