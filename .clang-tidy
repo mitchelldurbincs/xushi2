@@ -1,0 +1,37 @@
+# Xushi2 clang-tidy config.
+#
+# Determinism notes:
+#   clang-tidy cannot directly forbid std::unordered_map usage in state paths.
+#   See docs/determinism_rules.md — violations are caught by code review and
+#   the golden-replay CI tests, not by this config.
+---
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -bugprone-easily-swappable-parameters,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-avoid-c-arrays,
+  -modernize-avoid-c-arrays,
+  -modernize-use-trailing-return-type,
+  -readability-magic-numbers,
+  -readability-identifier-length
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*(xushi2)/(sim|bots|viewer|common|python_bindings).*'
+FormatStyle: file
+
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: '30'
+  - key: cppcoreguidelines-avoid-non-const-global-variables.IgnoreMatchesInStandard
+    value: 'true'

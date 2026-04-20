@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xushi2"
+version = "0.0.1"
+description = "Xushi2 — 3v3 hero-shooter MARL environment and trainer"
+requires-python = ">=3.10"
+readme = "../README.md"
+license = { text = "TBD" }
+authors = [{ name = "Xushi2 authors" }]
+dependencies = [
+    "numpy>=1.24",
+    "torch>=2.1",
+    "gymnasium>=0.29",
+    "pyyaml>=6.0",
+    "tqdm>=4.66",
+    "wandb>=0.16",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "ruff>=0.1",
+    "mypy>=1.7",
+    "pybind11-stubgen>=2.4",
+]
+
+[project.scripts]
+xushi2-train = "train.train:main"
+xushi2-eval  = "eval.eval:main"
+
+[tool.setuptools]
+# The C++ extension `xushi2_cpp` is built by CMake and placed directly inside
+# the xushi2/ package by src/python_bindings/CMakeLists.txt; setuptools just
+# ships it as package data.
+packages = ["xushi2", "train", "eval"]
+
+[tool.setuptools.package-data]
+xushi2 = ["*.so", "*.pyd", "*.dylib"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

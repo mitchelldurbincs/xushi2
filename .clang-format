@@ -1,0 +1,37 @@
+# Xushi2 C++ style. Based on LLVM with project-specific tweaks.
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++20
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+DerivePointerAlignment: false
+PointerAlignment: Left
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpacesBeforeTrailingComments: 2
+
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[^.]+>$'          # standard C++ headers (no .h)
+    Priority: 1
+  - Regex: '^<.*\.h>$'          # C headers
+    Priority: 2
+  - Regex: '^<.*>$'             # other external
+    Priority: 3
+  - Regex: '^".*"$'             # project headers
+    Priority: 4

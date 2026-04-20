@@ -1,0 +1,64 @@
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+out/
+install/
+CMakeUserPresets.json
+compile_commands.json
+
+# C++ artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.exe
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.venv/
+venv/
+.env
+pip-log.txt
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.vs/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+data/replays/*
+!data/replays/.gitkeep
+data/eval/*
+!data/eval/.gitkeep
+experiments/checkpoints/*
+!experiments/checkpoints/.gitkeep
+
+# Logs / wandb
+wandb/
+runs/
+logs/
+*.log
+
+# Notebooks
+.ipynb_checkpoints/

@@ -1,0 +1,23 @@
+# Phase 0 — sim determinism smoke test. No learning.
+# Described in docs/rl_design.md §6 (curriculum, Phase 0).
+#
+# This config drives a short scripted-vs-scripted rollout and asserts that
+# running the same seed twice produces bit-identical state hashes. It runs
+# before any PPO training to catch determinism regressions early.
+
+phase: 0
+name: "phase0_determinism_smoke"
+
+sim:
+  round_length_seconds: 30
+  fog_of_war_enabled: false
+  randomize_map: false
+  seed: 0xD1CEDA7A
+
+run:
+  episodes: 4
+  # scripted bots on both teams — no learning, no replay buffer
+  team_a_bot: basic
+  team_b_bot: basic
+  # assert intra-process determinism: run twice, compare state_hash trajectories
+  assert_determinism: true
