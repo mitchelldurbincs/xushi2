@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 
 #include <xushi2/common/types.h>
 #include <xushi2/sim/sim.h>
@@ -42,5 +43,11 @@ std::unique_ptr<IBot> make_basic_bot();
 
 // Zero-action bot. Used as a deterministic control in tests.
 std::unique_ptr<IBot> make_noop_bot();
+
+// Factory by string name. Valid names: "walk_to_objective",
+// "hold_and_shoot", "basic", "noop". Unknown names abort via X2_REQUIRE.
+// Kept here so both the episode runner and the Python env wrapper can
+// dispatch without duplicating the name→factory mapping.
+std::unique_ptr<IBot> make_bot_by_name(std::string_view name);
 
 }  // namespace xushi2::bots

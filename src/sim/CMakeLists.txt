@@ -1,5 +1,8 @@
 add_library(xushi2_sim STATIC
     src/sim.cpp
+    src/obs_utils.cpp
+    src/actor_obs.cpp
+    src/critic_obs.cpp
 )
 add_library(xushi2::sim ALIAS xushi2_sim)
 

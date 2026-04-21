@@ -9,7 +9,17 @@ observation tensors for each curriculum phase.
 in CI — any code path that iterates hidden enemies must not be
 callable from `actor_obs_builder`.
 
-**Status: Phase 0 — skeleton. Fill in as each curriculum phase gates.**
+**Status: Phase 1b — actor + critic builders live for 1v1 Ranger.** The
+Phase 1 layouts below are canonical and implemented
+(`src/sim/src/actor_obs.cpp`, `src/sim/src/critic_obs.cpp`). Dim constants
+are mirrored by `python/xushi2/obs_manifest.py` and
+`src/sim/include/xushi2/sim/obs.h`. Phase 2+ layouts remain spec-only.
+
+Totals at Phase 1: **actor = 31 floats**, **critic = 45 floats**.
+The "~28" mentioned in the Phase 1 table below was an early estimate;
+the canonical totals above are computed from the field list and kept in
+lockstep by tests (`tests/observations/test_obs_dims.cpp` and
+`python/tests/test_obs_manifest.py`).
 
 ## Observation invariants
 

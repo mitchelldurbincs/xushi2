@@ -1,0 +1,29 @@
+# Phase 1b — env smoke test. Exercises the single-env Gymnasium wrapper
+# with a scripted opponent. Reference for docs/rl_design.md §6 Phase 1.
+#
+# This config is consumed by xushi2-eval with the --env-mode flag; a
+# future training loop (Phase 2+) will consume it directly.
+
+phase: 1
+name: "phase1b_env_smoke"
+
+sim:
+  round_length_seconds: 30
+  fog_of_war_enabled: false
+  randomize_map: false
+  seed: 0xD1CEDA7A
+  action_repeat: 3
+  # Phase-1 mechanic values. No defaults — the sim refuses to start if any
+  # of these is absent. See docs/game_design.md §6 and the plan.
+  mechanics:
+    revolver_damage_centi_hp: 7500        # 75.0 HP per shot
+    revolver_fire_cooldown_ticks: 15      # 2 shots/sec at 30 Hz
+    revolver_hitbox_radius: 0.75          # u
+    respawn_ticks: 240                    # 8 s at 30 Hz
+
+env:
+  # Team B scripted opponent. Must be one of walk_to_objective,
+  # hold_and_shoot, basic, noop.
+  opponent_bot: "basic"
+  # Team driven by the incoming action at env.step().
+  learner_team: "A"

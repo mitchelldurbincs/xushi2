@@ -2,10 +2,19 @@
 // Keep this layer *thin* — only adapt C++ types to Python, never put game
 // logic here.
 
+#include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <array>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+
+#include <xushi2/bots/bot.h>
 #include <xushi2/bots/runner.h>
+#include <xushi2/sim/obs.h>
 #include <xushi2/sim/sim.h>
 
 namespace py = pybind11;
@@ -119,6 +128,32 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_property_readonly("team_b_kills", &xushi2::sim::Sim::team_b_kills)
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);
 
+    // Return the Action a named scripted bot would produce for a given
+    // agent slot, given the current sim state. Used by the Gymnasium env
+    // wrapper to drive the opponent without exposing MatchState to Python.
+    // Unknown bot names raise ValueError.
+    m.def(
+        "scripted_bot_action",
+        [](const xushi2::sim::Sim& sim, int agent_slot,
+           const std::string& bot_name) {
+            static const std::array<std::string, 4> kValidNames{
+                {"walk_to_objective", "hold_and_shoot", "basic", "noop"}};
+            bool valid = false;
+            for (const auto& n : kValidNames) {
+                if (bot_name == n) { valid = true; break; }
+            }
+            if (!valid) {
+                throw std::invalid_argument(
+                    "unknown bot_name; valid: walk_to_objective, "
+                    "hold_and_shoot, basic, noop");
+            }
+            auto bot = xushi2::bots::make_bot_by_name(bot_name);
+            return bot->decide(sim.state(), agent_slot);
+        },
+        py::arg("sim"), py::arg("agent_slot"), py::arg("bot_name"),
+        "Return the Action the named scripted bot would emit for "
+        "agent_slot on the current sim state.");
+
     m.def("run_scripted_episode",
           [](const xushi2::sim::MatchConfig& config, const std::string& bot_a,
              const std::string& bot_b) {
@@ -134,4 +169,61 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     m.attr("TICK_HZ") = xushi2::sim::kTickHz;
     m.attr("AGENTS_PER_MATCH") = xushi2::sim::kAgentsPerMatch;
     m.attr("TEAM_SIZE") = xushi2::sim::kTeamSize;
+    m.attr("ACTOR_OBS_PHASE1_DIM") = xushi2::sim::kActorObsPhase1Dim;
+    m.attr("CRITIC_OBS_PHASE1_DIM") = xushi2::sim::kCriticObsPhase1Dim;
+
+    // Write the Phase-1 actor observation for `agent_slot` into the
+    // caller-provided float32 numpy buffer. Zero-copy: Python owns the
+    // buffer; C++ writes directly. Any buffer smaller than
+    // ACTOR_OBS_PHASE1_DIM raises ValueError.
+    m.def(
+        "build_actor_obs",
+        [](const xushi2::sim::Sim& sim, std::uint32_t agent_slot,
+           py::array_t<float, py::array::c_style | py::array::forcecast> out) {
+            if (out.ndim() != 1) {
+                throw std::invalid_argument(
+                    "out buffer must be 1-D float32");
+            }
+            if (static_cast<std::uint32_t>(out.shape(0)) <
+                xushi2::sim::kActorObsPhase1Dim) {
+                throw std::invalid_argument(
+                    "out buffer length must be >= ACTOR_OBS_PHASE1_DIM");
+            }
+            xushi2::sim::build_actor_obs_phase1(
+                sim, agent_slot, out.mutable_data(0),
+                static_cast<std::uint32_t>(out.shape(0)));
+        },
+        py::arg("sim"), py::arg("agent_slot"), py::arg("out"),
+        "Write the Phase-1 actor observation for agent_slot into `out`.");
+
+    // Write the Phase-1 critic observation for `team_perspective` into the
+    // caller-provided float32 numpy buffer. Team must be Team.A or Team.B.
+    m.def(
+        "build_critic_obs",
+        [](const xushi2::sim::Sim& sim, xushi2::common::Team team_perspective,
+           py::array_t<float, py::array::c_style | py::array::forcecast> out) {
+            if (out.ndim() != 1) {
+                throw std::invalid_argument(
+                    "out buffer must be 1-D float32");
+            }
+            if (static_cast<std::uint32_t>(out.shape(0)) <
+                xushi2::sim::kCriticObsPhase1Dim) {
+                throw std::invalid_argument(
+                    "out buffer length must be >= CRITIC_OBS_PHASE1_DIM");
+            }
+            // Pre-validate team so Python gets a real exception instead of a
+            // process-abort from X2_REQUIRE inside the builder.
+            if (team_perspective != xushi2::common::Team::A &&
+                team_perspective != xushi2::common::Team::B) {
+                throw std::invalid_argument(
+                    "team_perspective must be Team.A or Team.B "
+                    "(Team.Neutral is not a valid critic side)");
+            }
+            xushi2::sim::build_critic_obs_phase1(
+                sim, team_perspective, out.mutable_data(0),
+                static_cast<std::uint32_t>(out.shape(0)));
+        },
+        py::arg("sim"), py::arg("team_perspective"), py::arg("out"),
+        "Write the Phase-1 critic observation for a team perspective "
+        "into `out`.");
 }

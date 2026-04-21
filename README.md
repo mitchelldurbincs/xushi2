@@ -8,10 +8,14 @@ warfare and deception under partial observation.
 
 ## Status
 
-**Phase 0.** The deterministic simulation core (30 Hz tick, movement, and
-objective state machine) and its Python bindings are working and covered by
-tests. The viewer, scripted bots, Python trainer, and Gym-style env wrapper are
-scaffolds — see [Current state](#current-state) below for a precise breakdown.
+**Phase 1b.** The deterministic simulation core (30 Hz tick, movement,
+hitscan combat, magazine/reload, Combat Roll, death/respawn, objective
+state machine), Phase-1 observation builders (actor + critic, with a
+structural actor-leak test), reward shaping per `rl_design.md` §5, and a
+single-env Gymnasium wrapper for 1v1 Ranger vs scripted opponents are all
+in place. The raylib viewer, PPO trainer, and batched/vectorized env are
+still scaffolds — see [Current state](#current-state) for a precise
+breakdown.
 
 ## Project layout
 
@@ -85,31 +89,47 @@ the C++ module must be built first (via the CMake step above, with
 
 What works today:
 
-- ✅ **Deterministic sim core** (`src/sim/src/sim.cpp`) — 30 Hz fixed tick,
-  reset/step, objective capture state machine, seeded `std::mt19937_64`,
-  float-determinism flags (`-fno-fast-math`, signaling NaNs).
-- ✅ **Common types** (`src/common/include/xushi2/common/`) — `Team`, `Role`,
-  `HeroKind` enums; `Vec2`, `Action`; fixed-capacity constants.
+- ✅ **Deterministic sim core** (`src/sim/src/sim.cpp`) — 30 Hz fixed
+  tick, reset/step, objective capture state machine, hitscan Revolver
+  combat, magazine/reload, Combat Roll, death/respawn, seeded
+  `std::mt19937_64`, float-determinism flags.
+- ✅ **Common types** (`src/common/include/xushi2/common/`) — `Team`,
+  `Role`, `HeroKind` enums; `Vec2`, `Action`; fixed-capacity constants.
+- ✅ **Observation builders** (`src/sim/src/actor_obs.cpp`,
+  `critic_obs.cpp`, `obs_utils.cpp`) — Phase-1 flat actor + critic obs,
+  zero-copy into caller-provided numpy buffers, structural actor-leak
+  test green.
+- ✅ **Scripted bots** (`src/bots/src/bot.cpp`) —
+  `walk_to_objective`, `hold_and_shoot`, `basic`, `noop`.
 - ✅ **pybind11 module** (`src/python_bindings/module.cpp`) — `Sim`,
-  `MatchConfig`, `Action`, and the enums exposed to Python.
-- ✅ **GoogleTest suite** (`tests/sim`, `tests/integration`, `tests/replay`,
-  `tests/observations`) — runs via `ctest`.
+  `MatchConfig`, `Action`, enums, `build_actor_obs` /
+  `build_critic_obs`, `scripted_bot_action`.
+- ✅ **Python env wrapper** (`python/xushi2/env.py`) — single-env
+  Gymnasium interface for 1v1 Ranger vs a named scripted opponent.
+- ✅ **Reward calculator** (`python/xushi2/reward.py`) — terminal-dominant
+  ±10/0, shaped events symmetrized and per-episode clipped to ±3.
+- ✅ **GoogleTest + pytest suites** — 87 C++ tests, 50+ Python tests;
+  `ctest` and `pytest` clean.
+- ✅ **xushi2-eval CLI** — Phase-0 golden dump plus Phase-1b
+  `--dump-obs` / `--dump-reward` trajectory dumps.
 
 What's a scaffold:
 
-- 🚧 **Viewer** (`src/viewer/src/main.cpp`) — raylib window + 30 Hz loop; no
-  keyboard/mouse → action binding, no rendering yet.
-- 🚧 **Scripted bots** (`src/bots/src/bot.cpp`) — factory functions
-  (`walk_to_objective`, `hold_and_shoot`, `basic`) return no-op actions.
-- 🚧 **Python trainer / eval** (`python/train/train.py`,
-  `python/eval/eval.py`) — argparse skeletons, no logic yet.
+- 🚧 **Viewer** (`src/viewer/src/main.cpp`) — raylib window + 30 Hz loop;
+  no keyboard/mouse → action binding, no rendering yet. Build excluded
+  from CI due to a known raylib 5.0 + newer-CMake incompatibility;
+  build with `-DXUSHI2_BUILD_VIEWER=OFF` until raylib bumps.
+- 🚧 **Python trainer** (`python/train/train.py`) — Phase-0 determinism
+  harness only; PPO loop arrives in Phase 2.
 
 What's not there yet:
 
-- ❌ Gymnasium-style env wrapper, vectorized env, PPO loop.
-- ❌ First runnable training config under `experiments/configs/`.
-- ❌ Damage, cooldowns, ability mechanics, fog of war — sim currently handles
-  only movement and objective capture.
+- ❌ Feedforward PPO (Phase 2), recurrent PPO (Phase 3), multi-agent
+  MAPPO (Phase 4+).
+- ❌ Batched / vectorized env for parallel rollouts.
+- ❌ Fog of war and LoS (Phase 7+).
+- ❌ Second heroes (Vanguard, Mender — Phase 10+); Phase 1 stays 1v1
+  Ranger by design.
 
 ## Training
 

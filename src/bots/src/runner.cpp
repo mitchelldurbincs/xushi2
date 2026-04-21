@@ -8,8 +8,6 @@
 
 namespace xushi2::bots {
 
-namespace {
-
 std::unique_ptr<IBot> make_bot_by_name(std::string_view name) {
     if (name == "walk_to_objective") {
         return make_walk_to_objective_bot();
@@ -26,8 +24,6 @@ std::unique_ptr<IBot> make_bot_by_name(std::string_view name) {
     X2_REQUIRE(false, common::ErrorCode::InvalidAction);
     return nullptr;
 }
-
-}  // namespace
 
 ScriptedEpisodeResult run_scripted_episode(const sim::MatchConfig& config,
                                            std::string_view bot_a_name,

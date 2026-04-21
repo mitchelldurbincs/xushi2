@@ -1,0 +1,139 @@
+"""Phase-1 observation manifest — canonical field order for the actor- and
+critic-side flat observation tensors.
+
+This module is the single source of truth for Phase-1 observation layout on
+the Python side. The C++ side mirrors these constants in
+`src/sim/include/xushi2/sim/obs.h`; the two files MUST stay in lockstep.
+Changing field order or width is a breaking change: old checkpoints become
+invalid, and downstream reward / env / replay code that indexes by position
+must be updated in the same commit.
+
+Field layout is documented in `docs/observation_spec.md` §Phase 1.
+
+Two invariants hold (see `docs/observation_spec.md` §"Observation invariants"):
+
+1. The actor and critic builders are separate top-level functions with
+   separate manifests — they may share pure low-level utilities, but no
+   function that iterates hidden enemy state is reachable from the actor
+   obs builder. Phase 1 has no fog of war so there is no hidden state to
+   leak, but we establish the contract here.
+2. All spatial features are in a team-relative frame: Team A sees the world
+   as-is, Team B sees the map mirrored across map center. The sim runs in
+   world coordinates; mirroring happens in the C++ obs builder.
+"""
+
+from __future__ import annotations
+
+__all__ = [
+    "ACTOR_PHASE1_DIM",
+    "ACTOR_PHASE1_FIELDS",
+    "CRITIC_PHASE1_DIM",
+    "CRITIC_PHASE1_FIELDS",
+    "actor_field_slice",
+    "critic_field_slice",
+]
+
+# Each entry: (field_name, width_in_floats, short_description).
+# Order here IS the on-tensor order — do not reorder without updating the
+# C++ obs builder in the same commit.
+ACTOR_PHASE1_FIELDS: tuple[tuple[str, int, str], ...] = (
+    ("own_hp",                  1, "own HP / max, in [0, 1]"),
+    ("own_velocity",            2, "own velocity in team-frame, [-1, 1]"),
+    ("own_aim_unit",            2, "own aim direction as (sin, cos)"),
+    ("own_position",            2, "own position in team-frame, normalized to map extent"),
+    ("own_ammo",                1, "own revolver magazine / 6"),
+    ("own_reloading",           1, "1 if currently reloading else 0"),
+    ("own_combat_roll_cd",      1, "ability_1 cooldown ticks / max, in [0, 1]"),
+    ("enemy_alive",             1, "1 if enemy is alive (no fog at Phase 1) else 0"),
+    ("enemy_respawn_timer",     1, "enemy respawn ticks remaining / max, 0 when alive"),
+    ("enemy_relative_position", 2, "enemy minus own position in team-frame"),
+    ("enemy_hp",                1, "enemy HP / max; 0 if dead"),
+    ("enemy_velocity",          2, "enemy velocity in team-frame; (0,0) if dead"),
+    ("objective_owner_onehot",  3, "objective owner: {Neutral, Us, Them}"),
+    ("cap_team_onehot",         3, "team currently accruing capture progress: {None, Us, Them}"),
+    ("cap_progress",            1, "capture progress in [0, 1]"),
+    ("contested",               1, "1 if both teams present on point"),
+    ("objective_unlocked",      1, "1 if past the 15s unlock window"),
+    ("own_score",               1, "own score ticks / win threshold"),
+    ("enemy_score",             1, "enemy score ticks / win threshold"),
+    ("self_on_point",           1, "1 if viewer is inside the objective circle"),
+    ("enemy_on_point",          1, "1 if enemy is inside the objective circle (public, no fog at Phase 1)"),
+    ("round_timer",             1, "sim ticks elapsed / round length ticks"),
+)
+
+# Critic sees everything the actor sees PLUS hidden / privileged fields.
+# At Phase 1 that means world-frame absolute positions for both heroes, raw
+# tick counters for the objective state machine, and the match seed. These
+# are NEVER exposed to the actor.
+CRITIC_PHASE1_FIELDS: tuple[tuple[str, int, str], ...] = (
+    # --- Mirror of the actor fields (critic sees them from its team side) ---
+    ("own_hp",                    1, "own HP / max"),
+    ("own_velocity",              2, "own velocity, team-frame"),
+    ("own_aim_unit",              2, "own aim as (sin, cos)"),
+    ("own_position",              2, "own position, team-frame normalized"),
+    ("own_ammo",                  1, "own magazine / 6"),
+    ("own_reloading",             1, "own reloading flag"),
+    ("own_combat_roll_cd",        1, "own ability_1 cd / max"),
+    ("enemy_alive",               1, "enemy alive"),
+    ("enemy_respawn_timer",       1, "enemy respawn ticks / max"),
+    ("enemy_relative_position",   2, "enemy minus own position, team-frame"),
+    ("enemy_hp",                  1, "enemy HP / max"),
+    ("enemy_velocity",            2, "enemy velocity, team-frame"),
+    ("objective_owner_onehot",    3, "objective owner one-hot"),
+    ("cap_team_onehot",           3, "cap_team one-hot"),
+    ("cap_progress",              1, "capture progress [0, 1]"),
+    ("contested",                 1, "contested flag"),
+    ("objective_unlocked",        1, "objective unlocked flag"),
+    ("own_score",                 1, "own score normalized"),
+    ("enemy_score",               1, "enemy score normalized"),
+    ("self_on_point",             1, "viewer is on point"),
+    ("enemy_on_point",            1, "enemy is on point"),
+    ("round_timer",               1, "round timer [0, 1]"),
+    # --- Privileged fields (world-frame absolute, raw counters, seed) ---
+    ("world_own_position",        2, "own position in WORLD frame (no mirror)"),
+    ("world_enemy_position",      2, "enemy position in WORLD frame (no mirror)"),
+    ("world_own_velocity",        2, "own velocity in WORLD frame"),
+    ("world_enemy_velocity",      2, "enemy velocity in WORLD frame"),
+    ("cap_progress_ticks",        1, "raw capture progress tick counter"),
+    ("team_a_score_ticks",        1, "raw Team A score tick counter"),
+    ("team_b_score_ticks",        1, "raw Team B score tick counter"),
+    ("tick_raw",                  1, "raw match tick counter"),
+    ("seed_hi",                   1, "top 32 bits of match seed, normalized [-1, 1]"),
+    ("seed_lo",                   1, "bottom 32 bits of match seed, normalized [-1, 1]"),
+)
+
+ACTOR_PHASE1_DIM: int = sum(width for _, width, _ in ACTOR_PHASE1_FIELDS)
+CRITIC_PHASE1_DIM: int = sum(width for _, width, _ in CRITIC_PHASE1_FIELDS)
+
+
+def _build_slice_table(fields: tuple[tuple[str, int, str], ...]) -> dict[str, slice]:
+    table: dict[str, slice] = {}
+    cursor = 0
+    for name, width, _ in fields:
+        table[name] = slice(cursor, cursor + width)
+        cursor += width
+    return table
+
+
+_ACTOR_SLICES: dict[str, slice] = _build_slice_table(ACTOR_PHASE1_FIELDS)
+_CRITIC_SLICES: dict[str, slice] = _build_slice_table(CRITIC_PHASE1_FIELDS)
+
+
+def actor_field_slice(name: str) -> slice:
+    """Return the `slice` into the actor obs tensor for the named field."""
+    try:
+        return _ACTOR_SLICES[name]
+    except KeyError as exc:
+        raise KeyError(
+            f"unknown actor obs field {name!r}; known: {sorted(_ACTOR_SLICES)}"
+        ) from exc
+
+
+def critic_field_slice(name: str) -> slice:
+    """Return the `slice` into the critic obs tensor for the named field."""
+    try:
+        return _CRITIC_SLICES[name]
+    except KeyError as exc:
+        raise KeyError(
+            f"unknown critic obs field {name!r}; known: {sorted(_CRITIC_SLICES)}"
+        ) from exc
