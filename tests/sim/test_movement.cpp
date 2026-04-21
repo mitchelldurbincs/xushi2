@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include <test_config.hpp>
 #include <xushi2/common/action_canon.hpp>
 #include <xushi2/common/math.hpp>
 #include <xushi2/sim/sim.h>
@@ -28,7 +29,7 @@ std::array<Action, kAgentsPerMatch> make_actions_walk_north_for_slot_0() {
 
 std::vector<std::uint64_t> run_with(const std::array<Action, kAgentsPerMatch>& actions,
                                     std::uint64_t seed, int max_ticks) {
-    MatchConfig cfg{};
+    auto cfg = xushi2::test_support::make_test_config();
     cfg.seed = seed;
     Sim sim(cfg);
     std::vector<std::uint64_t> hashes;
@@ -43,7 +44,7 @@ std::vector<std::uint64_t> run_with(const std::array<Action, kAgentsPerMatch>& a
 }  // namespace
 
 TEST(Movement, TwoRangersSpawnInsideArena) {
-    MatchConfig cfg{};
+    auto cfg = xushi2::test_support::make_test_config();
     Sim sim(cfg);
     const auto& s = sim.state();
     EXPECT_TRUE(s.heroes[0].present);
@@ -61,7 +62,7 @@ TEST(Movement, TwoRangersSpawnInsideArena) {
 }
 
 TEST(Movement, WalkingNorthChangesPositionAndHash) {
-    MatchConfig cfg{};
+    auto cfg = xushi2::test_support::make_test_config();
     Sim sim(cfg);
     const auto start_y = sim.state().heroes[0].position.y;
     const auto h0 = sim.state_hash();
@@ -102,7 +103,7 @@ TEST(Movement, DifferentSeedsGiveDifferentHashes) {
 }
 
 TEST(Movement, StepDecisionAdvancesActionRepeatTicks) {
-    MatchConfig cfg{};
+    auto cfg = xushi2::test_support::make_test_config();
     cfg.action_repeat = 3;
     Sim sim(cfg);
     const auto start_tick = sim.state().tick;
@@ -112,7 +113,7 @@ TEST(Movement, StepDecisionAdvancesActionRepeatTicks) {
 }
 
 TEST(Movement, AimDeltaOnlyAppliedOncePerDecision) {
-    MatchConfig cfg{};
+    auto cfg = xushi2::test_support::make_test_config();
     cfg.action_repeat = 3;
     Sim sim_decision(cfg);
     Sim sim_perstep(cfg);

@@ -49,10 +49,15 @@ Thumbs.db
 # Project-specific
 data/replays/*
 !data/replays/.gitkeep
+# Committed deterministic-replay artifact (regenerate with xushi2-eval --dump-golden).
+!data/replays/golden_phase0_basic.txt
 data/eval/*
 !data/eval/.gitkeep
 experiments/checkpoints/*
 !experiments/checkpoints/.gitkeep
+
+# Tool caches
+.cache/
 
 # Logs / wandb
 wandb/

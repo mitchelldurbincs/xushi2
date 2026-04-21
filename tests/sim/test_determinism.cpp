@@ -3,6 +3,7 @@
 #include <array>
 #include <vector>
 
+#include <test_config.hpp>
 #include <xushi2/sim/sim.h>
 
 // Determinism: same seed + same action stream must produce the same
@@ -11,7 +12,7 @@
 namespace {
 
 std::vector<std::uint64_t> run_episode(std::uint64_t seed, int max_ticks) {
-    xushi2::sim::MatchConfig config{};
+    auto config = xushi2::test_support::make_test_config();
     config.seed = seed;
     config.round_length_seconds = 180;
     xushi2::sim::Sim sim(config);

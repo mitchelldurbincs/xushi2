@@ -1,5 +1,6 @@
 add_library(xushi2_bots STATIC
     src/bot.cpp
+    src/runner.cpp
 )
 add_library(xushi2::bots ALIAS xushi2_bots)
 

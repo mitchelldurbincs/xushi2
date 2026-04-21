@@ -7,7 +7,6 @@ name = "xushi2"
 version = "0.0.1"
 description = "Xushi2 — 3v3 hero-shooter MARL environment and trainer"
 requires-python = ">=3.10"
-readme = "../README.md"
 license = { text = "TBD" }
 authors = [{ name = "Xushi2 authors" }]
 dependencies = [
@@ -48,4 +47,6 @@ target-version = "py310"
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
+# Run from python/ so it finds python/tests/.
 testpaths = ["tests"]
+pythonpath = ["."]

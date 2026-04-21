@@ -13,6 +13,13 @@ sim:
   fog_of_war_enabled: false
   randomize_map: false
   seed: 0xD1CEDA7A
+  # Phase-1 mechanic values. No defaults — the sim refuses to start if any
+  # of these is absent. See docs/game_design.md §6 and the plan.
+  mechanics:
+    revolver_damage_centi_hp: 7500        # 75.0 HP per shot (2-shot Ranger kill)
+    revolver_fire_cooldown_ticks: 15      # 2 shots/sec at 30 Hz
+    revolver_hitbox_radius: 0.75          # u
+    respawn_ticks: 240                    # 8 s at 30 Hz
 
 run:
   episodes: 4
