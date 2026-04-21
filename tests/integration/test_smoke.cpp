@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <test_config.hpp>
 #include <xushi2/bots/bot.h>
 #include <xushi2/sim/sim.h>
 
@@ -8,7 +9,7 @@
 // terminal state.
 
 TEST(Integration, ScriptedBotsSmoke) {
-    xushi2::sim::MatchConfig config{};
+    auto config = xushi2::test_support::make_test_config();
     config.seed = 7;
     config.round_length_seconds = 10;  // short round for the test
     xushi2::sim::Sim sim(config);

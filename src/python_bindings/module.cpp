@@ -5,6 +5,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <xushi2/bots/runner.h>
 #include <xushi2/sim/sim.h>
 
 namespace py = pybind11;
@@ -37,6 +38,17 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_readwrite("ability_2", &xushi2::common::Action::ability_2)
         .def_readwrite("target_slot", &xushi2::common::Action::target_slot);
 
+    py::class_<xushi2::sim::Phase1MechanicsConfig>(m, "Phase1MechanicsConfig")
+        .def(py::init<>())
+        .def_readwrite("revolver_damage_centi_hp",
+                       &xushi2::sim::Phase1MechanicsConfig::revolver_damage_centi_hp)
+        .def_readwrite("revolver_fire_cooldown_ticks",
+                       &xushi2::sim::Phase1MechanicsConfig::revolver_fire_cooldown_ticks)
+        .def_readwrite("revolver_hitbox_radius",
+                       &xushi2::sim::Phase1MechanicsConfig::revolver_hitbox_radius)
+        .def_readwrite("respawn_ticks",
+                       &xushi2::sim::Phase1MechanicsConfig::respawn_ticks);
+
     py::class_<xushi2::sim::MatchConfig>(m, "MatchConfig")
         .def(py::init<>())
         .def_readwrite("seed", &xushi2::sim::MatchConfig::seed)
@@ -44,7 +56,9 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                        &xushi2::sim::MatchConfig::round_length_seconds)
         .def_readwrite("fog_of_war_enabled",
                        &xushi2::sim::MatchConfig::fog_of_war_enabled)
-        .def_readwrite("randomize_map", &xushi2::sim::MatchConfig::randomize_map);
+        .def_readwrite("randomize_map", &xushi2::sim::MatchConfig::randomize_map)
+        .def_readwrite("action_repeat", &xushi2::sim::MatchConfig::action_repeat)
+        .def_readwrite("mechanics", &xushi2::sim::MatchConfig::mechanics);
 
     py::class_<xushi2::sim::Sim>(m, "Sim")
         .def(py::init<const xushi2::sim::MatchConfig&>())
@@ -100,7 +114,22 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                                           static_cast<double>(xushi2::sim::kTickHz);
                                })
         .def_property_readonly("episode_over", &xushi2::sim::Sim::episode_over)
+        .def_property_readonly("winner", &xushi2::sim::Sim::winner)
+        .def_property_readonly("team_a_kills", &xushi2::sim::Sim::team_a_kills)
+        .def_property_readonly("team_b_kills", &xushi2::sim::Sim::team_b_kills)
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);
+
+    m.def("run_scripted_episode",
+          [](const xushi2::sim::MatchConfig& config, const std::string& bot_a,
+             const std::string& bot_b) {
+              auto result = xushi2::bots::run_scripted_episode(config, bot_a, bot_b);
+              return py::make_tuple(std::move(result.decision_hashes), result.final_tick,
+                                    result.team_a_kills, result.team_b_kills,
+                                    static_cast<int>(result.winner));
+          },
+          py::arg("config"), py::arg("bot_a"), py::arg("bot_b"),
+          "Run one scripted-vs-scripted episode. Returns "
+          "(decision_hashes, final_tick, team_a_kills, team_b_kills, winner_int).");
 
     m.attr("TICK_HZ") = xushi2::sim::kTickHz;
     m.attr("AGENTS_PER_MATCH") = xushi2::sim::kAgentsPerMatch;

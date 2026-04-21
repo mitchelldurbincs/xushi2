@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <test_config.hpp>
 #include <xushi2/sim/sim.h>
 
 // The most basic sim sanity test: construction, reset, one step, read state.
 TEST(SimSmoke, ConstructResetStep) {
-    xushi2::sim::MatchConfig config{};
+    auto config = xushi2::test_support::make_test_config();
     config.seed = 1234;
     xushi2::sim::Sim sim(config);
 

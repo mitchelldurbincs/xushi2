@@ -40,4 +40,7 @@ std::unique_ptr<IBot> make_hold_and_shoot_bot();
 // Combination of walk-to-objective + shoot-visible. Weakest meaningful bot.
 std::unique_ptr<IBot> make_basic_bot();
 
+// Zero-action bot. Used as a deterministic control in tests.
+std::unique_ptr<IBot> make_noop_bot();
+
 }  // namespace xushi2::bots
