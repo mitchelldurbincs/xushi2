@@ -79,21 +79,37 @@ def main() -> int:
     print(f"[xushi2] phase={phase} episodes={episodes} "
           f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")
 
-    if phase != 0 or not assert_determinism:
-        # Later phases will slot in here. For now the harness is Phase-0-only.
-        print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
-        return 2
+    if phase == 0:
+        if not assert_determinism:
+            # Later phases will slot in here. For now the harness is Phase-0-only.
+            print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
+            return 2
 
-    pass_a = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
-    pass_b = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
+        pass_a = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
+        pass_b = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
 
-    rc = _assert_identical(pass_a, pass_b)
-    if rc == 0:
-        total = sum(len(r.decision_hashes) for r in pass_a)
-        per_ep = len(pass_a[0].decision_hashes) if pass_a else 0
-        print(f"[xushi2] OK: {episodes} episodes × {per_ep} decisions "
-              f"({total} hashes) all identical")
-    return rc
+        rc = _assert_identical(pass_a, pass_b)
+        if rc == 0:
+            total = sum(len(r.decision_hashes) for r in pass_a)
+            per_ep = len(pass_a[0].decision_hashes) if pass_a else 0
+            print(f"[xushi2] OK: {episodes} episodes × {per_ep} decisions "
+                  f"({total} hashes) all identical")
+        return rc
+
+    if phase == 2:
+        from train.ppo_recurrent import train_from_config
+
+        result = train_from_config(config)
+        recurrent = float(result["recurrent"])
+        feedforward = float(result["feedforward"])
+        gap = recurrent - feedforward
+        print(f"[phase2] recurrent_final={recurrent:.3f} "
+              f"feedforward_final={feedforward:.3f} gap={gap:.3f}")
+        return 0
+
+    # Later phases will slot in here. For now the harness is Phase-0-only.
+    print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
+    return 2
 
 
 if __name__ == "__main__":
