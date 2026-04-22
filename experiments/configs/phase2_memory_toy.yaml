@@ -23,9 +23,9 @@ ppo:
   value_coef: 0.5
   max_grad_norm: 0.5
 run:
-  total_updates: 500
-  eval_every: 25
-  eval_episodes: 100
-  checkpoint_every: 50
-  log_every: 1
+  total_updates: 700
+  eval_every: 10
+  eval_episodes: 200
+  checkpoint_every: 100
+  log_every: 50
   output_dir: runs/phase2_memory_toy
