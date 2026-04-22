@@ -27,5 +27,8 @@ run:
   eval_every: 10
   eval_episodes: 200
   checkpoint_every: 100
+  early_stop_patience_evals: 20
+  early_stop_min_delta: 0.005
+  max_regression_from_best: 0.20
   log_every: 50
   output_dir: runs/phase2_memory_toy
