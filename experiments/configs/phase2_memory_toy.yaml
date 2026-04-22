@@ -1,0 +1,31 @@
+phase: 2
+env:
+  episode_length: 64
+  cue_visible_ticks: 4
+  seed_base: 1296383316
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 16
+  rollout_len: 256
+  num_epochs: 4
+  minibatch_size: 64
+  learning_rate: 3.0e-4
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+run:
+  total_updates: 500
+  eval_every: 25
+  eval_episodes: 100
+  checkpoint_every: 50
+  log_every: 1
+  output_dir: runs/phase2_memory_toy
