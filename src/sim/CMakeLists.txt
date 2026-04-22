@@ -3,6 +3,12 @@ add_library(xushi2_sim STATIC
     src/obs_utils.cpp
     src/actor_obs.cpp
     src/critic_obs.cpp
+    src/internal/sim_combat.cpp
+    src/internal/sim_hash.cpp
+    src/internal/sim_objective.cpp
+    src/internal/sim_spawn_reset.cpp
+    src/internal/sim_tick_pipeline.cpp
+    src/internal/sim_weapon_ranger.cpp
 )
 add_library(xushi2::sim ALIAS xushi2_sim)
 
