@@ -25,6 +25,7 @@ Design notes:
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
 
@@ -476,3 +477,159 @@ class PPOTrainer:
             },
             n_valid,
         )
+
+
+def evaluate_policy(
+    model: ActorCritic,
+    env_fn: Callable[[], gym.Env],
+    num_episodes: int,
+    seed: int,
+) -> float:
+    """Return mean episodic reward over ``num_episodes``."""
+    model.eval()
+    rewards: list[float] = []
+    for i in range(int(num_episodes)):
+        env = env_fn()
+        obs, _ = env.reset(seed=seed + i)
+        done = False
+        ep_reward = 0.0
+        h = model.init_hidden(batch_size=1)
+        while not done:
+            obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
+            with torch.no_grad():
+                action, _, h = model.sample_action(obs_t, h)
+            obs, r, term, trunc, _ = env.step(action.squeeze(0).cpu().numpy())
+            ep_reward += float(r)
+            done = bool(term or trunc)
+            if done:
+                h.zero_()
+        rewards.append(ep_reward)
+        env.close()
+    return float(np.mean(rewards)) if rewards else 0.0
+
+
+def save_checkpoint(trainer: PPOTrainer, path: Path, config: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "model_state": trainer.model.state_dict(),
+        "config": config,
+    }
+    torch.save(payload, path)
+
+
+def _make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
+    env_cfg = config.get("env", {})
+    model_cfg = config.get("model", {})
+    ppo_cfg = config.get("ppo", {})
+    return PPOConfig(
+        num_envs=int(ppo_cfg["num_envs"]),
+        rollout_len=int(ppo_cfg["rollout_len"]),
+        obs_dim=3,
+        action_dim=2,
+        embed_dim=int(model_cfg["embed_dim"]),
+        gru_hidden=int(model_cfg["gru_hidden"]),
+        head_hidden=int(model_cfg["head_hidden"]),
+        action_log_std_init=float(model_cfg["action_log_std_init"]),
+        use_recurrence=bool(use_recurrence),
+        gamma=float(ppo_cfg["gamma"]),
+        gae_lambda=float(ppo_cfg["gae_lambda"]),
+        clip_ratio=float(ppo_cfg["clip_ratio"]),
+        value_clip_ratio=float(ppo_cfg["value_clip_ratio"]),
+        value_coef=float(ppo_cfg["value_coef"]),
+        entropy_coef=float(ppo_cfg["entropy_coef"]),
+        max_grad_norm=float(ppo_cfg["max_grad_norm"]),
+        learning_rate=float(ppo_cfg["learning_rate"]),
+        num_epochs=int(ppo_cfg["num_epochs"]),
+        minibatch_size=int(ppo_cfg["minibatch_size"]),
+    )
+
+
+def _run_variant(config: dict, *, use_recurrence: bool, output_dir: Path) -> float:
+    from envs.memory_toy import MemoryToyEnv
+
+    env_cfg = config.get("env", {})
+    run_cfg = config.get("run", {})
+    ppo_cfg = _make_ppo_config(config, use_recurrence=use_recurrence)
+
+    total_updates = int(run_cfg.get("total_updates", 10))
+    eval_every = int(run_cfg.get("eval_every", 5))
+    eval_episodes = int(run_cfg.get("eval_episodes", 20))
+    checkpoint_every = int(run_cfg.get("checkpoint_every", 10))
+
+    seed_base = int(env_cfg.get("seed_base", 0))
+    variant_seed = seed_base + (0 if use_recurrence else 1_000_000)
+
+    def env_fn() -> MemoryToyEnv:
+        return MemoryToyEnv(
+            episode_length=int(env_cfg.get("episode_length", 64)),
+            cue_visible_ticks=int(env_cfg.get("cue_visible_ticks", 4)),
+        )
+
+    trainer = PPOTrainer(env_fn=env_fn, config=ppo_cfg, seed=variant_seed)
+
+    writer = None
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+
+        writer = SummaryWriter(log_dir=str(output_dir))
+    except Exception:
+        writer = None
+
+    last_eval = float("nan")
+    for update_idx in range(1, total_updates + 1):
+        rollout = trainer.collect_rollout()
+        metrics = trainer.update(rollout)
+
+        if writer is not None:
+            for key, value in metrics.items():
+                writer.add_scalar(f"train/{key}", value, update_idx)
+
+        if update_idx % eval_every == 0 or update_idx == total_updates:
+            last_eval = evaluate_policy(
+                trainer.model,
+                env_fn,
+                num_episodes=eval_episodes,
+                seed=variant_seed + 100_000 + update_idx,
+            )
+            if writer is not None:
+                writer.add_scalar("eval/mean_reward", last_eval, update_idx)
+
+        if update_idx % checkpoint_every == 0 or update_idx == total_updates:
+            ckpt_path = output_dir / f"ckpt_{update_idx:04d}.pt"
+            save_checkpoint(
+                trainer,
+                ckpt_path,
+                {
+                    "env": env_cfg,
+                    "model": {**config.get("model", {}), "use_recurrence": use_recurrence},
+                    "ppo": config.get("ppo", {}),
+                    "run": config.get("run", {}),
+                },
+            )
+
+    final_ckpt = output_dir / "ckpt_final.pt"
+    save_checkpoint(
+        trainer,
+        final_ckpt,
+        {
+            "env": env_cfg,
+            "model": {**config.get("model", {}), "use_recurrence": use_recurrence},
+            "ppo": config.get("ppo", {}),
+            "run": config.get("run", {}),
+        },
+    )
+    if writer is not None:
+        writer.close()
+
+    return last_eval
+
+
+def train_from_config(config: dict) -> dict[str, float]:
+    """Train recurrent and feedforward variants and return final eval means."""
+    out_root = Path(str(config.get("run", {}).get("output_dir", "runs/phase2_memory_toy")))
+    recurrent_dir = out_root / "recurrent"
+    feedforward_dir = out_root / "feedforward"
+
+    recurrent = _run_variant(config, use_recurrence=True, output_dir=recurrent_dir)
+    feedforward = _run_variant(config, use_recurrence=False, output_dir=feedforward_dir)
+    return {"recurrent": recurrent, "feedforward": feedforward}
