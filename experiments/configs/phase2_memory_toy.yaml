@@ -15,6 +15,9 @@ ppo:
   num_epochs: 4
   minibatch_size: 64
   learning_rate: 3.0e-4
+  lr_schedule: constant
+  lr_final_ratio: 1.0
+  warmup_updates: 0
   clip_ratio: 0.2
   value_clip_ratio: 0.2
   gamma: 0.99
@@ -32,3 +35,12 @@ run:
   max_regression_from_best: 0.20
   log_every: 50
   output_dir: runs/phase2_memory_toy
+
+# Optional tuning override:
+# - linear LR decay from 3e-4 to 4.5e-5 (~15% of initial LR) by final update.
+# - apply by copying these values into `ppo` (or creating a derived config file).
+tuning_variant_linear_decay:
+  ppo:
+    lr_schedule: linear
+    lr_final_ratio: 0.15
+    warmup_updates: 0

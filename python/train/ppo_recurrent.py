@@ -70,6 +70,9 @@ class PPOConfig:
     learning_rate: float
     num_epochs: int
     minibatch_size: int
+    lr_schedule: str = "constant"
+    lr_final_ratio: float = 1.0
+    warmup_updates: int = 0
 
 
 def _tanh_squashed_logprob(
@@ -185,6 +188,43 @@ class PPOTrainer:
         # NOTE: ``self._training_h_init_log`` is NOT created by default.
         # Tests opt in by setting it to ``[]`` before calling ``update``.
         # ``update`` guards with ``hasattr`` before appending.
+
+    def lr_for_update(self, update_idx: int, total_updates: int) -> float:
+        """Return the effective LR for ``update_idx`` in ``[1, total_updates]``."""
+        cfg = self.config
+        total_updates = max(int(total_updates), 1)
+        update_idx = min(max(int(update_idx), 1), total_updates)
+
+        base_lr = float(cfg.learning_rate)
+        final_lr = base_lr * float(cfg.lr_final_ratio)
+        schedule = str(cfg.lr_schedule).lower()
+        warmup = max(int(cfg.warmup_updates), 0)
+        warmup = min(warmup, total_updates)
+
+        if warmup > 0 and update_idx <= warmup:
+            return base_lr * (float(update_idx) / float(warmup))
+
+        post_updates = total_updates - warmup
+        if post_updates <= 0 or schedule == "constant":
+            return base_lr
+
+        progress = (update_idx - warmup - 1) / max(post_updates - 1, 1)
+        progress = min(max(float(progress), 0.0), 1.0)
+
+        if schedule == "linear":
+            ratio = 1.0 + (float(cfg.lr_final_ratio) - 1.0) * progress
+            return base_lr * ratio
+        if schedule == "cosine":
+            cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+            return final_lr + (base_lr - final_lr) * cosine
+        raise ValueError(f"Unsupported lr_schedule: {cfg.lr_schedule!r}")
+
+    def set_learning_rate(self, update_idx: int, total_updates: int) -> float:
+        """Apply and return the effective LR for the current update."""
+        lr = self.lr_for_update(update_idx=update_idx, total_updates=total_updates)
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
+        return lr
 
     # ------------------------------------------------------------------
     # Rollout
@@ -538,6 +578,9 @@ def _make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
         entropy_coef=float(ppo_cfg["entropy_coef"]),
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
+        lr_schedule=str(ppo_cfg.get("lr_schedule", "constant")).lower(),
+        lr_final_ratio=float(ppo_cfg.get("lr_final_ratio", 1.0)),
+        warmup_updates=int(ppo_cfg.get("warmup_updates", 0) or 0),
         num_epochs=int(ppo_cfg["num_epochs"]),
         minibatch_size=int(ppo_cfg["minibatch_size"]),
     )
@@ -612,12 +655,14 @@ def _run_variant(
     last_eval = float("nan")
     stop_reason: str | None = None
     for update_idx in range(1, total_updates + 1):
+        current_lr = trainer.set_learning_rate(update_idx, total_updates)
         rollout = trainer.collect_rollout()
         metrics = trainer.update(rollout)
 
         if log_every > 0 and update_idx % log_every == 0:
             print(
                 f"[phase2/{variant_name}] update={update_idx:4d}/{total_updates} "
+                f"lr={current_lr:.6g} "
                 f"policy_loss={metrics['policy_loss']:+.3f} "
                 f"value_loss={metrics['value_loss']:.3f} "
                 f"entropy={metrics['entropy']:+.3f} "
@@ -633,7 +678,8 @@ def _run_variant(
                 seed=variant_seed + 100_000 + update_idx,
             )
             print(
-                f"[phase2/{variant_name}] eval@{update_idx}={last_eval:+.3f}",
+                f"[phase2/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
+                f"lr={current_lr:.6g}",
                 flush=True,
             )
             if last_eval > (best_eval + early_stop_min_delta):
