@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  cpp-tests:
+    name: C++ Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: >-
+          cmake -S . -B build
+          -DXUSHI2_BUILD_VIEWER=OFF
+          -DXUSHI2_BUILD_TESTS=ON
+          -DXUSHI2_BUILD_PYTHON_MODULE=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run C++ tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload C++ test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-test-logs
+          path: |
+            build/Testing/**
+            build/**/*.log
+            build/CMakeFiles/CMakeOutput.log
+            build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Python package with dev extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e 'python[dev]'
+
+      - name: Run Python tests
+        run: pytest python/tests
+
+      - name: Upload Python test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-logs
+          path: |
+            .pytest_cache/**
+            python/.pytest_cache/**
+          if-no-files-found: ignore
