@@ -12,13 +12,13 @@ import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-from gymnasium.vector import SyncVectorEnv
+from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 
 from train.models import ActorCritic, build_model
 from train.rollout_buffer import RolloutBuffer
 
 from train.ppo_recurrent.config import PPOConfig
-from train.ppo_recurrent.losses import _masked_mean, _tanh_squashed_logprob
+from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
 
 
 class PPOTrainer:
@@ -33,15 +33,25 @@ class PPOTrainer:
         self.config = config
         self.seed = int(seed)
 
+        # Optional: pin PyTorch's intra-op thread count. With 16x small
+        # tensors the BLAS-threading overhead dominates useful work; set
+        # to 1 in configs that use ``AsyncVectorEnv`` so main-process
+        # PyTorch stays out of the worker subprocesses' way.
+        if config.torch_num_threads > 0:
+            torch.set_num_threads(config.torch_num_threads)
+
         # --- Initial global RNG seeding. Applied early so env/space
         # construction is deterministic.
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
 
         # --- Vectorized env. SyncVectorEnv calls the thunk once per env.
-        # We seed via ``reset(seed=seed)`` which Gymnasium fans out as
-        # ``[seed, seed+1, ..., seed+num_envs-1]`` per env.
-        self.envs: SyncVectorEnv = SyncVectorEnv(
+        # AsyncVectorEnv forks/spawns a subprocess per env — each subproc
+        # runs its own sim step in parallel, which is the big win on
+        # multi-core boxes. Seeding via ``reset(seed=seed)`` fans out as
+        # ``[seed, seed+1, ..., seed+num_envs-1]`` per env in both.
+        vec_cls: type = AsyncVectorEnv if config.vector_env == "async" else SyncVectorEnv
+        self.envs = vec_cls(
             [env_fn for _ in range(config.num_envs)]
         )
         obs, _ = self.envs.reset(seed=self.seed)
@@ -63,6 +73,8 @@ class PPOTrainer:
         self.model: ActorCritic = build_model(
             obs_dim=config.obs_dim,
             action_dim=config.action_dim,
+            continuous_action_dim=config.continuous_action_dim,
+            binary_action_dim=config.binary_action_dim,
             use_recurrence=config.use_recurrence,
             embed_dim=config.embed_dim,
             gru_hidden=config.gru_hidden,
@@ -91,7 +103,7 @@ class PPOTrainer:
         self._critic_params: list[torch.nn.Parameter] = []
         self._trunk_params: list[torch.nn.Parameter] = []
         for name, p in self.model.named_parameters():
-            if name.startswith("actor_head") or name == "log_std":
+            if name.startswith(("actor_body", "actor_mean_head", "actor_binary_head")) or name == "log_std":
                 self._actor_params.append(p)
             elif name.startswith("critic_head"):
                 self._critic_params.append(p)
@@ -394,9 +406,14 @@ class PPOTrainer:
         entropies = []
         values = []
         for t in range(L):
-            mean_t, log_std_t, value_t, h = self.model.forward(obs[:, t], h)
-            logp_t, ent_t = _tanh_squashed_logprob(
-                mean_t, log_std_t, action[:, t]
+            outputs = self.model.policy_outputs(obs[:, t], h)
+            value_t = outputs.value
+            h = outputs.h_next
+            logp_t, ent_t = action_logprob_and_entropy(
+                outputs.continuous_mean,
+                outputs.continuous_log_std,
+                outputs.binary_logits,
+                action[:, t],
             )
             new_logprobs.append(logp_t)
             entropies.append(ent_t)

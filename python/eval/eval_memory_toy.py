@@ -64,6 +64,8 @@ def load_checkpoint(path: str | Path) -> tuple[ActorCritic, dict]:
         gru_hidden=int(model_cfg.get("gru_hidden", 64)),
         head_hidden=int(model_cfg.get("head_hidden", 64)),
         action_log_std_init=float(model_cfg.get("action_log_std_init", -1.0)),
+        continuous_action_dim=int(model_cfg.get("continuous_action_dim", model_cfg.get("action_dim", 2))),
+        binary_action_dim=int(model_cfg.get("binary_action_dim", 0)),
     )
     model.load_state_dict(state_dict)
     model.eval()

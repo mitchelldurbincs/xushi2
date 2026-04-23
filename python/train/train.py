@@ -107,6 +107,14 @@ def main() -> int:
               f"feedforward_final={feedforward:.3f} gap={gap:.3f}")
         return 0
 
+    if phase == 3:
+        from train.ppo_recurrent import train_from_config
+
+        result = train_from_config(config)
+        recurrent = float(result["recurrent"])
+        print(f"[phase3] recurrent_final={recurrent:.3f}")
+        return 0
+
     # Later phases will slot in here. For now the harness is Phase-0-only.
     print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
     return 2

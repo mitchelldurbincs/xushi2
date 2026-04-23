@@ -61,3 +61,31 @@ def test_action_sampling_tanh_squash_bounds():
     assert action.shape == (1000, 2)
     assert (action.abs() <= 1.0).all(), "tanh squash must bound actions in [-1, 1]"
     assert torch.isfinite(logp).all(), "logprob must be finite even with saturated actions"
+
+
+def test_hybrid_action_sampling_layout():
+    model = build_model(obs_dim=31, action_dim=6, continuous_action_dim=3,
+                        binary_action_dim=3, use_recurrence=True,
+                        embed_dim=32, gru_hidden=16, head_hidden=16,
+                        action_log_std_init=-1.0)
+    obs = torch.zeros(32, 31)
+    h = model.init_hidden(32)
+    action, logp, _ = model.sample_action(obs, h)
+    assert action.shape == (32, 6)
+    assert torch.isfinite(logp).all()
+    assert (action[:, :3].abs() <= 1.0).all()
+    assert torch.all((action[:, 3:] == 0.0) | (action[:, 3:] == 1.0))
+
+
+def test_hybrid_greedy_action_uses_binary_threshold():
+    model = build_model(obs_dim=31, action_dim=6, continuous_action_dim=3,
+                        binary_action_dim=3, use_recurrence=True,
+                        embed_dim=16, gru_hidden=8, head_hidden=8,
+                        action_log_std_init=-1.0)
+    obs = torch.zeros(2, 31)
+    h = model.init_hidden(2)
+    with torch.no_grad():
+        model.actor_binary_head.bias.copy_(torch.tensor([-1.0, 0.0, 1.0]))
+        model.actor_binary_head.weight.zero_()
+    action, _ = model.greedy_action(obs, h)
+    torch.testing.assert_close(action[:, 3:], torch.tensor([[0.0, 1.0, 1.0], [0.0, 1.0, 1.0]]))

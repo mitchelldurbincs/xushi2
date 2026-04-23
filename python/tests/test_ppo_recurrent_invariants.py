@@ -107,6 +107,7 @@ def _make_config(
         rollout_len=rollout_len,
         obs_dim=_OBS_DIM,
         action_dim=_ACTION_DIM,
+        continuous_action_dim=_ACTION_DIM,
         embed_dim=8,
         gru_hidden=gru_hidden,
         head_hidden=8,

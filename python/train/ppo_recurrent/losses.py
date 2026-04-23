@@ -10,6 +10,7 @@ import math
 
 import torch
 import torch.nn.functional as F
+from torch.distributions import Bernoulli
 from torch.distributions import Normal
 
 _ATANH_EPS = 1e-6
@@ -38,6 +39,38 @@ def _tanh_squashed_logprob(
     correction = 2.0 * (_LOG2 - u - F.softplus(-2.0 * u))
     logprob = dist.log_prob(u).sum(-1) - correction.sum(-1)
     entropy = dist.entropy().sum(-1)
+    return logprob, entropy
+
+
+def action_logprob_and_entropy(
+    continuous_mean: torch.Tensor,
+    continuous_log_std: torch.Tensor,
+    binary_logits: torch.Tensor,
+    action: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Log-prob / entropy for a mixed continuous+binary action tensor."""
+    cont_dim = int(continuous_mean.shape[-1])
+    binary_dim = int(binary_logits.shape[-1])
+
+    logprob = action.new_zeros(action.shape[0])
+    entropy = action.new_zeros(action.shape[0])
+
+    if cont_dim > 0:
+        cont_action = action[:, :cont_dim]
+        cont_logprob, cont_entropy = _tanh_squashed_logprob(
+            continuous_mean,
+            continuous_log_std,
+            cont_action,
+        )
+        logprob = logprob + cont_logprob
+        entropy = entropy + cont_entropy
+
+    if binary_dim > 0:
+        binary_action = action[:, cont_dim : cont_dim + binary_dim]
+        binary_dist = Bernoulli(logits=binary_logits)
+        logprob = logprob + binary_dist.log_prob(binary_action).sum(-1)
+        entropy = entropy + binary_dist.entropy().sum(-1)
+
     return logprob, entropy
 
 

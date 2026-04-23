@@ -13,6 +13,7 @@ class PPOConfig:
     rollout_len: int
     obs_dim: int
     action_dim: int
+    continuous_action_dim: int
     embed_dim: int
     gru_hidden: int
     head_hidden: int
@@ -32,3 +33,6 @@ class PPOConfig:
     lr_final_ratio: float = 1.0
     warmup_updates: int = 0
     value_normalization: bool = True
+    binary_action_dim: int = 0
+    vector_env: str = "sync"  # "sync" or "async"
+    torch_num_threads: int = 0  # 0 = leave default

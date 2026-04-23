@@ -34,8 +34,8 @@ def evaluate_policy(
         while not done:
             obs_t = torch.as_tensor(obs, dtype=torch.float32).view(1, -1)
             with torch.no_grad():
-                mean, _log_std, _value, h = model.forward(obs_t, h)
-            action = torch.tanh(mean).squeeze(0).cpu().numpy()
+                action_t, h = model.greedy_action(obs_t, h)
+            action = action_t.squeeze(0).cpu().numpy()
             obs, r, term, trunc, _info = env.step(action)
             ep_reward += float(r)
             done = bool(term or trunc)

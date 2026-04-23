@@ -1,16 +1,30 @@
-"""Top-level training orchestration for Phase-2 memory-toy runs.
-
-Wraps two ``PPOTrainer`` invocations (recurrent + feedforward variants),
-periodic evaluation, and best-eval checkpointing into a single
-``train_from_config`` entry point.
-"""
+"""Top-level training orchestration for recurrent PPO phases."""
 
 from __future__ import annotations
 
 import copy
+from functools import partial
 from pathlib import Path
+from typing import Callable
 
+import gymnasium as gym
 import torch
+
+
+def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
+    from envs.memory_toy import MemoryToyEnv
+
+    return MemoryToyEnv(
+        episode_length=episode_length, cue_visible_ticks=cue_visible_ticks
+    )
+
+
+def _make_phase3_env(sim_cfg: dict, opponent_bot: str, learner_team: str):
+    from envs.phase3_ranger import Phase3RangerEnv
+
+    return Phase3RangerEnv(
+        sim_cfg, opponent_bot=opponent_bot, learner_team=learner_team
+    )
 
 from train.models import ActorCritic
 from train.ppo_recurrent.config import PPOConfig
@@ -19,14 +33,37 @@ from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.trainer import PPOTrainer
 
 
+def _phase_task_spec(config: dict) -> dict:
+    phase = int(config.get("phase", 2))
+    if phase == 2:
+        return {
+            "label": "phase2",
+            "obs_dim": 3,
+            "action_dim": 2,
+            "continuous_action_dim": 2,
+            "binary_action_dim": 0,
+        }
+    if phase == 3:
+        return {
+            "label": "phase3",
+            "obs_dim": 31,
+            "action_dim": 6,
+            "continuous_action_dim": 3,
+            "binary_action_dim": 3,
+        }
+    raise ValueError(f"unsupported recurrent PPO phase: {phase}")
+
+
 def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
+    task_spec = _phase_task_spec(config)
     return PPOConfig(
         num_envs=int(ppo_cfg["num_envs"]),
         rollout_len=int(ppo_cfg["rollout_len"]),
-        obs_dim=3,
-        action_dim=2,
+        obs_dim=int(task_spec["obs_dim"]),
+        action_dim=int(task_spec["action_dim"]),
+        continuous_action_dim=int(task_spec["continuous_action_dim"]),
         embed_dim=int(model_cfg["embed_dim"]),
         gru_hidden=int(model_cfg["gru_hidden"]),
         head_hidden=int(model_cfg["head_hidden"]),
@@ -46,7 +83,41 @@ def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
         lr_final_ratio=float(ppo_cfg.get("lr_final_ratio", 1.0)),
         warmup_updates=int(ppo_cfg.get("warmup_updates", 0)),
         value_normalization=bool(ppo_cfg.get("value_normalization", True)),
+        binary_action_dim=int(task_spec["binary_action_dim"]),
+        vector_env=str(ppo_cfg.get("vector_env", "sync")),
+        torch_num_threads=int(ppo_cfg.get("torch_num_threads", 0)),
     )
+
+
+def make_env_fn(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    phase = int(config.get("phase", 2))
+    env_cfg = config.get("env", {})
+    if phase == 2:
+        ep_len = int(env_cfg.get("episode_length", 64))
+        cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
+        env_fn = partial(_make_phase2_env, ep_len, cue_ticks)
+        return (
+            env_fn,
+            {"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
+            int(env_cfg.get("seed_base", 0)),
+        )
+
+    if phase == 3:
+        sim_cfg = dict(env_cfg.get("sim", {}))
+        opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
+        learner_team = str(env_cfg.get("learner_team", "A"))
+        env_fn = partial(_make_phase3_env, sim_cfg, opponent_bot, learner_team)
+        return (
+            env_fn,
+            {
+                "sim": sim_cfg,
+                "opponent_bot": opponent_bot,
+                "learner_team": learner_team,
+            },
+            int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        )
+
+    raise ValueError(f"unsupported recurrent PPO phase: {phase}")
 
 
 def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
@@ -63,11 +134,11 @@ def _run_variant(
     use_recurrence: bool,
     output_dir: Path,
 ) -> float:
-    from envs.memory_toy import MemoryToyEnv
-
-    env_cfg = config.get("env", {})
     run_cfg = config.get("run", {})
     ppo_cfg = make_ppo_config(config, use_recurrence=use_recurrence)
+    env_fn, ckpt_env_cfg, seed_base = make_env_fn(config)
+    task_spec = _phase_task_spec(config)
+    phase_label = str(task_spec["label"])
 
     total_updates = int(run_cfg.get("total_updates"))
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
@@ -78,26 +149,22 @@ def _run_variant(
     early_stop_min_delta = float(run_cfg.get("early_stop_min_delta", 0.0))
     max_regression_from_best = float(run_cfg.get("max_regression_from_best", -1.0))
 
-    seed_base = int(env_cfg.get("seed_base", 0))
     # Offset the feedforward seed so the two variants don't share their
     # RNG trajectory (different weight init, different action noise).
     variant_seed = seed_base + (0 if use_recurrence else 1_000_000)
 
-    ep_len = int(env_cfg.get("episode_length", 64))
-    cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
-
-    def env_fn() -> MemoryToyEnv:
-        return MemoryToyEnv(episode_length=ep_len, cue_visible_ticks=cue_ticks)
-
     trainer = PPOTrainer(env_fn=env_fn, config=ppo_cfg, seed=variant_seed)
 
     ckpt_cfg = {
-        "env": {"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
+        "phase": int(config.get("phase", 2)),
+        "env": ckpt_env_cfg,
         "model": {
             **config.get("model", {}),
             "use_recurrence": use_recurrence,
-            "obs_dim": 3,
-            "action_dim": 2,
+            "obs_dim": int(task_spec["obs_dim"]),
+            "action_dim": int(task_spec["action_dim"]),
+            "continuous_action_dim": int(task_spec["continuous_action_dim"]),
+            "binary_action_dim": int(task_spec["binary_action_dim"]),
         },
         "ppo": dict(config.get("ppo", {})),
     }
@@ -131,7 +198,7 @@ def _run_variant(
 
         if log_every > 0 and update_idx % log_every == 0:
             print(
-                f"[phase2/{variant_name}] update={update_idx:4d}/{total_updates} "
+                f"[{phase_label}/{variant_name}] update={update_idx:4d}/{total_updates} "
                 f"policy_loss={metrics['policy_loss']:+.3f} "
                 f"value_loss={metrics['value_loss']:.3f} "
                 f"entropy={metrics['entropy']:+.3f} "
@@ -153,7 +220,7 @@ def _run_variant(
                 seed=variant_seed + 100_000 + update_idx,
             )
             print(
-                f"[phase2/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
+                f"[{phase_label}/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
                 f"lr={current_lr:.3e}",
                 flush=True,
             )
@@ -203,14 +270,14 @@ def _run_variant(
     # total_updates), fall back to the last state.
     output_dir.mkdir(parents=True, exist_ok=True)
     if stop_reason is not None:
-        print(f"[phase2/{variant_name}] early-stop: {stop_reason}", flush=True)
+        print(f"[{phase_label}/{variant_name}] early-stop: {stop_reason}", flush=True)
     if best_state is not None:
         torch.save(
             {"model_state_dict": best_state, "config": ckpt_cfg},
             output_dir / "ckpt_final.pt",
         )
         print(
-            f"[phase2/{variant_name}] best checkpoint: "
+            f"[{phase_label}/{variant_name}] best checkpoint: "
             f"eval@{best_update}={best_eval:+.3f}",
             flush=True,
         )
@@ -220,20 +287,17 @@ def _run_variant(
 
 
 def train_from_config(config: dict) -> dict[str, float]:
-    """Train recurrent and feedforward variants; return final eval rewards.
-
-    Produces two checkpoint trees:
-        {output_dir}/recurrent/ckpt_final.pt
-        {output_dir}/feedforward/ckpt_final.pt
-
-    The recurrent checkpoint is the one fed to the ablation gate.
-    """
+    """Train one or more variants for the selected recurrent PPO phase."""
+    phase = int(config.get("phase", 2))
     run_cfg = config.get("run", {})
-    out_root = Path(str(run_cfg.get("output_dir", "runs/phase2_memory_toy")))
+    default_out = "runs/phase2_memory_toy" if phase == 2 else "runs/phase3_ranger"
+    out_root = Path(str(run_cfg.get("output_dir", default_out)))
     rec_eval = _run_variant(
         config, use_recurrence=True, output_dir=out_root / "recurrent"
     )
-    ff_eval = _run_variant(
-        config, use_recurrence=False, output_dir=out_root / "feedforward"
-    )
-    return {"recurrent": rec_eval, "feedforward": ff_eval}
+    if phase == 2:
+        ff_eval = _run_variant(
+            config, use_recurrence=False, output_dir=out_root / "feedforward"
+        )
+        return {"recurrent": rec_eval, "feedforward": ff_eval}
+    return {"recurrent": rec_eval}
