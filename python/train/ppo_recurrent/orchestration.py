@@ -74,6 +74,9 @@ def _run_variant(
     eval_episodes = int(run_cfg.get("eval_episodes", 50))
     checkpoint_every = int(run_cfg.get("checkpoint_every", max(1, total_updates)))
     log_every = int(run_cfg.get("log_every", 1))
+    early_stop_patience_evals = int(run_cfg.get("early_stop_patience_evals", 0))
+    early_stop_min_delta = float(run_cfg.get("early_stop_min_delta", 0.0))
+    max_regression_from_best = float(run_cfg.get("max_regression_from_best", -1.0))
 
     seed_base = int(env_cfg.get("seed_base", 0))
     # Offset the feedforward seed so the two variants don't share their
@@ -109,8 +112,10 @@ def _run_variant(
     best_eval = float("-inf")
     best_state: dict | None = None
     best_update: int = 0
+    no_improve_eval_count: int = 0
 
     last_eval = float("nan")
+    stop_reason: str | None = None
     for update_idx in range(1, total_updates + 1):
         current_lr = lr_for_update(
             update_idx,
@@ -152,10 +157,39 @@ def _run_variant(
                 f"lr={current_lr:.3e}",
                 flush=True,
             )
-            if last_eval > best_eval:
+            if last_eval > (best_eval + early_stop_min_delta):
                 best_eval = last_eval
                 best_update = update_idx
                 best_state = copy.deepcopy(trainer.model.state_dict())
+                no_improve_eval_count = 0
+            else:
+                no_improve_eval_count += 1
+
+            if (
+                max_regression_from_best >= 0.0
+                and best_eval > float("-inf")
+                and (best_eval - last_eval) > max_regression_from_best
+            ):
+                stop_reason = (
+                    "eval regression exceeded max_regression_from_best: "
+                    f"best={best_eval:+.3f} current={last_eval:+.3f} "
+                    f"drop={best_eval - last_eval:+.3f} "
+                    f"threshold={max_regression_from_best:+.3f} "
+                    f"at update={update_idx}"
+                )
+                break
+            if (
+                early_stop_patience_evals > 0
+                and no_improve_eval_count >= early_stop_patience_evals
+            ):
+                stop_reason = (
+                    "eval improvement stagnated past patience: "
+                    f"no_improve_evals={no_improve_eval_count} "
+                    f"patience={early_stop_patience_evals} "
+                    f"min_delta={early_stop_min_delta:+.3f} "
+                    f"at update={update_idx}"
+                )
+                break
 
         if update_idx % checkpoint_every == 0 or update_idx == total_updates:
             _save_checkpoint(
@@ -168,6 +202,8 @@ def _run_variant(
     # If no eval ever ran (total_updates < eval_every and not aligned to
     # total_updates), fall back to the last state.
     output_dir.mkdir(parents=True, exist_ok=True)
+    if stop_reason is not None:
+        print(f"[phase2/{variant_name}] early-stop: {stop_reason}", flush=True)
     if best_state is not None:
         torch.save(
             {"model_state_dict": best_state, "config": ckpt_cfg},

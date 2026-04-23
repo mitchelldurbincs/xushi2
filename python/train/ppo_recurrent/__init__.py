@@ -27,7 +27,7 @@ from __future__ import annotations
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy
 from train.ppo_recurrent.lr_schedule import lr_for_update
-from train.ppo_recurrent.orchestration import train_from_config
+from train.ppo_recurrent.orchestration import _run_variant, train_from_config
 from train.ppo_recurrent.trainer import PPOTrainer
 
 __all__ = [

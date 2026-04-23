@@ -31,5 +31,17 @@ run:
   eval_every: 10
   eval_episodes: 200
   checkpoint_every: 100
+  early_stop_patience_evals: 20
+  early_stop_min_delta: 0.005
+  max_regression_from_best: 0.20
   log_every: 50
   output_dir: runs/phase2_memory_toy
+
+# Optional tuning override:
+# - linear LR decay from 3e-4 to 4.5e-5 (~15% of initial LR) by final update.
+# - apply by copying these values into `ppo` (or creating a derived config file).
+tuning_variant_linear_decay:
+  ppo:
+    lr_schedule: linear
+    lr_final_ratio: 0.15
+    warmup_updates: 0
