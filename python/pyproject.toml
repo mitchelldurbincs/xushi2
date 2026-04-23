@@ -35,7 +35,7 @@ xushi2-eval  = "eval.eval:main"
 # The C++ extension `xushi2_cpp` is built by CMake and placed directly inside
 # the xushi2/ package by src/python_bindings/CMakeLists.txt; setuptools just
 # ships it as package data.
-packages = ["xushi2", "train", "eval", "envs"]
+packages = ["xushi2", "train", "train.ppo_recurrent", "eval", "envs"]
 
 [tool.setuptools.package-data]
 xushi2 = ["*.so", "*.pyd", "*.dylib"]

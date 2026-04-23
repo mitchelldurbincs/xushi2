@@ -1,110 +1,24 @@
-"""CleanRL-style recurrent PPO trainer for xushi2 Phase-2.
+"""Recurrent PPO trainer (CleanRL-style) for xushi2 Phase-2.
 
-Implements the invariant contract defined by
-``python/tests/test_ppo_recurrent_invariants.py``:
-
-* Seed-deterministic rollouts (Test 1).
-* Hidden-state zeroing on episode reset (Test 2).
-* Identical per-segment ``h_init`` across all PPO epochs within an update
-  (Test 3). Implemented by seeding the minibatch-shuffle generator once
-  per update and reusing it across epochs.
-* Feedforward-mode path that routes no gradient through ``h_init``
-  (Test 4). The model handles this structurally; the trainer just feeds
-  ``h_init`` in uniformly.
-* ``valid_mask``-aware loss normalization — policy, value, and entropy
-  terms all multiply by ``valid_mask`` and divide by ``valid_mask.sum()``
-  (Test 5).
-
-Design notes:
-* CPU-only for Phase-2; the Phase-2 toy is tiny and the determinism tests
-  assume CPU.
-* Action log-probs are recomputed at training time from the stored
-  squashed action by inverting tanh (atanh) with an eps-clamp.
+See the package ``__init__`` docstring for the invariant contract this
+class implements.
 """
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from gymnasium.vector import SyncVectorEnv
-from torch.distributions import Normal
 
 from train.models import ActorCritic, build_model
 from train.rollout_buffer import RolloutBuffer
 
-
-# Numerical guard for atanh(action) reconstruction. Pulled out as a module
-# constant so tests/callers can reason about it.
-_ATANH_EPS = 1e-6
-_LOG2 = math.log(2.0)
-
-
-@dataclass
-class PPOConfig:
-    """Hyperparameters for :class:`PPOTrainer`."""
-
-    num_envs: int
-    rollout_len: int
-    obs_dim: int
-    action_dim: int
-    embed_dim: int
-    gru_hidden: int
-    head_hidden: int
-    action_log_std_init: float
-    use_recurrence: bool
-    gamma: float
-    gae_lambda: float
-    clip_ratio: float
-    value_clip_ratio: float
-    value_coef: float
-    entropy_coef: float
-    max_grad_norm: float
-    learning_rate: float
-    num_epochs: int
-    minibatch_size: int
-
-
-def _tanh_squashed_logprob(
-    mean: torch.Tensor,
-    log_std: torch.Tensor,
-    action: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Log-prob of a tanh-squashed Gaussian evaluated at ``action``.
-
-    Inverts ``action = tanh(u)`` via ``u = atanh(action)`` after clamping
-    ``action`` into ``[-1 + eps, 1 - eps]`` to keep the inverse finite.
-    Returns ``(logprob, pre_tanh_entropy)`` where ``pre_tanh_entropy`` is
-    the summed entropy of the underlying Normal (we use this as a
-    standard proxy for the full squashed-dist entropy).
-    """
-    action = action.clamp(-1.0 + _ATANH_EPS, 1.0 - _ATANH_EPS)
-    # atanh(x) = 0.5 * (log1p(x) - log1p(-x))
-    u = 0.5 * (torch.log1p(action) - torch.log1p(-action))
-    std = log_std.exp()
-    dist = Normal(mean, std)
-    # Same tanh-correction formulation as models.sample_action.
-    correction = 2.0 * (_LOG2 - u - F.softplus(-2.0 * u))
-    logprob = dist.log_prob(u).sum(-1) - correction.sum(-1)
-    entropy = dist.entropy().sum(-1)
-    return logprob, entropy
-
-
-def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Sum ``values * mask`` and divide by ``mask.sum()`` (>=1 guard).
-
-    Produces zero when the mask is entirely zero, which is the right
-    behavior for empty padded batches.
-    """
-    denom = mask.sum().clamp(min=1.0)
-    return (values * mask).sum() / denom
+from train.ppo_recurrent.config import PPOConfig
+from train.ppo_recurrent.losses import _masked_mean, _tanh_squashed_logprob
 
 
 class PPOTrainer:
@@ -158,6 +72,7 @@ class PPOTrainer:
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=config.learning_rate
         )
+        self.set_learning_rate(config.learning_rate)
 
         # --- Per-trainer action-sampling RNG state. We use the GLOBAL
         # torch RNG for model sampling (since ``Normal.rsample`` has no
@@ -168,6 +83,20 @@ class PPOTrainer:
         # seeding is done — so two trainers with the same seed start at
         # byte-identical RNG state.
         self._sampling_rng_state: torch.Tensor = torch.get_rng_state()
+
+        # Grouped param lists for per-head grad-norm instrumentation. The
+        # shared trunk (embed + GRU/ff) gets gradient from both actor and
+        # critic losses; the head groups are disjoint.
+        self._actor_params: list[torch.nn.Parameter] = []
+        self._critic_params: list[torch.nn.Parameter] = []
+        self._trunk_params: list[torch.nn.Parameter] = []
+        for name, p in self.model.named_parameters():
+            if name.startswith("actor_head") or name == "log_std":
+                self._actor_params.append(p)
+            elif name.startswith("critic_head"):
+                self._critic_params.append(p)
+            else:
+                self._trunk_params.append(p)
 
         # --- Live hidden state carried across ``collect_rollout`` calls.
         self.h: torch.Tensor = self.model.init_hidden(config.num_envs)
@@ -185,6 +114,24 @@ class PPOTrainer:
         # NOTE: ``self._training_h_init_log`` is NOT created by default.
         # Tests opt in by setting it to ``[]`` before calling ``update``.
         # ``update`` guards with ``hasattr`` before appending.
+
+    def set_learning_rate(self, lr: float) -> None:
+        """Apply ``lr`` to every optimizer param group."""
+        lr = float(lr)
+        for group in self.optimizer.param_groups:
+            group["lr"] = lr
+
+    @property
+    def current_learning_rate(self) -> float:
+        return float(self.optimizer.param_groups[0]["lr"])
+
+    @staticmethod
+    def _group_grad_norm(params: list[torch.nn.Parameter]) -> float:
+        total_sq = 0.0
+        for p in params:
+            if p.grad is not None:
+                total_sq += float(p.grad.detach().pow(2).sum().item())
+        return float(total_sq ** 0.5)
 
     # ------------------------------------------------------------------
     # Rollout
@@ -318,6 +265,24 @@ class PPOTrainer:
         last_done = getattr(rollout, "last_done", torch.zeros(cfg.num_envs))
         rollout.compute_gae(last_values=last_value, last_dones=last_done)
 
+        # Per-rollout value-target normalization stats. When enabled, the
+        # critic loss is computed in normalized-return space so its
+        # gradient magnitude is comparable to the policy loss regardless
+        # of the raw return scale (on the memory-toy task, returns live in
+        # [-2, 0], which makes unnormalized value MSE ~100x smaller than
+        # the advantage-normalized policy term and gradient-starves the
+        # critic). Stats come from ``rollout.returns`` — unaffected by
+        # minibatch-level pad injection, so invariant Test 5 still holds.
+        if cfg.value_normalization:
+            with torch.no_grad():
+                ret_mean = float(rollout.returns.mean().item())
+                ret_std = float(
+                    rollout.returns.std(unbiased=False).clamp(min=1e-6).item()
+                )
+        else:
+            ret_mean = 0.0
+            ret_std = 1.0
+
         # Deterministic per-update minibatch generator. Re-seeded at the
         # start of each epoch so the same permutation is drawn every
         # time. Counter is incremented at the END of ``update`` so an
@@ -333,6 +298,9 @@ class PPOTrainer:
             "approx_kl": 0.0,
             "clip_fraction": 0.0,
             "total_loss": 0.0,
+            "actor_grad_norm": 0.0,
+            "critic_grad_norm": 0.0,
+            "trunk_grad_norm": 0.0,
         }
         total_valid = 0.0
         num_minibatches = 0
@@ -343,7 +311,9 @@ class PPOTrainer:
             for batch in rollout.iter_episode_minibatches(
                 minibatch_size=cfg.minibatch_size, generator=gen
             ):
-                mb_stats, n_valid = self._ppo_minibatch_step(batch)
+                mb_stats, n_valid = self._ppo_minibatch_step(
+                    batch, return_mean=ret_mean, return_std=ret_std
+                )
                 if n_valid > 0:
                     for key, val in mb_stats.items():
                         metrics_sum[key] += val * n_valid
@@ -354,12 +324,33 @@ class PPOTrainer:
         metrics = {k: v / denom for k, v in metrics_sum.items()}
         metrics["num_minibatches"] = float(num_minibatches)
         metrics["total_valid"] = float(total_valid)
+        metrics["lr"] = self.current_learning_rate
+        # Per-update diagnostics. ``terminal_adv_std`` isolates the
+        # advantage std at episode-terminal ticks — the only ticks where
+        # this task emits reward, so the bulk of the actor's useful
+        # gradient lives there. ``mean_log_std`` tracks whether the
+        # learned policy noise is actually collapsing.
+        with torch.no_grad():
+            done_mask = rollout.done > 0.5
+            if bool(done_mask.any()):
+                metrics["terminal_adv_std"] = float(
+                    rollout.advantages[done_mask].std().item()
+                )
+            else:
+                metrics["terminal_adv_std"] = 0.0
+            metrics["mean_log_std"] = float(
+                self.model.log_std.detach().mean().item()
+            )
         # Commit the counter only on successful update.
         self._update_counter += 1
         return metrics
 
     def _ppo_minibatch_step(
-        self, batch: dict[str, torch.Tensor]
+        self,
+        batch: dict[str, torch.Tensor],
+        *,
+        return_mean: float = 0.0,
+        return_std: float = 1.0,
     ) -> tuple[dict[str, float], float]:
         """One PPO gradient step on a single padded minibatch.
 
@@ -429,12 +420,20 @@ class PPOTrainer:
         policy_loss_per = -torch.min(pg1, pg2)
         policy_loss = _masked_mean(policy_loss_per, valid_mask)
 
-        # --- Value loss (clipped).
-        value_clipped = old_value + torch.clamp(
-            value - old_value, -cfg.value_clip_ratio, cfg.value_clip_ratio
+        # --- Value loss (clipped), in normalized-return space. When
+        # ``return_mean=0, return_std=1`` this reduces to the standard
+        # unnormalized clipped-MSE formulation. When stats come from the
+        # actual rollout returns, ``value_clip_ratio`` is interpreted in
+        # normalized space — i.e., the effective raw-space clip is
+        # ``return_std * value_clip_ratio``.
+        value_n = (value - return_mean) / return_std
+        old_value_n = (old_value - return_mean) / return_std
+        return_n = (return_ - return_mean) / return_std
+        value_clipped_n = old_value_n + torch.clamp(
+            value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio
         )
-        vl_unclipped = (value - return_) ** 2
-        vl_clipped = (value_clipped - return_) ** 2
+        vl_unclipped = (value_n - return_n) ** 2
+        vl_clipped = (value_clipped_n - return_n) ** 2
         value_loss_per = 0.5 * torch.max(vl_unclipped, vl_clipped)
         value_loss = _masked_mean(value_loss_per, valid_mask)
 
@@ -455,6 +454,9 @@ class PPOTrainer:
         # --- Backprop + grad clip + step.
         self.optimizer.zero_grad()
         total_loss.backward()
+        actor_grad_norm = self._group_grad_norm(self._actor_params)
+        critic_grad_norm = self._group_grad_norm(self._critic_params)
+        trunk_grad_norm = self._group_grad_norm(self._trunk_params)
         nn.utils.clip_grad_norm_(self.model.parameters(), cfg.max_grad_norm)
         self.optimizer.step()
 
@@ -474,209 +476,9 @@ class PPOTrainer:
                 "approx_kl": float(approx_kl.item()),
                 "clip_fraction": float(clip_fraction.item()),
                 "total_loss": float(total_loss.item()),
+                "actor_grad_norm": actor_grad_norm,
+                "critic_grad_norm": critic_grad_norm,
+                "trunk_grad_norm": trunk_grad_norm,
             },
             n_valid,
         )
-
-
-# ----------------------------------------------------------------------
-# Training orchestration (Phase 2)
-# ----------------------------------------------------------------------
-def evaluate_policy(
-    model: ActorCritic,
-    env_fn: Callable[[], gym.Env],
-    num_episodes: int,
-    seed: int,
-) -> float:
-    """Mean episodic reward over ``num_episodes`` greedy rollouts.
-
-    Greedy = ``tanh(action_mean)`` without sampling. We carry hidden state
-    across ticks within an episode and re-zero at each episode boundary.
-    """
-    was_training = model.training
-    model.eval()
-    rewards: list[float] = []
-    for i in range(int(num_episodes)):
-        env = env_fn()
-        obs, _ = env.reset(seed=int(seed) + i)
-        h = model.init_hidden(batch_size=1)
-        ep_reward = 0.0
-        done = False
-        while not done:
-            obs_t = torch.as_tensor(obs, dtype=torch.float32).view(1, -1)
-            with torch.no_grad():
-                mean, _log_std, _value, h = model.forward(obs_t, h)
-            action = torch.tanh(mean).squeeze(0).cpu().numpy()
-            obs, r, term, trunc, _info = env.step(action)
-            ep_reward += float(r)
-            done = bool(term or trunc)
-        rewards.append(ep_reward)
-        env.close()
-    if was_training:
-        model.train()
-    return float(np.mean(rewards)) if rewards else 0.0
-
-
-def _make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
-    model_cfg = config.get("model", {})
-    ppo_cfg = config.get("ppo", {})
-    return PPOConfig(
-        num_envs=int(ppo_cfg["num_envs"]),
-        rollout_len=int(ppo_cfg["rollout_len"]),
-        obs_dim=3,
-        action_dim=2,
-        embed_dim=int(model_cfg["embed_dim"]),
-        gru_hidden=int(model_cfg["gru_hidden"]),
-        head_hidden=int(model_cfg["head_hidden"]),
-        action_log_std_init=float(model_cfg["action_log_std_init"]),
-        use_recurrence=bool(use_recurrence),
-        gamma=float(ppo_cfg["gamma"]),
-        gae_lambda=float(ppo_cfg["gae_lambda"]),
-        clip_ratio=float(ppo_cfg["clip_ratio"]),
-        value_clip_ratio=float(ppo_cfg["value_clip_ratio"]),
-        value_coef=float(ppo_cfg["value_coef"]),
-        entropy_coef=float(ppo_cfg["entropy_coef"]),
-        max_grad_norm=float(ppo_cfg["max_grad_norm"]),
-        learning_rate=float(ppo_cfg["learning_rate"]),
-        num_epochs=int(ppo_cfg["num_epochs"]),
-        minibatch_size=int(ppo_cfg["minibatch_size"]),
-    )
-
-
-def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {"model_state_dict": model.state_dict(), "config": ckpt_config},
-        path,
-    )
-
-
-def _run_variant(
-    config: dict,
-    *,
-    use_recurrence: bool,
-    output_dir: Path,
-) -> float:
-    from envs.memory_toy import MemoryToyEnv
-
-    env_cfg = config.get("env", {})
-    run_cfg = config.get("run", {})
-    ppo_cfg = _make_ppo_config(config, use_recurrence=use_recurrence)
-
-    total_updates = int(run_cfg.get("total_updates"))
-    eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
-    eval_episodes = int(run_cfg.get("eval_episodes", 50))
-    checkpoint_every = int(run_cfg.get("checkpoint_every", max(1, total_updates)))
-    log_every = int(run_cfg.get("log_every", 1))
-
-    seed_base = int(env_cfg.get("seed_base", 0))
-    # Offset the feedforward seed so the two variants don't share their
-    # RNG trajectory (different weight init, different action noise).
-    variant_seed = seed_base + (0 if use_recurrence else 1_000_000)
-
-    ep_len = int(env_cfg.get("episode_length", 64))
-    cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
-
-    def env_fn() -> MemoryToyEnv:
-        return MemoryToyEnv(episode_length=ep_len, cue_visible_ticks=cue_ticks)
-
-    trainer = PPOTrainer(env_fn=env_fn, config=ppo_cfg, seed=variant_seed)
-
-    ckpt_cfg = {
-        "env": {"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
-        "model": {
-            **config.get("model", {}),
-            "use_recurrence": use_recurrence,
-            "obs_dim": 3,
-            "action_dim": 2,
-        },
-        "ppo": dict(config.get("ppo", {})),
-    }
-
-    variant_name = "recurrent" if use_recurrence else "feedforward"
-
-    # Best-checkpoint tracking. PPO is known to oscillate after a policy
-    # breakthrough on this task (regresses from -0.28 back to -0.40+ if
-    # training continues past the breakthrough), so the last-state model
-    # is often worse than an intermediate one. ``ckpt_final.pt`` is
-    # therefore defined as the best-eval checkpoint seen during training.
-    import copy
-    best_eval = float("-inf")
-    best_state: dict | None = None
-    best_update: int = 0
-
-    last_eval = float("nan")
-    for update_idx in range(1, total_updates + 1):
-        rollout = trainer.collect_rollout()
-        metrics = trainer.update(rollout)
-
-        if log_every > 0 and update_idx % log_every == 0:
-            print(
-                f"[phase2/{variant_name}] update={update_idx:4d}/{total_updates} "
-                f"policy_loss={metrics['policy_loss']:+.3f} "
-                f"value_loss={metrics['value_loss']:.3f} "
-                f"entropy={metrics['entropy']:+.3f} "
-                f"approx_kl={metrics['approx_kl']:+.4f}",
-                flush=True,
-            )
-
-        if update_idx % eval_every == 0 or update_idx == total_updates:
-            last_eval = evaluate_policy(
-                trainer.model,
-                env_fn,
-                num_episodes=eval_episodes,
-                seed=variant_seed + 100_000 + update_idx,
-            )
-            print(
-                f"[phase2/{variant_name}] eval@{update_idx}={last_eval:+.3f}",
-                flush=True,
-            )
-            if last_eval > best_eval:
-                best_eval = last_eval
-                best_update = update_idx
-                best_state = copy.deepcopy(trainer.model.state_dict())
-
-        if update_idx % checkpoint_every == 0 or update_idx == total_updates:
-            _save_checkpoint(
-                trainer.model,
-                output_dir / f"ckpt_{update_idx:04d}.pt",
-                ckpt_cfg,
-            )
-
-    # ckpt_final.pt holds the best-eval snapshot (per the note above).
-    # If no eval ever ran (total_updates < eval_every and not aligned to
-    # total_updates), fall back to the last state.
-    output_dir.mkdir(parents=True, exist_ok=True)
-    if best_state is not None:
-        torch.save(
-            {"model_state_dict": best_state, "config": ckpt_cfg},
-            output_dir / "ckpt_final.pt",
-        )
-        print(
-            f"[phase2/{variant_name}] best checkpoint: "
-            f"eval@{best_update}={best_eval:+.3f}",
-            flush=True,
-        )
-        return best_eval
-    _save_checkpoint(trainer.model, output_dir / "ckpt_final.pt", ckpt_cfg)
-    return last_eval
-
-
-def train_from_config(config: dict) -> dict[str, float]:
-    """Train recurrent and feedforward variants; return final eval rewards.
-
-    Produces two checkpoint trees:
-        {output_dir}/recurrent/ckpt_final.pt
-        {output_dir}/feedforward/ckpt_final.pt
-
-    The recurrent checkpoint is the one fed to the ablation gate.
-    """
-    run_cfg = config.get("run", {})
-    out_root = Path(str(run_cfg.get("output_dir", "runs/phase2_memory_toy")))
-    rec_eval = _run_variant(
-        config, use_recurrence=True, output_dir=out_root / "recurrent"
-    )
-    ff_eval = _run_variant(
-        config, use_recurrence=False, output_dir=out_root / "feedforward"
-    )
-    return {"recurrent": rec_eval, "feedforward": ff_eval}

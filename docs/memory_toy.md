@@ -119,8 +119,12 @@ ppo:
   num_envs: 16
   rollout_len: 256          # ticks per env per PPO update
   num_epochs: 4
-  minibatch_size: 64        # in units of whole episodes
+  minibatch_size: 16        # in units of whole episodes
   learning_rate: 3.0e-4
+  value_normalization: true
+  lr_schedule: constant
+  lr_final_ratio: 1.0
+  warmup_updates: 0
   clip_ratio: 0.2
   value_clip_ratio: 0.2
   gamma: 0.99
