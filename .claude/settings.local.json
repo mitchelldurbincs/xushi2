@@ -4,7 +4,9 @@
       "Bash(python -m pytest tests/ -q)",
       "Bash(pip install *)",
       "Bash(python *)",
-      "Bash(pytest -x)"
+      "Bash(pytest -x)",
+      "Read(//tmp/**)",
+      "Bash(ps -p 1041 -o pid,etime,cmd)"
     ]
   }
 }
