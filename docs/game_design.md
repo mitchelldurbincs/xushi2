@@ -188,6 +188,8 @@ The fog model is the strongest single determinant of this project's research ide
 
 Because vision is not team-shared and no hero can broadcast enemy information to allies, *positioning itself becomes the only communication channel*. If Ranger advances into a flank, Mender cannot know what Ranger sees — she can only infer from Ranger's movement pattern and her own observations. This turns coordination into a genuine partial-information problem and is the purest version of the research question this project is designed to study.
 
+**Training note.** Per-agent fog is the *end state* of the fog curriculum, not the starting point. `rl_design.md` §6 reaches it in two steps: Phase 7a turns on LoS with vision **unioned across teammates** (the Dota / OpenAI Five model — partial observation of the *map*, but not of what your teammates see), and Phase 7b drops the union to land on this section's model. The sim's LoS engine is the same in both modes; only the per-agent observation-builder step differs. Phases 1–6 run with full vision so training signal is never gated on a learned fog policy.
+
 ### Shields and vision
 
 Shields block **hitscan only**. Shields do **not** block line-of-sight (they are transparent barriers). This is easier to reason about and reduces visibility edge cases.
@@ -495,6 +497,8 @@ Explicitly out of scope in Phase 1:
 - Health packs
 
 None of these is required to prove the core concept. Deferred items may enter later phases.
+
+**On pings and learned communication specifically:** the two together are held out on purpose, not from lack of interest. The research claim the curriculum is built to make — "teamfights survive per-agent fog" (Phase 7b) — is meaningfully weaker if agents have any explicit cross-agent channel, because the channel collapses per-agent fog back toward the team-shared case. The credit-assignment lever used instead is `team_spirit` (see `rl_design.md` §5), copied from OpenAI Five. If Phase 7b stalls despite a good `team_spirit` schedule and a working centralized critic, the designed escape hatch is a *hero ability* that reveals enemies (e.g., the Phase-10 Mark-Target candidate) rather than a free always-on ping — because an ability has a cooldown cost and can be ablated cleanly.
 
 ## 13. Design risks and mitigations
 

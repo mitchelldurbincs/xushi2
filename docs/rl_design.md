@@ -205,6 +205,22 @@ Note: objective shaping is per **score point** gained, not per tick. Since scori
 - No reward for shield-damage farming
 - Periodic evaluation with shaping disabled — if win rate collapses, shaping is too strong
 
+### Team spirit (credit-assignment lever)
+
+Introduced at **Phase 4** (the first multi-agent phase) and carried forward through the remaining phases. `team_spirit ∈ [0.0, 1.0]` is a scalar hyperparameter that interpolates each agent's reward between purely individual and purely team-average:
+
+```
+r_agent_i = (1 - team_spirit) * r_individual_i + team_spirit * mean_j(r_individual_j)
+```
+
+Where `r_individual_i` is the existing per-agent reward after terminal + shaping + clipping. At `team_spirit = 0` every agent optimizes only its own slice of the shaped reward; at `team_spirit = 1` all teammates see the identical team-average signal.
+
+This is the OpenAI Five credit-assignment lever. It is **not** a substitute for the centralized critic (§3) — the critic reduces variance on the value target, while `team_spirit` shapes what "success" means for each agent's policy gradient. Both are needed.
+
+**Ramp schedule:** start Phase 4 at `team_spirit = 0.3` and ramp linearly to `0.9` over the first ~30% of training, then hold. Early training wants enough individual signal to discover basic kit usage; late training wants enough team signal to discover coordination. Log `team_spirit` in the tensorboard run; treat it as a first-class hyperparameter, not a constant.
+
+**Applies to shaped rewards only.** The ±10 terminal reward is already a team-outcome signal (win/loss is team-defined), so interpolating it against its own mean is a no-op. Implementation applies the mix to the shaped component before the per-episode `[-3.0, +3.0]` clip.
+
 ## 6. Training curriculum
 
 Phases are gates. Do not proceed until the prior phase produces stable, interpretable behavior.
@@ -227,9 +243,12 @@ Phases are gates. Do not proceed until the prior phase produces stable, interpre
 
 **Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
 
-**Phase 6 — Add the egocentric grid.** Concat a small CNN feature with the entity features. 3v3 Vanguard / Ranger / Mender. Fixed map. Full vision.
+**Phase 6 — Add the egocentric grid. *OA5-analog milestone.*** Concat a small CNN feature with the entity features. 3v3 Vanguard / Ranger / Mender. Fixed map. **Full vision.** This is the phase where "teamfights emerge from self-play without explicit communication" becomes a testable claim: the information structure (team-shared/full vision, no pings, no learned comms, recurrent policy per agent, centralized critic, `team_spirit`-scalarized reward — see §5) mirrors OpenAI Five's setup. If teamfights do not emerge here, no amount of fog-of-war polish will rescue them in Phase 7; debugging stops here until they do.
 
-**Phase 7 — Partial observation.** Enable per-agent fog of war on the 3v3 setup. Goal: scouting, rotations, emergent coordination through positioning. *Note: Phase 1 heroes (Vanguard/Ranger/Mender) have no team-level reveal abilities — see game-design §4. Coordination here must emerge from the ally-through-walls vision channel alone, making this the hardest form of the partial-observation problem.*
+**Phase 7 — Partial observation.** Split into two sub-phases so the fog delta is incremental on a working Phase-6 policy, not a cold start:
+
+- **Phase 7a — Team-shared fog of war.** Walls block line-of-sight, but visible-enemy sets are unioned across teammates before building each agent's observation (Dota / OA5 fog model). Goal: show teamfights survive partial observation of the *map* without yet requiring agents to infer what teammates see. This is the strict OA5 parity point.
+- **Phase 7b — Per-agent fog of war.** Drop the team-shared union. Each agent sees only what *it* directly has line-of-sight to; the only cross-agent information channel is allies-through-walls (position/HP/alive-state) plus each agent's own last-seen enemy markers. This is the research-novel claim — teamfights survive genuine per-agent partial observation. *Note: Phase-1 heroes (Vanguard / Ranger / Mender) have no team-level reveal abilities (game-design §4), so coordination here must emerge from positioning alone.*
 
 **Phase 8 — Map randomization.** Turn on per-episode wall randomization. Overfitting mitigation.
 
@@ -239,7 +258,7 @@ Phases are gates. Do not proceed until the prior phase produces stable, interpre
 
 ### Why this ordering matters
 
-The phases are ordered so that when a phase fails to converge, the delta from the previous phase is a single component: RNN (Phase 2→3), multi-agent (3→4), attention (4→5), grid (5→6), partial obs (6→7), randomization (7→8), snapshot pool (8→9). Debugging is a binary search on the delta. If you combine deltas, debugging is combinatorial and you'll burn weeks on a training run you can't diagnose.
+The phases are ordered so that when a phase fails to converge, the delta from the previous phase is a single component: RNN (Phase 2→3), multi-agent (3→4), attention (4→5), grid (5→6), team-shared fog (6→7a), per-agent fog (7a→7b), randomization (7b→8), snapshot pool (8→9). Debugging is a binary search on the delta. If you combine deltas, debugging is combinatorial and you'll burn weeks on a training run you can't diagnose.
 
 ### Team-relative coordinate normalization
 
