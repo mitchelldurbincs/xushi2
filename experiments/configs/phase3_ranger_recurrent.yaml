@@ -4,10 +4,10 @@ env:
   opponent_bot: basic
   learner_team: A
   reward:
-    # Phase-3 uses 30s probe rounds. Keep terminal +/-10 dominant, but
-    # make objective control visible enough to beat the "retreat and
-    # avoid deaths" local optimum.
-    score_per_second: 0.1
+    # Dense per-decision gradient toward cap; half the probe's 0.01 since
+    # basic contests actively. kill_bonus and score_per_second stay at
+    # rl_design.md §5 defaults (0.25 and 0.01 respectively).
+    distance_shaping_coef: 0.005
   sim:
     round_length_seconds: 30
     fog_of_war_enabled: false
@@ -41,7 +41,7 @@ ppo:
   value_clip_ratio: 0.2
   gamma: 0.99
   gae_lambda: 0.95
-  entropy_coef: 0.01
+  entropy_coef: 0.005
   value_coef: 0.5
   max_grad_norm: 0.5
 run:

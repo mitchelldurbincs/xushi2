@@ -202,6 +202,20 @@ Under worst-case shaping accumulation — in Phase 1–3, full-round objective h
 
 Note: objective shaping is **0.01 per second while controlling the objective** (computed in code as `0.01 * score_ticks_delta / TICK_HZ`). Under game-design §3's "+1 score point per second while controlling" rule, this is equivalent to ~0.01 per score point as an approximate-equivalent framing. Max over a full-round hold ≈ 1.8, already comfortably under the shaping cap.
 
+### Optional probe shaping (distance-to-objective)
+
+`RewardCalculator` accepts an opt-in `distance_shaping_coef` kwarg (default `0.0` — off). When positive, each decision applies an additional per-team term:
+
+```
++coef × (dist_enemy − dist_self)
+```
+
+where `dist_*` is the own-team-frame normalized distance from the hero's position to arena center (i.e., the objective location; same `own_position` field as the actor obs). The term is zero-sum symmetrized — team B sees the negation after teams swap — so the `V_A ≈ −V_B` invariant holds. It passes through the same `[-3.0, +3.0]` per-episode clip as other shaping.
+
+This exists for probes where the canonical event-triggered shaping is too sparse for random-init exploration to discover the cap (notably `phase3_ranger_noop_probe.yaml`, where a motionless opponent never triggers kill/score events so the base reward is event-free until the agent independently discovers cap-sitting). Typical values: `0.005–0.01` while ramping a new scenario; `0.0` for baseline / gate-clear runs.
+
+This is a curriculum lever, not part of the canonical reward. It should be zero or annealed to zero before any run treated as a gate-clear result.
+
 ### Anti-hack guardrails
 
 - Shaped-reward magnitude clipped per-episode; terminal reward always dominates

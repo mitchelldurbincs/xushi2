@@ -83,8 +83,16 @@ def main() -> int:
     assert_determinism = bool(run_cfg.get("assert_determinism", True))
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
 
-    print(f"[xushi2] phase={phase} episodes={episodes} "
-          f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")
+    if phase_int == 3:
+        opponent = str(env_cfg.get("opponent_bot", "?"))
+        learner = str(env_cfg.get("learner_team", "A"))
+        print(f"[xushi2] phase={phase} opponent={opponent} "
+              f"learner_team={learner} base_seed=0x{base_seed:x}")
+    elif phase_int == 2:
+        print(f"[xushi2] phase={phase} memory_toy base_seed=0x{base_seed:x}")
+    else:
+        print(f"[xushi2] phase={phase} episodes={episodes} "
+              f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")
 
     if phase == 0:
         if not assert_determinism:

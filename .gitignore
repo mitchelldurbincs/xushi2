@@ -62,8 +62,13 @@ experiments/checkpoints/*
 # Logs / wandb
 wandb/
 runs/
+python/runs/
 logs/
 *.log
+
+# MSBuild scratch inside the package directory (Windows)
+python/xushi2/Debug/
+python/xushi2/Release/
 
 # Notebooks
 .ipynb_checkpoints/
