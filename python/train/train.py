@@ -67,14 +67,21 @@ def main() -> int:
 
     config = load_config(args.config)
     phase = config.get("phase", "unknown")
+    try:
+        phase_int = int(phase)
+    except (TypeError, ValueError):
+        phase_int = -1
+    env_cfg = config.get("env", {})
     sim_cfg = config.get("sim", {})
+    if phase_int in (2, 3):
+        sim_cfg = env_cfg.get("sim", {})
     run_cfg = config.get("run", {})
 
     episodes = int(run_cfg.get("episodes", 4))
     bot_a = str(run_cfg.get("team_a_bot", "basic"))
     bot_b = str(run_cfg.get("team_b_bot", "basic"))
     assert_determinism = bool(run_cfg.get("assert_determinism", True))
-    base_seed = int(sim_cfg.get("seed", 0))
+    base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
 
     print(f"[xushi2] phase={phase} episodes={episodes} "
           f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")

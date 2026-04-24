@@ -6,7 +6,7 @@ import pytest
 from train.ppo_recurrent import PPOConfig, PPOTrainer
 
 
-pytest.importorskip("xushi2.xushi2_cpp", exc_type=ImportError)
+pytest.importorskip("xushi2.xushi2_cpp")
 
 from envs.phase3_ranger import Phase3RangerEnv
 

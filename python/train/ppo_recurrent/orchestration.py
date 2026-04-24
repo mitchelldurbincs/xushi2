@@ -183,87 +183,92 @@ def _run_variant(
 
     last_eval = float("nan")
     stop_reason: str | None = None
-    for update_idx in range(1, total_updates + 1):
-        current_lr = lr_for_update(
-            update_idx,
-            total_updates,
-            base_lr=ppo_cfg.learning_rate,
-            schedule=ppo_cfg.lr_schedule,
-            lr_final_ratio=ppo_cfg.lr_final_ratio,
-            warmup_updates=ppo_cfg.warmup_updates,
-        )
-        trainer.set_learning_rate(current_lr)
-        rollout = trainer.collect_rollout()
-        metrics = trainer.update(rollout)
-
-        if log_every > 0 and update_idx % log_every == 0:
-            print(
-                f"[{phase_label}/{variant_name}] update={update_idx:4d}/{total_updates} "
-                f"policy_loss={metrics['policy_loss']:+.3f} "
-                f"value_loss={metrics['value_loss']:.3f} "
-                f"entropy={metrics['entropy']:+.3f} "
-                f"approx_kl={metrics['approx_kl']:+.4f} "
-                f"actor_gn={metrics['actor_grad_norm']:.3f} "
-                f"critic_gn={metrics['critic_grad_norm']:.3f} "
-                f"trunk_gn={metrics['trunk_grad_norm']:.3f} "
-                f"term_adv_std={metrics['terminal_adv_std']:.3f} "
-                f"mean_log_std={metrics['mean_log_std']:+.3f} "
-                f"lr={metrics['lr']:.3e}",
-                flush=True,
+    try:
+        for update_idx in range(1, total_updates + 1):
+            current_lr = lr_for_update(
+                update_idx,
+                total_updates,
+                base_lr=ppo_cfg.learning_rate,
+                schedule=ppo_cfg.lr_schedule,
+                lr_final_ratio=ppo_cfg.lr_final_ratio,
+                warmup_updates=ppo_cfg.warmup_updates,
             )
+            trainer.set_learning_rate(current_lr)
+            rollout = trainer.collect_rollout()
+            metrics = trainer.update(rollout)
 
-        if update_idx % eval_every == 0 or update_idx == total_updates:
-            last_eval = evaluate_policy(
-                trainer.model,
-                env_fn,
-                num_episodes=eval_episodes,
-                seed=variant_seed + 100_000 + update_idx,
-            )
-            print(
-                f"[{phase_label}/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
-                f"lr={current_lr:.3e}",
-                flush=True,
-            )
-            if last_eval > (best_eval + early_stop_min_delta):
-                best_eval = last_eval
-                best_update = update_idx
-                best_state = copy.deepcopy(trainer.model.state_dict())
-                no_improve_eval_count = 0
-            else:
-                no_improve_eval_count += 1
-
-            if (
-                max_regression_from_best >= 0.0
-                and best_eval > float("-inf")
-                and (best_eval - last_eval) > max_regression_from_best
-            ):
-                stop_reason = (
-                    "eval regression exceeded max_regression_from_best: "
-                    f"best={best_eval:+.3f} current={last_eval:+.3f} "
-                    f"drop={best_eval - last_eval:+.3f} "
-                    f"threshold={max_regression_from_best:+.3f} "
-                    f"at update={update_idx}"
+            if log_every > 0 and update_idx % log_every == 0:
+                print(
+                    f"[{phase_label}/{variant_name}] update={update_idx:4d}/{total_updates} "
+                    f"policy_loss={metrics['policy_loss']:+.3f} "
+                    f"value_loss={metrics['value_loss']:.3f} "
+                    f"entropy={metrics['entropy']:+.3f} "
+                    f"approx_kl={metrics['approx_kl']:+.4f} "
+                    f"actor_gn={metrics['actor_grad_norm']:.3f} "
+                    f"critic_gn={metrics['critic_grad_norm']:.3f} "
+                    f"trunk_gn={metrics['trunk_grad_norm']:.3f} "
+                    f"term_adv_std={metrics['terminal_adv_std']:.3f} "
+                    f"mean_log_std={metrics['mean_log_std']:+.3f} "
+                    f"lr={metrics['lr']:.3e}",
+                    flush=True,
                 )
-                break
-            if (
-                early_stop_patience_evals > 0
-                and no_improve_eval_count >= early_stop_patience_evals
-            ):
-                stop_reason = (
-                    "eval improvement stagnated past patience: "
-                    f"no_improve_evals={no_improve_eval_count} "
-                    f"patience={early_stop_patience_evals} "
-                    f"min_delta={early_stop_min_delta:+.3f} "
-                    f"at update={update_idx}"
-                )
-                break
 
-        if update_idx % checkpoint_every == 0 or update_idx == total_updates:
-            _save_checkpoint(
-                trainer.model,
-                output_dir / f"ckpt_{update_idx:04d}.pt",
-                ckpt_cfg,
-            )
+            if update_idx % eval_every == 0 or update_idx == total_updates:
+                last_eval = evaluate_policy(
+                    trainer.model,
+                    env_fn,
+                    num_episodes=eval_episodes,
+                    seed=variant_seed + 100_000 + update_idx,
+                )
+                print(
+                    f"[{phase_label}/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
+                    f"lr={current_lr:.3e}",
+                    flush=True,
+                )
+                if last_eval > (best_eval + early_stop_min_delta):
+                    best_eval = last_eval
+                    best_update = update_idx
+                    best_state = copy.deepcopy(trainer.model.state_dict())
+                    no_improve_eval_count = 0
+                else:
+                    no_improve_eval_count += 1
+
+                if (
+                    max_regression_from_best >= 0.0
+                    and best_eval > float("-inf")
+                    and (best_eval - last_eval) > max_regression_from_best
+                ):
+                    stop_reason = (
+                        "eval regression exceeded max_regression_from_best: "
+                        f"best={best_eval:+.3f} current={last_eval:+.3f} "
+                        f"drop={best_eval - last_eval:+.3f} "
+                        f"threshold={max_regression_from_best:+.3f} "
+                        f"at update={update_idx}"
+                    )
+                    break
+                if (
+                    early_stop_patience_evals > 0
+                    and no_improve_eval_count >= early_stop_patience_evals
+                ):
+                    stop_reason = (
+                        "eval improvement stagnated past patience: "
+                        f"no_improve_evals={no_improve_eval_count} "
+                        f"patience={early_stop_patience_evals} "
+                        f"min_delta={early_stop_min_delta:+.3f} "
+                        f"at update={update_idx}"
+                    )
+                    break
+
+            if update_idx % checkpoint_every == 0 or update_idx == total_updates:
+                _save_checkpoint(
+                    trainer.model,
+                    output_dir / f"ckpt_{update_idx:04d}.pt",
+                    ckpt_cfg,
+                )
+    finally:
+        envs = getattr(trainer, "envs", None)
+        if envs is not None:
+            envs.close()
 
     # ckpt_final.pt holds the best-eval snapshot (per the note above).
     # If no eval ever ran (total_updates < eval_every and not aligned to
