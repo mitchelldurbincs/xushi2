@@ -8,14 +8,14 @@ warfare and deception under partial observation.
 
 ## Status
 
-**Phase 1b.** The deterministic simulation core (30 Hz tick, movement,
-hitscan combat, magazine/reload, Combat Roll, death/respawn, objective
-state machine), Phase-1 observation builders (actor + critic, with a
-structural actor-leak test), reward shaping per `rl_design.md` §5, and a
-single-env Gymnasium wrapper for 1v1 Ranger vs scripted opponents are all
-in place. The raylib viewer, PPO trainer, and batched/vectorized env are
-still scaffolds — see [Current state](#current-state) for a precise
-breakdown.
+**Phase 2 cleared; Phase 3 in progress.** The Phase 2 memory-toy gate is
+green (recurrent final −0.107, feedforward final −0.995, gap 0.889) — see
+[`docs/plans/2026-04-23-phase2-result.md`](docs/plans/2026-04-23-phase2-result.md)
+for the sign-off. The recurrent PPO trainer package, value normalization,
+and cosine LR schedule all landed with that result. Phase 3 — wiring the
+C++ sim into the recurrent PPO trainer via a 1v1 Ranger env — is in
+progress right now. The raylib viewer is still a scaffold — see
+[Current state](#current-state) for a precise breakdown.
 
 ## Project layout
 
@@ -110,8 +110,24 @@ What works today:
   ±10/0, shaped events symmetrized and per-episode clipped to ±3.
 - ✅ **GoogleTest + pytest suites** — 87 C++ tests, 50+ Python tests;
   `ctest` and `pytest` clean.
-- ✅ **xushi2-eval CLI** — Phase-0 golden dump plus Phase-1b
+- ✅ **xushi2-eval CLI** — determinism golden dump plus Phase-1b
   `--dump-obs` / `--dump-reward` trajectory dumps.
+- ✅ **Recurrent PPO trainer package** (`python/train/ppo_recurrent/`,
+  7 files: config, trainer, losses, evaluate, orchestration,
+  lr_schedule, plus package init) — env-agnostic GRU-backed PPO with
+  BPTT, value normalization, and cosine LR schedule.
+- ✅ **Rollout buffer + actor/critic models**
+  (`python/train/rollout_buffer.py`, `python/train/models.py`) — shared
+  across feedforward and recurrent trainers.
+- ✅ **Per-head gradient instrumentation** — `actor_grad_norm`,
+  `critic_grad_norm`, `trunk_grad_norm`, `terminal_adv_std`,
+  `mean_log_std` logged per update.
+- ✅ **Phase-2 memory-toy env + eval** (`python/envs/memory_toy.py`,
+  `python/eval/eval_memory_toy.py`) — recurrent-vs-feedforward gate
+  cleared (gap 0.889, see `docs/plans/2026-04-23-phase2-result.md`).
+- ✅ **Phase-3 ranger env + eval** (`python/envs/phase3_ranger.py`,
+  `python/eval/eval_phase3.py`) — C++ sim wired into the recurrent PPO
+  trainer for 1v1 Ranger; training in progress.
 
 What's a scaffold:
 
@@ -119,13 +135,10 @@ What's a scaffold:
   no keyboard/mouse → action binding, no rendering yet. Build excluded
   from CI due to a known raylib 5.0 + newer-CMake incompatibility;
   build with `-DXUSHI2_BUILD_VIEWER=OFF` until raylib bumps.
-- 🚧 **Python trainer** (`python/train/train.py`) — Phase-0 determinism
-  harness only; PPO loop arrives in Phase 2.
 
 What's not there yet:
 
-- ❌ Feedforward PPO (Phase 2), recurrent PPO (Phase 3), multi-agent
-  MAPPO (Phase 4+).
+- ❌ Multi-agent MAPPO (Phase 4+).
 - ❌ Batched / vectorized env for parallel rollouts.
 - ❌ Fog of war and LoS (Phase 7+).
 - ❌ Second heroes (Vanguard, Mender — Phase 10+); Phase 1 stays 1v1
@@ -134,9 +147,15 @@ What's not there yet:
 ## Training
 
 The training entrypoint lives at `python/train/train.py`. The curriculum
-ladder is laid out in `docs/rl_design.md` §6. The first runnable config will
-land alongside the flat-observation env wrapper in Phase 1; there's nothing
-to train against yet.
+ladder is laid out in `docs/rl_design.md` §6.
+
+```bash
+# Phase 2 memory-toy (recurrent vs feedforward reference run):
+python -m train.train --config experiments/configs/phase2_memory_toy.yaml
+
+# Phase 3 C++ sim + recurrent PPO (smoke):
+python -m train.train --config experiments/configs/phase3_ranger_smoke.yaml
+```
 
 ## License
 

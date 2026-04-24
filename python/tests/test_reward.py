@@ -171,3 +171,72 @@ def test_custom_kill_bonus_applies():
     sim.team_a_kills = 1
     a, _ = rc.step(sim)
     assert a == pytest.approx(1.0)
+
+
+def test_custom_score_per_second_applies():
+    rc = RewardCalculator(score_per_second=0.1)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_score_ticks = _cpp.TICK_HZ
+    a, b = rc.step(sim)
+    assert a == pytest.approx(0.1)
+    assert b == pytest.approx(-0.1)
+
+
+def test_negative_distance_shaping_coef_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(distance_shaping_coef=-0.01)
+
+
+def test_default_distance_shaping_coef_is_zero_and_no_buffer_allocated():
+    rc = RewardCalculator()  # omits distance_shaping_coef entirely
+    # With coef=0, the calculator should not allocate the per-team obs
+    # buffers (we only pay that cost when the shaping is opted-in).
+    assert rc._obs_buf_a is None
+    assert rc._obs_buf_b is None
+    assert rc._pos_slice is None
+
+
+def test_distance_shaping_produces_nonzero_reward_on_real_env():
+    """With coef > 0, stepping a real env yields a per-decision shaping term
+    even when no score/kill events occur. This is the smoke test that
+    build_actor_obs wiring inside reward.step works end-to-end."""
+    from xushi2.env import XushiEnv
+
+    sim_cfg = {
+        "seed": 0xD1CEDA7A,
+        "round_length_seconds": 5,
+        "fog_of_war_enabled": False,
+        "randomize_map": False,
+        "action_repeat": 3,
+        "mechanics": {
+            "revolver_damage_centi_hp": 7500,
+            "revolver_fire_cooldown_ticks": 15,
+            "revolver_hitbox_radius": 0.75,
+            "respawn_ticks": 240,
+        },
+    }
+    action = {
+        "move_x": 0.0, "move_y": 1.0, "aim_delta": 0.0,
+        "primary_fire": 0, "ability_1": 0, "ability_2": 0,
+    }
+
+    # Baseline run: no distance shaping.
+    env_off = XushiEnv(sim_cfg, opponent_bot="noop", reward_cfg={})
+    env_off.reset(seed=0xD1CEDA7A)
+    _, r_off, *_ = env_off.step(action)
+
+    # Shaped run: distance_shaping_coef > 0.
+    env_on = XushiEnv(
+        sim_cfg, opponent_bot="noop",
+        reward_cfg={"distance_shaping_coef": 0.01},
+    )
+    env_on.reset(seed=0xD1CEDA7A)
+    _, r_on, *_ = env_on.step(action)
+
+    # A moves toward cap (upward), B is noop at its spawn. dist_A should be
+    # slightly less than the spawn distance, dist_B unchanged ≈ 0.80.
+    # Per-step shaping = -coef*(dist_A - dist_B) > 0. Agent's step reward
+    # with shaping should be strictly greater than without.
+    assert r_on > r_off
+    assert r_off == pytest.approx(0.0, abs=1e-9)

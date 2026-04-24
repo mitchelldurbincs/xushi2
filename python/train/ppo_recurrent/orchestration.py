@@ -19,16 +19,25 @@ def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
     )
 
 
-def _make_phase3_env(sim_cfg: dict, opponent_bot: str, learner_team: str):
+def _make_phase3_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+):
     from envs.phase3_ranger import Phase3RangerEnv
 
     return Phase3RangerEnv(
-        sim_cfg, opponent_bot=opponent_bot, learner_team=learner_team
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
     )
+
 
 from train.models import ActorCritic
 from train.ppo_recurrent.config import PPOConfig
-from train.ppo_recurrent.evaluate import evaluate_policy
+from train.ppo_recurrent.evaluate import evaluate_policy_stats
 from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.trainer import PPOTrainer
 
@@ -106,13 +115,17 @@ def make_env_fn(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
         sim_cfg = dict(env_cfg.get("sim", {}))
         opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
         learner_team = str(env_cfg.get("learner_team", "A"))
-        env_fn = partial(_make_phase3_env, sim_cfg, opponent_bot, learner_team)
+        reward_cfg = dict(env_cfg.get("reward", {}))
+        env_fn = partial(
+            _make_phase3_env, sim_cfg, opponent_bot, learner_team, reward_cfg
+        )
         return (
             env_fn,
             {
                 "sim": sim_cfg,
                 "opponent_bot": opponent_bot,
                 "learner_team": learner_team,
+                "reward": reward_cfg,
             },
             int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
         )
@@ -214,14 +227,25 @@ def _run_variant(
                 )
 
             if update_idx % eval_every == 0 or update_idx == total_updates:
-                last_eval = evaluate_policy(
+                eval_stats = evaluate_policy_stats(
                     trainer.model,
                     env_fn,
                     num_episodes=eval_episodes,
                     seed=variant_seed + 100_000 + update_idx,
                 )
+                last_eval = eval_stats.mean_reward
                 print(
                     f"[{phase_label}/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
+                    f"win={eval_stats.wins}/{eval_stats.episodes} "
+                    f"loss={eval_stats.losses}/{eval_stats.episodes} "
+                    f"draw={eval_stats.draws}/{eval_stats.episodes} "
+                    f"term={eval_stats.terminated}/{eval_stats.episodes} "
+                    f"trunc={eval_stats.truncated}/{eval_stats.episodes} "
+                    f"tick={eval_stats.mean_final_tick:.1f} "
+                    f"score=A{eval_stats.mean_team_a_score:.2f}/"
+                    f"B{eval_stats.mean_team_b_score:.2f} "
+                    f"kills=A{eval_stats.mean_team_a_kills:.2f}/"
+                    f"B{eval_stats.mean_team_b_kills:.2f} "
                     f"lr={current_lr:.3e}",
                     flush=True,
                 )

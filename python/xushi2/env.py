@@ -13,6 +13,8 @@ float32. Layout matches ``obs_manifest.py``.
 
 Reward is computed by ``RewardCalculator`` (rl_design.md §5): terminal
 ±10 / 0, shaped events clipped to ±3 per episode, symmetrized.
+Reward weights can be overridden through ``reward_cfg`` for curriculum
+probes; defaults match the design doc.
 
 Determinism: the env does not reseed the sim other than through the
 caller-provided seed. Calling ``reset(seed=S)`` is equivalent to the
@@ -80,6 +82,7 @@ class XushiEnv(gym.Env):
         *,
         opponent_bot: str,
         learner_team: str = "A",
+        reward_cfg: dict[str, Any] | None = None,
     ):
         super().__init__()
 
@@ -103,7 +106,8 @@ class XushiEnv(gym.Env):
         )
 
         self._sim: _cpp.Sim | None = None
-        self._reward_calc = RewardCalculator()
+        self._reward_cfg = dict(reward_cfg or {})
+        self._reward_calc = RewardCalculator(**self._reward_cfg)
 
         # Observation buffer, reused across steps — zero-copy into C++.
         self._obs_buf = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
@@ -200,6 +204,13 @@ class XushiEnv(gym.Env):
         return act
 
     def _make_info(self) -> dict[str, Any]:
+        winner = self._sim.winner
+        if winner == _cpp.Team.A:
+            winner_str = "A"
+        elif winner == _cpp.Team.B:
+            winner_str = "B"
+        else:
+            winner_str = "Neutral"
         return {
             "tick":         int(self._sim.tick),
             "state_hash":   int(self._sim.state_hash),
@@ -207,4 +218,6 @@ class XushiEnv(gym.Env):
             "team_b_score": float(self._sim.team_b_score),
             "team_a_kills": int(self._sim.team_a_kills),
             "team_b_kills": int(self._sim.team_b_kills),
+            "winner":       winner_str,
+            "learner_team": self._learner_team_str,
         }

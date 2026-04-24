@@ -57,9 +57,9 @@ opponent or a symmetric Ranger.
 | own combat-roll cd                           | 1   | [0, 1] = ticks_remaining / max_cd |
 | enemy alive                                  | 1   | {0, 1} |
 | enemy respawn timer                          | 1   | [0, 1] |
-| enemy relative position                      | 2   | team-frame, [-1, 1] |
+| enemy relative position                      | 2   | team-frame, delta of map-normalized positions; nominal range [-1, 1] in practice, can reach ±2 at opposite map edges |
 | enemy HP (normalized)                        | 1   | [0, 1] |
-| enemy velocity                               | 2   | team-frame |
+| enemy velocity                               | 2   | team-frame, normalized by `ranger_max_speed()` (same convention as own velocity) |
 | objective owner one-hot                      | 3   | {Neutral, Us, Them} |
 | cap_team one-hot                             | 3   | {None, Us, Them} |
 | cap progress                                 | 1   | [0, 1] |
@@ -71,7 +71,7 @@ opponent or a symmetric Ranger.
 | enemy on point (public / no-fog phase)       | 1   | {0, 1} |
 | round timer                                  | 1   | [0, 1] = elapsed / total |
 
-Total: ~28 floats. Feedforward MLP, no memory required.
+Total: 31 floats (see canonical totals at top). Feedforward MLP, no memory required.
 
 Presence/alive fields:
 
@@ -159,15 +159,25 @@ Observation tensors must be laid out in a fixed, documented field order.
 A manifest file `python/xushi2/obs_manifest.py` will enumerate the order.
 Changing the order is a breaking change — old checkpoints become invalid.
 
-## Critic-side additions (all phases)
+## Critic-side additions
 
-Critic always sees:
+Critic always sees (full target, Phase 4+ once the full roster is in play):
 - True hidden-enemy positions (regardless of per-agent LoS)
 - All cooldowns, ammo, weapon states, beam-lock targets
 - Objective state machine internals (`cap_team`, `cap_progress_ticks`,
   `team_score_ticks` — see `game_design.md` §3)
 - Map layout / seed
 - Team side (A or B)
+
+**Phase 3 subset (currently implemented):** the critic sees the flat actor
+prefix for team-perspective, plus world-frame own/enemy position and
+velocity, `cap_progress_ticks`, `team_a_score_ticks`,
+`team_b_score_ticks`, the raw tick counter, and `seed_hi`/`seed_lo`.
+Per-hero cooldown / ammo / weapon-state / beam-lock-target fields enter
+with the corresponding heroes as the roster grows in Phase 4+ (Mender
+weapon state and beam-lock target; Vanguard Barrier state). No explicit
+`team_side` scalar today — team perspective is implicit in which slot's
+actor prefix the critic consumes (see code-side follow-up).
 
 Never exposed to actor:
 - Hidden enemy positions (when outside this agent's LoS)

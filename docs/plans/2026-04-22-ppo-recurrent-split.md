@@ -1,3 +1,5 @@
+> **Status:** Completed 2026-04-23 (commit af4003c).
+
 # PPO Recurrent Module Split Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

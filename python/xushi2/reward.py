@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 __all__ = [
     "RewardCalculator",
     "TICK_HZ",
@@ -28,9 +30,11 @@ __all__ = [
     "KILL_BONUS_DEFAULT",
     "DEATH_PENALTY_DEFAULT",
     "SCORE_PER_SECOND_DEFAULT",
+    "DISTANCE_SHAPING_COEF_DEFAULT",
 ]
 
 from . import xushi2_cpp as _cpp
+from .obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
 
 TICK_HZ: int = _cpp.TICK_HZ
 
@@ -43,6 +47,15 @@ DEATH_PENALTY_DEFAULT: float = 0.25
 # +0.01 per own objective score point; since score ticks accumulate at
 # 1 per sim tick while controlled, this equals 0.01/second while scoring.
 SCORE_PER_SECOND_DEFAULT: float = 0.01
+# Opt-in per-decision distance-to-objective shaping. 0.0 disables; a small
+# positive value (~0.01) provides a dense gradient toward the cap for probes
+# where random exploration struggles to discover "sit on point". Zero-sum
+# symmetrized: team A's per-step term is -coef*(dist_A - dist_B), team B is
+# the negation. Not yet in rl_design.md §5 — probe/training-only augmentation.
+DISTANCE_SHAPING_COEF_DEFAULT: float = 0.0
+
+_TEAM_A_RANGER_SLOT: int = 0
+_TEAM_B_RANGER_SLOT: int = 3
 
 
 @dataclass
@@ -82,18 +95,33 @@ class RewardCalculator:
         kill_bonus: float = KILL_BONUS_DEFAULT,
         death_penalty: float = DEATH_PENALTY_DEFAULT,
         score_per_second: float = SCORE_PER_SECOND_DEFAULT,
+        distance_shaping_coef: float = DISTANCE_SHAPING_COEF_DEFAULT,
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
+        if distance_shaping_coef < 0.0:
+            raise ValueError("distance_shaping_coef must be >= 0")
         self._shaping_clip = float(shaping_clip)
         self._terminal_win = float(terminal_win)
         self._terminal_loss = float(terminal_loss)
         self._kill_bonus = float(kill_bonus)
         self._death_penalty = float(death_penalty)
         self._score_per_second = float(score_per_second)
+        self._distance_shaping_coef = float(distance_shaping_coef)
         self._prev = _EventCounters()
         self._cum_shaped_a = 0.0
         self._cum_shaped_b = 0.0
+
+        # Preallocate per-team obs buffers only when distance shaping is on;
+        # the builders are the only path to hero positions from Python.
+        if self._distance_shaping_coef > 0.0:
+            self._pos_slice = actor_field_slice("own_position")
+            self._obs_buf_a = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+            self._obs_buf_b = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+        else:
+            self._pos_slice = None
+            self._obs_buf_a = None
+            self._obs_buf_b = None
 
     # --- public API ---
 
@@ -130,6 +158,18 @@ class RewardCalculator:
             + self._kill_bonus * a_kills_delta
             - self._death_penalty * b_kills_delta
         )
+
+        # Optional per-decision distance-to-cap shaping (opt-in).
+        # Zero-sum symmetrized so raw_b = -raw_a still holds.
+        if self._distance_shaping_coef > 0.0:
+            _cpp.build_actor_obs(sim, _TEAM_A_RANGER_SLOT, self._obs_buf_a)
+            _cpp.build_actor_obs(sim, _TEAM_B_RANGER_SLOT, self._obs_buf_b)
+            pos_a = self._obs_buf_a[self._pos_slice]
+            pos_b = self._obs_buf_b[self._pos_slice]
+            dist_a = float(np.hypot(pos_a[0], pos_a[1]))
+            dist_b = float(np.hypot(pos_b[0], pos_b[1]))
+            raw_a += -self._distance_shaping_coef * (dist_a - dist_b)
+
         raw_b = -raw_a  # zero-sum on raw shaping by symmetrization
 
         reward_a = self._apply_clip(raw_a, "a")

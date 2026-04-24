@@ -178,23 +178,29 @@ The viewer converts real human key/mouse rising edges into single one-decision i
 ### Dense shaping (small, capped, symmetrized)
 
 ```
-+0.01  per objective score point own team gains
--0.01  per objective score point enemy team gains
++0.01  per second own team controls the objective (score-tick delta / TICK_HZ)
+-0.01  per second enemy team controls the objective
 +0.25  enemy kill
 -0.25  ally death
-+small useful healing delivered (overheal excluded, capped)
-+small damage blocked near ally (Vanguard shield, capped)
++small useful healing delivered (overheal excluded, capped) — Phase 4+ (Mender)
++small damage blocked near ally (Vanguard shield, capped) — Phase 4+ (Vanguard)
 
 total non-terminal shaping clipped to [-3.0, +3.0] per episode per team
 ```
+
+Under game-design §3's "+1 score point per second while controlling", the per-second and per-score-point framings are equivalent; the code literally implements the per-second form via `0.01 * (score_ticks_delta / TICK_HZ)`.
+
+The ±3 clip is applied per team independently; once one team's running total saturates the cap, the other side's clipped step delta will no longer be the exact negation.
+
+The healing and damage-blocked shaping terms are Phase 4+ items (they activate once Mender and Vanguard enter the roster); Phase 1–3 is Ranger-only so they are unimplemented by design.
 
 Every shaped event is applied as `team_reward = own_events − enemy_events`. This symmetrization preserves zero-sum at the reward level, which in turn preserves `V_B ≈ −V_A` and avoids per-role reward engineering complexity.
 
 ### Why these magnitudes
 
-Under worst-case shaping accumulation (full-round objective hold + many kills + useful healing), shaping sums to ~3.0. Terminal is ±10.0. The cap ensures terminal always dominates, so agents cannot learn to lose-but-farm-shaping.
+Under worst-case shaping accumulation — in Phase 1–3, full-round objective hold + many kills; in Phase 4+, also useful healing and damage-blocked events — shaping sums to ~3.0. Terminal is ±10.0. The cap ensures terminal always dominates, so agents cannot learn to lose-but-farm-shaping.
 
-Note: objective shaping is per **score point** gained, not per tick. Since scoring is +1/sec under the rules in game-design §3, this is effectively 0.01/sec while controlled. Max over a full-round hold ≈ 1.8, already comfortably under the shaping cap.
+Note: objective shaping is **0.01 per second while controlling the objective** (computed in code as `0.01 * score_ticks_delta / TICK_HZ`). Under game-design §3's "+1 score point per second while controlling" rule, this is equivalent to ~0.01 per score point as an approximate-equivalent framing. Max over a full-round hold ≈ 1.8, already comfortably under the shaping cap.
 
 ### Anti-hack guardrails
 
@@ -315,12 +321,12 @@ Latest-vs-latest only produces cyclic strategies and catastrophic forgetting. Ol
 | γ | 0.997 |
 | GAE λ | 0.95 |
 | PPO clip ε | 0.10 |
-| PPO epochs per batch | 5 |
-| Minibatches per epoch | 1–2 |
+| PPO epochs per batch | 4 |
+| `minibatch_size` / `num_minibatches` | `minibatch_size` = segments per minibatch; `num_minibatches = ceil(num_segments / minibatch_size)` |
 | Entropy coef | 0.01, slow anneal |
 | Value loss coef | 0.5 |
 | Gradient clipping | 0.5 |
-| Value normalization | yes |
+| Value normalization | yes (per-rollout return-space z-scoring; value target normalized and value clip applied in normalized space) |
 | Advantage normalization | yes |
 | RNN type | GRU |
 | RNN hidden size | 256 |
@@ -329,6 +335,13 @@ Latest-vs-latest only produces cyclic strategies and catastrophic forgetting. Ol
 | Parallel envs | 128 |
 
 Conservative by intent. MAPPO-paper findings that drove these: keep PPO clip well under 0.2, limit epochs on hard problems, normalize values, avoid aggressive minibatching on on-policy data.
+
+The table above targets the Phase 4+ MAPPO configuration at scaled training; Phase 3 runs single-agent recurrent PPO with the same hyperparameter profile minus the centralized critic. Several parameters have phase-specific overrides for the short-horizon Phase 1–3 ladder (see `experiments/configs/phase3_ranger_recurrent.yaml`):
+
+- **γ = 0.99 for Phase 1–3** short-horizon episodes (30 s rounds ≈ 100 decisions; 0.99 gives effective horizon ≈ 100). Ramp to γ = 0.997 at Phase 4+ when round length grows.
+- **RNN hidden size = 64 for Phase 1–3** flat-obs runs (31-dim obs, shorter memory horizon). Scale up toward 256 with observation complexity at Phase 5+ and to 512 if underfitting.
+- **Unroll length = full episode for Phase 1–3** — episodes are ≤ 100 decisions at 10 Hz over 30 s rounds, which naturally brackets the 64–96 target; the trainer does not truncate BPTT within a segment. Truncate to 64–96 at Phase 5+ once episodes grow.
+- **Parallel envs = 16 for Phase 3** on the interactive-training machine; 128 is the scaled-training target for Phase 4+ and beyond.
 
 ## 9. Tech stack
 

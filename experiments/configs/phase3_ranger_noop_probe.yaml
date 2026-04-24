@@ -1,13 +1,18 @@
 phase: 3
 env:
   seed_base: 0xD1CEDA7A
-  opponent_bot: basic
+  opponent_bot: noop
   learner_team: A
   reward:
-    # Phase-3 uses 30s probe rounds. Keep terminal +/-10 dominant, but
-    # make objective control visible enough to beat the "retreat and
-    # avoid deaths" local optimum.
     score_per_second: 0.1
+    # Probe-only: zero out kill bonus so the learner can't get distracted by
+    # farming the motionless noop opponent instead of capturing the point.
+    kill_bonus: 0.0
+    # Probe-only: dense per-decision gradient toward the cap. Zero-sum
+    # symmetrized in RewardCalculator; with a noop opponent this amounts to a
+    # +coef * (dist_enemy - dist_self) signal per step, bounded by
+    # shaping_clip=3.0 over the episode.
+    distance_shaping_coef: 0.01
   sim:
     round_length_seconds: 30
     fog_of_war_enabled: false
@@ -45,12 +50,12 @@ ppo:
   value_coef: 0.5
   max_grad_norm: 0.5
 run:
-  total_updates: 5000
-  eval_every: 50
-  eval_episodes: 50
+  total_updates: 500
+  eval_every: 25
+  eval_episodes: 20
   checkpoint_every: 100
-  early_stop_patience_evals: 40
+  early_stop_patience_evals: 0
   early_stop_min_delta: 0.05
-  max_regression_from_best: 0.5
-  log_every: 50
-  output_dir: runs/phase3_ranger
+  max_regression_from_best: -1
+  log_every: 25
+  output_dir: runs/phase3_ranger_noop_probe

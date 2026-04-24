@@ -25,7 +25,11 @@ Design notes:
 from __future__ import annotations
 
 from train.ppo_recurrent.config import PPOConfig
-from train.ppo_recurrent.evaluate import evaluate_policy
+from train.ppo_recurrent.evaluate import (
+    EvaluationStats,
+    evaluate_policy,
+    evaluate_policy_stats,
+)
 from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.orchestration import _run_variant, train_from_config
 from train.ppo_recurrent.trainer import PPOTrainer
@@ -33,7 +37,9 @@ from train.ppo_recurrent.trainer import PPOTrainer
 __all__ = [
     "PPOConfig",
     "PPOTrainer",
+    "EvaluationStats",
     "evaluate_policy",
+    "evaluate_policy_stats",
     "lr_for_update",
     "train_from_config",
 ]

@@ -69,7 +69,7 @@ impulse fields.
 | Hero    | primary_fire          | ability_1                | ability_2           |
 |---------|------------------------|---------------------------|----------------------|
 | Vanguard| Held (suppressed while Barrier is active) | Held (Barrier) | Impulse (Guard Step) |
-| Ranger  | Held (no-op if empty mag) | Impulse (Combat Roll + reload) | *deferred* |
+| Ranger  | Held (no-op if empty mag) | Impulse (Combat Roll + reload) | *deferred* (policy still emits a Bernoulli for `ability_2` in Phase 3 to keep the action head shape stable; the sim no-ops it for Ranger) |
 | Mender  | Held (current weapon)  | Impulse (Weapon Swap)     | Impulse (Tether)     |
 
 The viewer converts real human key/mouse rising edges into single
@@ -106,8 +106,7 @@ The policy's action distribution factorizes:
 
 ```
 π(a | obs) =
-      π_move(move_x, move_y)
-    · π_aim(aim_delta)
+      π_continuous(move_x, move_y, aim_delta)
     · π_primary(primary_fire)
     · π_ability_1(ability_1)
     · π_ability_2(ability_2)
@@ -116,6 +115,13 @@ The policy's action distribution factorizes:
 
 Continuous heads use tanh-squashed Gaussian. Binary heads use Bernoulli.
 Target-slot uses Categorical with masking over legal targets.
+
+In code, `move_x`, `move_y`, and `aim_delta` are emitted as a single
+continuous action vector with a per-dim log-std rather than as two
+separate heads. This is observationally equivalent — the joint still
+factorizes as independent tanh-Gaussians over the three continuous dims
+— and is written here as `π_continuous(move_x, move_y, aim_delta)` to
+match the implementation.
 
 ## Human-player action mapping (viewer)
 

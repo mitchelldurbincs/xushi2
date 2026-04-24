@@ -8,6 +8,7 @@ from typing import Any
 import torch
 
 from train import ppo_recurrent as ppo_mod
+from train.ppo_recurrent import EvaluationStats
 from train.ppo_recurrent import orchestration as ppo_orch
 
 
@@ -83,6 +84,23 @@ def _base_config(tmp_path: Path) -> dict[str, Any]:
     }
 
 
+def _eval_stats(mean_reward: float) -> EvaluationStats:
+    return EvaluationStats(
+        mean_reward=mean_reward,
+        episodes=1,
+        wins=0,
+        losses=0,
+        draws=0,
+        terminated=0,
+        truncated=0,
+        mean_final_tick=0.0,
+        mean_team_a_score=0.0,
+        mean_team_b_score=0.0,
+        mean_team_a_kills=0.0,
+        mean_team_b_kills=0.0,
+    )
+
+
 def test_early_stop_from_stagnation_keeps_best_checkpoint(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -95,7 +113,11 @@ def test_early_stop_from_stagnation_keeps_best_checkpoint(
 
     evals = iter([0.10, 0.105, 0.106, 0.106])
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
-    monkeypatch.setattr(ppo_orch, "evaluate_policy", lambda *args, **kwargs: next(evals))
+    monkeypatch.setattr(
+        ppo_orch,
+        "evaluate_policy_stats",
+        lambda *args, **kwargs: _eval_stats(next(evals)),
+    )
 
     out_dir = tmp_path / "stagnation"
     best_eval = ppo_mod._run_variant(cfg, use_recurrence=True, output_dir=out_dir)
@@ -118,7 +140,11 @@ def test_early_stop_from_regression_keeps_best_checkpoint(
 
     evals = iter([0.50, 0.20])
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
-    monkeypatch.setattr(ppo_orch, "evaluate_policy", lambda *args, **kwargs: next(evals))
+    monkeypatch.setattr(
+        ppo_orch,
+        "evaluate_policy_stats",
+        lambda *args, **kwargs: _eval_stats(next(evals)),
+    )
 
     out_dir = tmp_path / "regression"
     best_eval = ppo_mod._run_variant(cfg, use_recurrence=False, output_dir=out_dir)

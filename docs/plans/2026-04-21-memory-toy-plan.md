@@ -1,3 +1,5 @@
+> **Status:** Completed 2026-04-23 (commit af4003c).
+
 # Phase 2 — Memory-toy recurrent PPO: Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Use `superpowers:test-driven-development` for every task — RED → GREEN → commit. Do NOT commit per task; the user commits the whole delta at the end (see `~/.claude/projects/C--Users-mitchell-durbin-source-repos-cartridgeRepos-xushi2/memory/feedback_commits.md`).

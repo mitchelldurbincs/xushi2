@@ -33,12 +33,14 @@ class Phase3RangerEnv(gym.Env):
         *,
         opponent_bot: str,
         learner_team: str = "A",
+        reward_cfg: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
         self._env = XushiEnv(
             sim_cfg,
             opponent_bot=opponent_bot,
             learner_team=learner_team,
+            reward_cfg=reward_cfg,
         )
         self.observation_space = spaces.Box(
             low=-np.inf,

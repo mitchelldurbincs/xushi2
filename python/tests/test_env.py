@@ -61,6 +61,8 @@ def test_step_obeys_gymnasium_five_tuple_contract():
     assert isinstance(terminated, bool)
     assert isinstance(truncated, bool)
     assert isinstance(info, dict)
+    assert info["learner_team"] == "A"
+    assert info["winner"] in {"A", "B", "Neutral"}
 
 
 def test_state_hash_roundtrip_is_deterministic():

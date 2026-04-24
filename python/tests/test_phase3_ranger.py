@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from train.ppo_recurrent import PPOConfig, PPOTrainer
+from train.ppo_recurrent.orchestration import make_env_fn
 
 
 pytest.importorskip("xushi2.xushi2_cpp")
@@ -70,18 +71,44 @@ def test_phase3_action_adapter_produces_valid_action_dict() -> None:
 
 def test_phase3_trainer_collects_real_env_rollout() -> None:
     trainer = PPOTrainer(env_fn=_env_fn, config=_phase3_config(), seed=123)
-    rollout = trainer.collect_rollout()
-    assert rollout.obs.shape == (1, 4, 31)
-    assert rollout.action.shape == (1, 4, 6)
-    assert np.isfinite(rollout.obs.numpy()).all()
-    assert np.isfinite(rollout.action.numpy()).all()
-    assert np.all((rollout.action[:, :, 3:].numpy() == 0.0) | (rollout.action[:, :, 3:].numpy() == 1.0))
+    try:
+        rollout = trainer.collect_rollout()
+        assert rollout.obs.shape == (1, 4, 31)
+        assert rollout.action.shape == (1, 4, 6)
+        assert np.isfinite(rollout.obs.numpy()).all()
+        assert np.isfinite(rollout.action.numpy()).all()
+        binary_actions = rollout.action[:, :, 3:].numpy()
+        assert np.all((binary_actions == 0.0) | (binary_actions == 1.0))
+    finally:
+        trainer.envs.close()
 
 
 def test_phase3_trainer_updates_on_real_env_rollout() -> None:
     trainer = PPOTrainer(env_fn=_env_fn, config=_phase3_config(), seed=321)
-    rollout = trainer.collect_rollout()
-    metrics = trainer.update(rollout)
-    assert np.isfinite(metrics["policy_loss"])
-    assert np.isfinite(metrics["value_loss"])
-    assert np.isfinite(metrics["entropy"])
+    try:
+        rollout = trainer.collect_rollout()
+        metrics = trainer.update(rollout)
+        assert np.isfinite(metrics["policy_loss"])
+        assert np.isfinite(metrics["value_loss"])
+        assert np.isfinite(metrics["entropy"])
+    finally:
+        trainer.envs.close()
+
+
+def test_phase3_make_env_fn_preserves_reward_config() -> None:
+    cfg = {
+        "phase": 3,
+        "env": {
+            "seed_base": 123,
+            "opponent_bot": "noop",
+            "learner_team": "A",
+            "reward": {"score_per_second": 0.1},
+            "sim": _sim_cfg(),
+        },
+    }
+
+    _env_fn, env_meta, seed_base = make_env_fn(cfg)
+
+    assert seed_base == 123
+    assert env_meta["opponent_bot"] == "noop"
+    assert env_meta["reward"] == {"score_per_second": 0.1}
