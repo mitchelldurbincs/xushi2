@@ -259,6 +259,13 @@ Phases are gates. Do not proceed until the prior phase produces stable, interpre
 
 **Phase 3 — Recurrent PPO, 1v1 Ranger, flat obs.** Bring recurrence into the real game at minimal scale. Still flat obs, still fixed map.
 
+**Phase 3.5 — Minimal replay/debug viewer gate.** Before Phase 4 scale-up,
+build the smallest useful viewer/debugger: draw the arena, objective, agents,
+HP, facing, shots, deaths/respawns, score, cap progress, and reward components
+for an eval episode. Scrubbing a recorded replay is ideal; a deterministic
+live/eval playback is acceptable as the first cut. This is a debugging gate,
+not a polished human-play client.
+
 **Phase 4 — Recurrent IPPO or MAPPO, 2v2, flat obs.** Introduce multi-agent training and the centralized critic. Compositions to try: tank + damage, then damage + support. Still flat obs, still fixed map.
 
 **Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
