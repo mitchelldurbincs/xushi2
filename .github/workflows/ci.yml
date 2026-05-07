@@ -61,6 +61,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e 'python[dev]'
 
+      - name: Build Python extension for this interpreter
+        run: |
+          cmake -S . -B build-python \
+            -DXUSHI2_BUILD_VIEWER=OFF \
+            -DXUSHI2_BUILD_TESTS=OFF \
+            -DXUSHI2_BUILD_PYTHON_MODULE=ON \
+            -DPython_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')"
+          cmake --build build-python --parallel
+          python -c "from xushi2 import xushi2_cpp as m; print(m.__file__)"
+
       - name: Run Python tests
         run: pytest python/tests
 

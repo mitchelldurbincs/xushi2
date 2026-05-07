@@ -31,6 +31,7 @@ __all__ = [
     "DEATH_PENALTY_DEFAULT",
     "SCORE_PER_SECOND_DEFAULT",
     "DISTANCE_SHAPING_COEF_DEFAULT",
+    "TIME_PENALTY_PER_SECOND_DEFAULT",
 ]
 
 from . import xushi2_cpp as _cpp
@@ -53,6 +54,12 @@ SCORE_PER_SECOND_DEFAULT: float = 0.01
 # symmetrized: team A's per-step term is -coef*(dist_A - dist_B), team B is
 # the negation. Not yet in rl_design.md §5 — probe/training-only augmentation.
 DISTANCE_SHAPING_COEF_DEFAULT: float = 0.0
+# Per-second penalty applied to BOTH teams every tick. Intentionally
+# breaks zero-sum to remove the deny-stalemate basin: with tps=0, a 0/0
+# draw nets ~0 and PPO finds it as stable as scoring; with tps>0, a 30s
+# draw nets -30*tps for both teams, so denying is strictly worse than
+# attempting to score. 0.0 disables (default; backwards compatible).
+TIME_PENALTY_PER_SECOND_DEFAULT: float = 0.0
 
 _TEAM_A_RANGER_SLOT: int = 0
 _TEAM_B_RANGER_SLOT: int = 3
@@ -96,6 +103,7 @@ class RewardCalculator:
         death_penalty: float = DEATH_PENALTY_DEFAULT,
         score_per_second: float = SCORE_PER_SECOND_DEFAULT,
         distance_shaping_coef: float = DISTANCE_SHAPING_COEF_DEFAULT,
+        time_penalty_per_second: float = TIME_PENALTY_PER_SECOND_DEFAULT,
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
@@ -108,6 +116,7 @@ class RewardCalculator:
         self._death_penalty = float(death_penalty)
         self._score_per_second = float(score_per_second)
         self._distance_shaping_coef = float(distance_shaping_coef)
+        self._time_penalty_per_second = float(time_penalty_per_second)
         self._prev = _EventCounters()
         self._cum_shaped_a = 0.0
         self._cum_shaped_b = 0.0
@@ -171,6 +180,13 @@ class RewardCalculator:
             raw_a += -self._distance_shaping_coef * (dist_a - dist_b)
 
         raw_b = -raw_a  # zero-sum on raw shaping by symmetrization
+
+        # Asymmetric time penalty applied to BOTH teams. Not zero-sum on
+        # purpose — see TIME_PENALTY_PER_SECOND_DEFAULT docstring for why.
+        if self._time_penalty_per_second != 0.0:
+            tp_step = -self._time_penalty_per_second / float(TICK_HZ)
+            raw_a += tp_step
+            raw_b += tp_step
 
         reward_a = self._apply_clip(raw_a, "a")
         reward_b = self._apply_clip(raw_b, "b")

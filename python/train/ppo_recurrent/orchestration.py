@@ -141,6 +141,48 @@ def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
     )
 
 
+# Topology-relevant model config fields. A mismatch on any of these means the
+# saved state_dict will not fit the new model — fail loud before torch's
+# generic shape-mismatch error makes the cause hard to read.
+_WARM_START_TOPOLOGY_KEYS = (
+    "obs_dim",
+    "action_dim",
+    "continuous_action_dim",
+    "binary_action_dim",
+    "use_recurrence",
+    "embed_dim",
+    "gru_hidden",
+    "head_hidden",
+)
+
+
+def _load_init_checkpoint(
+    model: ActorCritic,
+    ckpt_path: str | Path,
+    expected_model_cfg: dict,
+) -> None:
+    """Load model weights from ``ckpt_path`` into ``model`` for warm-start.
+
+    Optimizer state, RNG state, and rollout buffer are intentionally not
+    loaded — fresh Adam moments and a clean LR schedule are appropriate
+    when warm-starting across reward / opponent / curriculum changes.
+
+    Raises ``ValueError`` if the checkpoint's saved model config disagrees
+    with ``expected_model_cfg`` on any topology-relevant field.
+    """
+    state = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+    saved_model_cfg = state.get("config", {}).get("model", {})
+    for key in _WARM_START_TOPOLOGY_KEYS:
+        saved = saved_model_cfg.get(key)
+        expected = expected_model_cfg.get(key)
+        if saved is not None and expected is not None and saved != expected:
+            raise ValueError(
+                f"warm-start checkpoint architecture mismatch on '{key}': "
+                f"checkpoint={saved!r} config={expected!r} (path={ckpt_path})"
+            )
+    model.load_state_dict(state["model_state_dict"])
+
+
 def _run_variant(
     config: dict,
     *,
@@ -183,6 +225,14 @@ def _run_variant(
     }
 
     variant_name = "recurrent" if use_recurrence else "feedforward"
+
+    init_ckpt = run_cfg.get("init_from_checkpoint")
+    if init_ckpt:
+        _load_init_checkpoint(trainer.model, init_ckpt, ckpt_cfg["model"])
+        print(
+            f"[{phase_label}/{variant_name}] warm-start: loaded {init_ckpt}",
+            flush=True,
+        )
 
     # Best-checkpoint tracking. PPO is known to oscillate after a policy
     # breakthrough on this task (regresses from -0.28 back to -0.40+ if

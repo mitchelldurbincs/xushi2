@@ -1,0 +1,61 @@
+phase: 3
+env:
+  seed_base: 0xD1CEDA7A
+  opponent_bot: walk_to_objective
+  learner_team: A
+  reward:
+    # v2: ease score_per_second back from 0.15 (v1) to 0.10. v1 saw a clean
+    # breakthrough at eval@375 (+10.098, 50/50 wins, score A1.20) but the next
+    # PPO update destroyed the policy and it never recovered. Hypothesis: the
+    # combination of high lr + strong reward shock made the post-discovery
+    # update too large. Soften both.
+    score_per_second: 0.10
+    kill_bonus: 0.0
+    distance_shaping_coef: 0.01
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 0xD1CEDA7A
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 7500
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 16
+  rollout_len: 256
+  num_epochs: 4
+  minibatch_size: 4
+  learning_rate: 5.0e-5
+  value_normalization: true
+  vector_env: async
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.15
+  value_clip_ratio: 0.15
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.005
+  value_coef: 0.5
+  max_grad_norm: 0.5
+run:
+  init_from_checkpoint: runs/phase3_ranger_objective_curriculum_warmstart/recurrent/ckpt_0400.pt
+  total_updates: 1500
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 50
+  early_stop_patience_evals: 0
+  early_stop_min_delta: 0.05
+  max_regression_from_best: -1
+  log_every: 25
+  output_dir: runs/phase3_ranger_objective_curriculum_warmstart_v2

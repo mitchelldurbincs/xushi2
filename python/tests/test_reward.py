@@ -188,6 +188,55 @@ def test_negative_distance_shaping_coef_rejected():
         RewardCalculator(distance_shaping_coef=-0.01)
 
 
+def test_default_time_penalty_is_zero_and_does_not_change_rewards():
+    """Backwards compatibility: omitting time_penalty_per_second leaves
+    every existing reward path unchanged."""
+    rc, sim = _fresh_calc_and_sim()
+    sim.team_a_kills = 1
+    a, b = rc.step(sim)
+    assert a == pytest.approx(0.25)
+    assert b == pytest.approx(-0.25)
+
+
+def test_time_penalty_charges_both_teams_per_tick_with_no_events():
+    """A non-zero time_penalty_per_second subtracts the same per-tick
+    amount from both teams when nothing else is happening — breaking
+    zero-sum on purpose so deny-only stalemates have a negative return."""
+    tps = 0.05
+    rc = RewardCalculator(time_penalty_per_second=tps)
+    sim = _FakeSim()
+    rc.reset(sim)
+
+    expected_per_tick = -tps / float(_cpp.TICK_HZ)
+    total_a = 0.0
+    total_b = 0.0
+    for _ in range(_cpp.TICK_HZ):  # 1 second of no-event ticks
+        a, b = rc.step(sim)
+        total_a += a
+        total_b += b
+
+    assert total_a == pytest.approx(expected_per_tick * _cpp.TICK_HZ)
+    assert total_b == pytest.approx(expected_per_tick * _cpp.TICK_HZ)
+    # Both teams charged equally — explicitly NOT zero-sum.
+    assert total_a == pytest.approx(total_b)
+
+
+def test_time_penalty_stacks_with_zero_sum_shaping():
+    """When events occur, time penalty adds on top of zero-sum shaping:
+    raw_a = (own - enemy events) - tp; raw_b = (enemy - own events) - tp."""
+    tps = 0.06
+    rc = RewardCalculator(time_penalty_per_second=tps)
+    sim = _FakeSim()
+    rc.reset(sim)
+
+    # Single tick, A kills 1, no scoring.
+    sim.team_a_kills = 1
+    a, b = rc.step(sim)
+    tp_step = -tps / float(_cpp.TICK_HZ)
+    assert a == pytest.approx(0.25 + tp_step)
+    assert b == pytest.approx(-0.25 + tp_step)
+
+
 def test_default_distance_shaping_coef_is_zero_and_no_buffer_allocated():
     rc = RewardCalculator()  # omits distance_shaping_coef entirely
     # With coef=0, the calculator should not allocate the per-team obs
