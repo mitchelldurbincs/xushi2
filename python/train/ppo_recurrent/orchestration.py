@@ -39,6 +39,7 @@ from train.models import ActorCritic
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy_stats
 from train.ppo_recurrent.lr_schedule import lr_for_update
+from train.ppo_recurrent.logging import format_human_event, log_checkpoint, log_early_stop, log_eval, log_update
 from train.ppo_recurrent.trainer import PPOTrainer
 
 
@@ -261,20 +262,14 @@ def _run_variant(
             metrics = trainer.update(rollout)
 
             if log_every > 0 and update_idx % log_every == 0:
-                print(
-                    f"[{phase_label}/{variant_name}] update={update_idx:4d}/{total_updates} "
-                    f"policy_loss={metrics['policy_loss']:+.3f} "
-                    f"value_loss={metrics['value_loss']:.3f} "
-                    f"entropy={metrics['entropy']:+.3f} "
-                    f"approx_kl={metrics['approx_kl']:+.4f} "
-                    f"actor_gn={metrics['actor_grad_norm']:.3f} "
-                    f"critic_gn={metrics['critic_grad_norm']:.3f} "
-                    f"trunk_gn={metrics['trunk_grad_norm']:.3f} "
-                    f"term_adv_std={metrics['terminal_adv_std']:.3f} "
-                    f"mean_log_std={metrics['mean_log_std']:+.3f} "
-                    f"lr={metrics['lr']:.3e}",
-                    flush=True,
+                update_record = log_update(
+                    phase=phase_label,
+                    variant=variant_name,
+                    update=update_idx,
+                    total_updates=total_updates,
+                    metrics=metrics,
                 )
+                print(format_human_event(update_record), flush=True)
 
             if update_idx % eval_every == 0 or update_idx == total_updates:
                 eval_stats = evaluate_policy_stats(
@@ -284,21 +279,15 @@ def _run_variant(
                     seed=variant_seed + 100_000 + update_idx,
                 )
                 last_eval = eval_stats.mean_reward
-                print(
-                    f"[{phase_label}/{variant_name}] eval@{update_idx}={last_eval:+.3f} "
-                    f"win={eval_stats.wins}/{eval_stats.episodes} "
-                    f"loss={eval_stats.losses}/{eval_stats.episodes} "
-                    f"draw={eval_stats.draws}/{eval_stats.episodes} "
-                    f"term={eval_stats.terminated}/{eval_stats.episodes} "
-                    f"trunc={eval_stats.truncated}/{eval_stats.episodes} "
-                    f"tick={eval_stats.mean_final_tick:.1f} "
-                    f"score=A{eval_stats.mean_team_a_score:.2f}/"
-                    f"B{eval_stats.mean_team_b_score:.2f} "
-                    f"kills=A{eval_stats.mean_team_a_kills:.2f}/"
-                    f"B{eval_stats.mean_team_b_kills:.2f} "
-                    f"lr={current_lr:.3e}",
-                    flush=True,
+                eval_record = log_eval(
+                    phase=phase_label,
+                    variant=variant_name,
+                    update=update_idx,
+                    total_updates=total_updates,
+                    lr=current_lr,
+                    eval_stats=eval_stats,
                 )
+                print(format_human_event(eval_record), flush=True)
                 if last_eval > (best_eval + early_stop_min_delta):
                     best_eval = last_eval
                     best_update = update_idx
@@ -334,11 +323,16 @@ def _run_variant(
                     break
 
             if update_idx % checkpoint_every == 0 or update_idx == total_updates:
-                _save_checkpoint(
-                    trainer.model,
-                    output_dir / f"ckpt_{update_idx:04d}.pt",
-                    ckpt_cfg,
+                ckpt_path = output_dir / f"ckpt_{update_idx:04d}.pt"
+                _save_checkpoint(trainer.model, ckpt_path, ckpt_cfg)
+                checkpoint_record = log_checkpoint(
+                    phase=phase_label,
+                    variant=variant_name,
+                    update=update_idx,
+                    total_updates=total_updates,
+                    path=str(ckpt_path),
                 )
+                print(format_human_event(checkpoint_record), flush=True)
     finally:
         envs = getattr(trainer, "envs", None)
         if envs is not None:
@@ -349,7 +343,14 @@ def _run_variant(
     # total_updates), fall back to the last state.
     output_dir.mkdir(parents=True, exist_ok=True)
     if stop_reason is not None:
-        print(f"[{phase_label}/{variant_name}] early-stop: {stop_reason}", flush=True)
+        early_stop_record = log_early_stop(
+            phase=phase_label,
+            variant=variant_name,
+            update=best_update if best_update > 0 else total_updates,
+            total_updates=total_updates,
+            reason=stop_reason,
+        )
+        print(format_human_event(early_stop_record), flush=True)
     if best_state is not None:
         torch.save(
             {"model_state_dict": best_state, "config": ckpt_cfg},
