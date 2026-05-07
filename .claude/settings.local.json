@@ -6,7 +6,10 @@
       "Bash(python *)",
       "Bash(pytest -x)",
       "Read(//tmp/**)",
-      "Bash(ps -p 1041 -o pid,etime,cmd)"
+      "Bash(ps -p 1041 -o pid,etime,cmd)",
+      "PowerShell(py *)",
+      "Bash(nohup python -m train.train --config ../experiments/configs/phase3_ranger_objective_curriculum_warmstart.yaml)",
+      "Bash(echo \"launched PID $!\")"
     ]
   }
 }

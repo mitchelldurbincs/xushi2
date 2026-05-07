@@ -155,9 +155,10 @@ class XushiEnv(gym.Env):
         # still pass a no-op Action (the sim ignores non-present slots).
         actions_list: list[_cpp.Action] = [_cpp.Action() for _ in range(_AGENTS_PER_MATCH)]
         actions_list[self._learner_slot] = self._action_from_dict(action)
-        actions_list[self._opponent_slot] = _cpp.scripted_bot_action(
+        opponent_action = _cpp.scripted_bot_action(
             self._sim, self._opponent_slot, self._opponent_bot
         )
+        actions_list[self._opponent_slot] = opponent_action
 
         self._sim.step_decision(actions_list)
 
@@ -181,6 +182,17 @@ class XushiEnv(gym.Env):
         # Publish both-team rewards so trainers that want them can symmetrize.
         info["reward_team_a"] = float(r_a)
         info["reward_team_b"] = float(r_b)
+        # Publish the opponent's action so replay-dump tools can record both
+        # teams' inputs (otherwise the opponent action is hidden inside step).
+        info["opponent_action"] = {
+            "slot": int(self._opponent_slot),
+            "move_x": float(opponent_action.move_x),
+            "move_y": float(opponent_action.move_y),
+            "aim_delta": float(opponent_action.aim_delta),
+            "primary_fire": bool(opponent_action.primary_fire),
+            "ability_1": bool(opponent_action.ability_1),
+            "ability_2": bool(opponent_action.ability_2),
+        }
 
         return (
             self._obs_buf.copy(), float(step_reward),
