@@ -82,6 +82,7 @@ from envs.memory_toy import MemoryToyEnv
 # module. The import is deliberately at module top so pytest surfaces a
 # clean ModuleNotFoundError for every test in this file at collection.
 from train.ppo_recurrent import PPOConfig, PPOTrainer  # noqa: E402
+from train.ppo_recurrent import ppo_updater, rollout_collector  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +145,36 @@ def _rollout_tensors_equal(r_a, r_b) -> None:
         tb = getattr(r_b, field)
         assert torch.equal(ta, tb), f"rollout field {field!r} differs"
 
+
+
+
+def test_collect_rollout_delegates_to_rollout_collector(monkeypatch):
+    cfg = _make_config()
+    trainer = PPOTrainer(env_fn=_memory_toy_env_fn(), config=cfg, seed=0)
+
+    sentinel = object()
+
+    def _fake_collect(t):
+        assert t is trainer
+        return sentinel
+
+    monkeypatch.setattr(rollout_collector, "collect_rollout", _fake_collect)
+    assert trainer.collect_rollout() is sentinel
+
+
+def test_update_delegates_to_ppo_updater(monkeypatch):
+    cfg = _make_config()
+    trainer = PPOTrainer(env_fn=_memory_toy_env_fn(), config=cfg, seed=0)
+    rollout = trainer._make_buffer()
+    expected = {"ok": 1.0}
+
+    def _fake_update(t, r):
+        assert t is trainer
+        assert r is rollout
+        return expected
+
+    monkeypatch.setattr(ppo_updater, "update_ppo", _fake_update)
+    assert trainer.update(rollout) == expected
 
 # ---------------------------------------------------------------------------
 # Test 1: rollout determinism
