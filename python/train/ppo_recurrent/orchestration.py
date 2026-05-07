@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -13,8 +14,16 @@ from train.phases import resolve_phase
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy_stats
 from train.ppo_recurrent.lr_schedule import lr_for_update
-from train.ppo_recurrent.logging import format_human_event, log_checkpoint, log_early_stop, log_eval, log_update
+from train.ppo_recurrent.logging import (
+    format_human_event,
+    log_checkpoint,
+    log_early_stop,
+    log_eval,
+    log_update,
+)
 from train.ppo_recurrent.trainer import PPOTrainer
+
+_CKPT_SCHEMA_VERSION = 1
 
 
 def make_env_fn(config: dict) -> tuple[Callable[[], object], dict, int]:
@@ -86,6 +95,60 @@ def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
     )
 
 
+@dataclass(frozen=True)
+class CheckpointModelTopology:
+    obs_dim: int
+    action_dim: int
+    continuous_action_dim: int
+    binary_action_dim: int
+    use_recurrence: bool
+    embed_dim: int
+    gru_hidden: int
+    head_hidden: int
+
+
+@dataclass(frozen=True)
+class CheckpointRunContext:
+    phase: int
+    env: dict
+    ppo: dict
+    schema_version: int = _CKPT_SCHEMA_VERSION
+
+
+@dataclass(frozen=True)
+class CheckpointConfig:
+    model: CheckpointModelTopology
+    run: CheckpointRunContext
+
+    def to_dict(self) -> dict:
+        out = asdict(self)
+        run_cfg = out.pop("run")
+        out.update(run_cfg)
+        return out
+
+
+def _build_checkpoint_config(
+    config: dict, ckpt_env_cfg: dict, task_spec: dict, *, use_recurrence: bool
+) -> CheckpointConfig:
+    model_cfg = config.get("model", {})
+    topology = CheckpointModelTopology(
+        obs_dim=int(task_spec["obs_dim"]),
+        action_dim=int(task_spec["action_dim"]),
+        continuous_action_dim=int(task_spec["continuous_action_dim"]),
+        binary_action_dim=int(task_spec["binary_action_dim"]),
+        use_recurrence=bool(use_recurrence),
+        embed_dim=int(model_cfg["embed_dim"]),
+        gru_hidden=int(model_cfg["gru_hidden"]),
+        head_hidden=int(model_cfg["head_hidden"]),
+    )
+    run = CheckpointRunContext(
+        phase=int(config.get("phase", 2)),
+        env=ckpt_env_cfg,
+        ppo=dict(config.get("ppo", {})),
+    )
+    return CheckpointConfig(model=topology, run=run)
+
+
 # Topology-relevant model config fields. A mismatch on any of these means the
 # saved state_dict will not fit the new model — fail loud before torch's
 # generic shape-mismatch error makes the cause hard to read.
@@ -116,16 +179,49 @@ def _load_init_checkpoint(
     with ``expected_model_cfg`` on any topology-relevant field.
     """
     state = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
-    saved_model_cfg = state.get("config", {}).get("model", {})
-    for key in _WARM_START_TOPOLOGY_KEYS:
-        saved = saved_model_cfg.get(key)
-        expected = expected_model_cfg.get(key)
-        if saved is not None and expected is not None and saved != expected:
-            raise ValueError(
-                f"warm-start checkpoint architecture mismatch on '{key}': "
-                f"checkpoint={saved!r} config={expected!r} (path={ckpt_path})"
-            )
+    ckpt_config = _normalize_checkpoint_config(state.get("config", {}))
+    _validate_checkpoint_topology(
+        ckpt_config.get("model", {}), expected_model_cfg, ckpt_path=ckpt_path
+    )
     model.load_state_dict(state["model_state_dict"])
+
+
+def _normalize_checkpoint_config(raw_config: dict) -> dict:
+    """Normalize older/newer checkpoint config shapes into current schema."""
+    schema_version = int(raw_config.get("schema_version", 0))
+    normalized = dict(raw_config)
+    if schema_version == 0:
+        normalized["schema_version"] = _CKPT_SCHEMA_VERSION
+    return normalized
+
+
+def _validate_checkpoint_topology(
+    saved_model_cfg: dict,
+    expected_model_cfg: dict,
+    *,
+    ckpt_path: str | Path,
+) -> None:
+    missing_keys = [k for k in _WARM_START_TOPOLOGY_KEYS if k not in saved_model_cfg]
+    mismatches: list[tuple[str, object, object]] = []
+    for key in _WARM_START_TOPOLOGY_KEYS:
+        if key in saved_model_cfg and key in expected_model_cfg:
+            saved = saved_model_cfg[key]
+            expected = expected_model_cfg[key]
+            if saved != expected:
+                mismatches.append((key, saved, expected))
+    if missing_keys or mismatches:
+        chunks = []
+        if missing_keys:
+            chunks.append(f"missing topology keys={missing_keys}")
+        if mismatches:
+            mismatch_desc = ", ".join(
+                f"{k}(checkpoint={s!r}, config={e!r})" for k, s, e in mismatches
+            )
+            chunks.append(f"mismatched topology fields: {mismatch_desc}")
+        raise ValueError(
+            f"warm-start checkpoint incompatible ({'; '.join(chunks)}) "
+            f"(path={ckpt_path})"
+        )
 
 
 def _run_variant(
@@ -155,19 +251,9 @@ def _run_variant(
 
     trainer = PPOTrainer(env_fn=env_fn, config=ppo_cfg, seed=variant_seed)
 
-    ckpt_cfg = {
-        "phase": int(config.get("phase", 2)),
-        "env": ckpt_env_cfg,
-        "model": {
-            **config.get("model", {}),
-            "use_recurrence": use_recurrence,
-            "obs_dim": int(task_spec["obs_dim"]),
-            "action_dim": int(task_spec["action_dim"]),
-            "continuous_action_dim": int(task_spec["continuous_action_dim"]),
-            "binary_action_dim": int(task_spec["binary_action_dim"]),
-        },
-        "ppo": dict(config.get("ppo", {})),
-    }
+    ckpt_cfg = _build_checkpoint_config(
+        config, ckpt_env_cfg, task_spec, use_recurrence=use_recurrence
+    ).to_dict()
 
     variant_name = "recurrent" if use_recurrence else "feedforward"
 

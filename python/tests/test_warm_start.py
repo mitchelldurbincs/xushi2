@@ -79,6 +79,32 @@ def test_load_init_checkpoint_rejects_architecture_mismatch(tmp_path: Path) -> N
         ppo_orch._load_init_checkpoint(target, ckpt, mismatched_cfg)
 
 
+def test_load_init_checkpoint_rejects_missing_topology_keys(tmp_path: Path) -> None:
+    ckpt = tmp_path / "src_missing.pt"
+    saved_cfg = _save_phase2_checkpoint(ckpt)
+    state = torch.load(ckpt, weights_only=False)
+    del state["config"]["model"]["gru_hidden"]
+    torch.save(state, ckpt)
+
+    target = build_model(**saved_cfg)
+    with pytest.raises(ValueError, match="missing topology keys"):
+        ppo_orch._load_init_checkpoint(target, ckpt, saved_cfg)
+
+
+def test_load_init_checkpoint_accepts_legacy_config_without_schema_version(
+    tmp_path: Path,
+) -> None:
+    ckpt = tmp_path / "legacy.pt"
+    saved_cfg = _save_phase2_checkpoint(ckpt)
+    state = torch.load(ckpt, weights_only=False)
+    # Simulate old format: no explicit schema_version.
+    state["config"].pop("schema_version", None)
+    torch.save(state, ckpt)
+
+    target = build_model(**saved_cfg)
+    ppo_orch._load_init_checkpoint(target, ckpt, saved_cfg)
+
+
 # --- Orchestration wiring tests (mirror test_phase2_early_stop.py structure).
 
 
