@@ -116,6 +116,10 @@ struct MatchConfig {
     MapBounds map{};
     // Required mechanic values; see Phase1MechanicsConfig docs.
     Phase1MechanicsConfig mechanics{};
+    // Phase-4 toggle. team_size==1: single Ranger per team (Phase 1–3 path,
+    // slots 0 and 3). team_size==3: full 3v3 (Phase 4+, slots 0–2 + 3–5).
+    // Other values are rejected by the Sim ctor.
+    std::uint32_t team_size = 1;
 };
 
 // Opaque match state. Copyable so snapshots can be taken trivially.

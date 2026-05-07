@@ -67,7 +67,8 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                        &xushi2::sim::MatchConfig::fog_of_war_enabled)
         .def_readwrite("randomize_map", &xushi2::sim::MatchConfig::randomize_map)
         .def_readwrite("action_repeat", &xushi2::sim::MatchConfig::action_repeat)
-        .def_readwrite("mechanics", &xushi2::sim::MatchConfig::mechanics);
+        .def_readwrite("mechanics", &xushi2::sim::MatchConfig::mechanics)
+        .def_readwrite("team_size", &xushi2::sim::MatchConfig::team_size);
 
     py::class_<xushi2::sim::Sim>(m, "Sim")
         .def(py::init<const xushi2::sim::MatchConfig&>())
@@ -170,7 +171,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     m.attr("AGENTS_PER_MATCH") = xushi2::sim::kAgentsPerMatch;
     m.attr("TEAM_SIZE") = xushi2::sim::kTeamSize;
     m.attr("ACTOR_OBS_PHASE1_DIM") = xushi2::sim::kActorObsPhase1Dim;
-    m.attr("CRITIC_OBS_PHASE1_DIM") = xushi2::sim::kCriticObsPhase1Dim;
+    m.attr("CRITIC_OBS_DIM") = xushi2::sim::kCriticObsDim;
 
     // Write the Phase-1 actor observation for `agent_slot` into the
     // caller-provided float32 numpy buffer. Zero-copy: Python owns the
@@ -196,8 +197,9 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         py::arg("sim"), py::arg("agent_slot"), py::arg("out"),
         "Write the Phase-1 actor observation for agent_slot into `out`.");
 
-    // Write the Phase-1 critic observation for `team_perspective` into the
+    // Write the Phase-4 critic observation for `team_perspective` into the
     // caller-provided float32 numpy buffer. Team must be Team.A or Team.B.
+    // Requires the Sim was constructed with MatchConfig::team_size == 3.
     m.def(
         "build_critic_obs",
         [](const xushi2::sim::Sim& sim, xushi2::common::Team team_perspective,
@@ -207,9 +209,9 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     "out buffer must be 1-D float32");
             }
             if (static_cast<std::uint32_t>(out.shape(0)) <
-                xushi2::sim::kCriticObsPhase1Dim) {
+                xushi2::sim::kCriticObsDim) {
                 throw std::invalid_argument(
-                    "out buffer length must be >= CRITIC_OBS_PHASE1_DIM");
+                    "out buffer length must be >= CRITIC_OBS_DIM");
             }
             // Pre-validate team so Python gets a real exception instead of a
             // process-abort from X2_REQUIRE inside the builder.
@@ -219,11 +221,11 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     "team_perspective must be Team.A or Team.B "
                     "(Team.Neutral is not a valid critic side)");
             }
-            xushi2::sim::build_critic_obs_phase1(
+            xushi2::sim::build_critic_obs(
                 sim, team_perspective, out.mutable_data(0),
                 static_cast<std::uint32_t>(out.shape(0)));
         },
         py::arg("sim"), py::arg("team_perspective"), py::arg("out"),
-        "Write the Phase-1 critic observation for a team perspective "
-        "into `out`.");
+        "Write the Phase-4 critic observation (kCriticObsDim floats) for a "
+        "team perspective into `out`. Requires team_size == 3.");
 }

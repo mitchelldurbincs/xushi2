@@ -1,25 +1,30 @@
-"""Phase-1 observation manifest — canonical field order for the actor- and
+"""Observation manifest — canonical field order for the actor- and
 critic-side flat observation tensors.
 
-This module is the single source of truth for Phase-1 observation layout on
-the Python side. The C++ side mirrors these constants in
+This module is the single source of truth for observation layout on the
+Python side. The C++ side mirrors these constants in
 `src/sim/include/xushi2/sim/obs.h`; the two files MUST stay in lockstep.
 Changing field order or width is a breaking change: old checkpoints become
 invalid, and downstream reward / env / replay code that indexes by position
 must be updated in the same commit.
 
-Field layout is documented in `docs/observation_spec.md` §Phase 1.
+Actor layout is documented in `docs/observation_spec.md` §Phase 1.
+Phase-4 critic layout: 3 own-team actor mirrors (slot{0,1,2}/<actor_field>)
+followed by 3 enemy world-frame blocks (enemy{0,1,2}/<world_field>) followed
+by raw objective counters and seed bits. See
+`docs/plans/2026-05-07-phase4-critic-obs-design.md` for layout rationale.
 
 Two invariants hold (see `docs/observation_spec.md` §"Observation invariants"):
 
 1. The actor and critic builders are separate top-level functions with
    separate manifests — they may share pure low-level utilities, but no
    function that iterates hidden enemy state is reachable from the actor
-   obs builder. Phase 1 has no fog of war so there is no hidden state to
-   leak, but we establish the contract here.
-2. All spatial features are in a team-relative frame: Team A sees the world
-   as-is, Team B sees the map mirrored across map center. The sim runs in
-   world coordinates; mirroring happens in the C++ obs builder.
+   obs builder.
+2. All actor spatial features are in a team-relative frame (Team A as-is,
+   Team B mirrored across map center). The critic emits actor mirrors in
+   the same team frame, but enemy-team blocks are emitted in WORLD frame
+   so the critic sees absolute positions for both sides without a
+   per-side mirror collapse.
 """
 
 from __future__ import annotations
@@ -27,8 +32,8 @@ from __future__ import annotations
 __all__ = [
     "ACTOR_PHASE1_DIM",
     "ACTOR_PHASE1_FIELDS",
-    "CRITIC_PHASE1_DIM",
-    "CRITIC_PHASE1_FIELDS",
+    "CRITIC_DIM",
+    "CRITIC_FIELDS",
     "actor_field_slice",
     "critic_field_slice",
 ]
@@ -61,49 +66,57 @@ ACTOR_PHASE1_FIELDS: tuple[tuple[str, int, str], ...] = (
     ("round_timer",             1, "sim ticks elapsed / round length ticks"),
 )
 
-# Critic sees everything the actor sees PLUS hidden / privileged fields.
-# At Phase 1 that means world-frame absolute positions for both heroes, raw
-# tick counters for the objective state machine, and the match seed. These
-# are NEVER exposed to the actor.
-CRITIC_PHASE1_FIELDS: tuple[tuple[str, int, str], ...] = (
-    # --- Mirror of the actor fields (critic sees them from its team side) ---
-    ("own_hp",                    1, "own HP / max"),
-    ("own_velocity",              2, "own velocity, team-frame"),
-    ("own_aim_unit",              2, "own aim as (sin, cos)"),
-    ("own_position",              2, "own position, team-frame normalized"),
-    ("own_ammo",                  1, "own magazine / 6"),
-    ("own_reloading",             1, "own reloading flag"),
-    ("own_combat_roll_cd",        1, "own ability_1 cd / max"),
-    ("enemy_alive",               1, "enemy alive"),
-    ("enemy_respawn_timer",       1, "enemy respawn ticks / max"),
-    ("enemy_relative_position",   2, "enemy minus own position, team-frame"),
-    ("enemy_hp",                  1, "enemy HP / max"),
-    ("enemy_velocity",            2, "enemy velocity, team-frame"),
-    ("objective_owner_onehot",    3, "objective owner one-hot"),
-    ("cap_team_onehot",           3, "cap_team one-hot"),
-    ("cap_progress",              1, "capture progress [0, 1]"),
-    ("contested",                 1, "contested flag"),
-    ("objective_unlocked",        1, "objective unlocked flag"),
-    ("own_score",                 1, "own score normalized"),
-    ("enemy_score",               1, "enemy score normalized"),
-    ("self_on_point",             1, "viewer is on point"),
-    ("enemy_on_point",            1, "enemy is on point"),
-    ("round_timer",               1, "round timer [0, 1]"),
-    # --- Privileged fields (world-frame absolute, raw counters, seed) ---
-    ("world_own_position",        2, "own position in WORLD frame (no mirror)"),
-    ("world_enemy_position",      2, "enemy position in WORLD frame (no mirror)"),
-    ("world_own_velocity",        2, "own velocity in WORLD frame"),
-    ("world_enemy_velocity",      2, "enemy velocity in WORLD frame"),
-    ("cap_progress_ticks",        1, "raw capture progress tick counter"),
-    ("team_a_score_ticks",        1, "raw Team A score tick counter"),
-    ("team_b_score_ticks",        1, "raw Team B score tick counter"),
-    ("tick_raw",                  1, "raw match tick counter"),
-    ("seed_hi",                   1, "top 32 bits of match seed, normalized [-1, 1]"),
-    ("seed_lo",                   1, "bottom 32 bits of match seed, normalized [-1, 1]"),
+ACTOR_PHASE1_DIM: int = sum(width for _, width, _ in ACTOR_PHASE1_FIELDS)
+
+
+def _slot_prefixed_actor_fields(slot: int) -> tuple[tuple[str, int, str], ...]:
+    return tuple(
+        (f"slot{slot}/{name}", width, desc)
+        for name, width, desc in ACTOR_PHASE1_FIELDS
+    )
+
+
+_ENEMY_WORLD_BLOCK: tuple[tuple[str, int, str], ...] = (
+    ("world_position",   2, "world-frame position (no mirror)"),
+    ("world_velocity",   2, "world-frame velocity (no mirror)"),
+    ("world_aim_unit",   2, "world-frame aim as (sin, cos) of aim_angle"),
+    ("hp_normalized",    1, "health_centi_hp / max_health_centi_hp"),
+    ("alive_flag",       1, "1 if alive else 0"),
+    ("respawn_timer",    1, "(respawn_tick - now) / max, 0 when alive"),
+    ("ammo",             1, "weapon.magazine / kRangerMaxMagazine"),
+    ("reloading",        1, "1 if reloading else 0"),
+    ("combat_roll_cd",   1, "cd_ability_1 / max"),
 )
 
-ACTOR_PHASE1_DIM: int = sum(width for _, width, _ in ACTOR_PHASE1_FIELDS)
-CRITIC_PHASE1_DIM: int = sum(width for _, width, _ in CRITIC_PHASE1_FIELDS)
+
+def _enemy_block_for(enemy: int) -> tuple[tuple[str, int, str], ...]:
+    return tuple(
+        (f"enemy{enemy}/{name}", width, desc)
+        for name, width, desc in _ENEMY_WORLD_BLOCK
+    )
+
+
+# Phase-4 critic obs layout. Mirrors C++ `kCriticObsDim` in obs.h.
+CRITIC_FIELDS: tuple[tuple[str, int, str], ...] = (
+    *_slot_prefixed_actor_fields(0),
+    *_slot_prefixed_actor_fields(1),
+    *_slot_prefixed_actor_fields(2),
+    *_enemy_block_for(0),
+    *_enemy_block_for(1),
+    *_enemy_block_for(2),
+    ("cap_progress_ticks", 1, "raw capture progress tick counter"),
+    ("team_a_score_ticks", 1, "raw Team A score tick counter"),
+    ("team_b_score_ticks", 1, "raw Team B score tick counter"),
+    ("tick_raw",           1, "raw match tick counter"),
+    ("seed_hi",            1, "top 32 bits of seed, normalized [-1, 1]"),
+    ("seed_lo",            1, "bottom 32 bits of seed, normalized [-1, 1]"),
+)
+
+CRITIC_DIM: int = sum(width for _, width, _ in CRITIC_FIELDS)
+assert CRITIC_DIM == 135, (
+    f"CRITIC_DIM drifted to {CRITIC_DIM}; expected 135. "
+    "Did the C++ kCriticObsDim get updated to match?"
+)
 
 
 def _build_slice_table(fields: tuple[tuple[str, int, str], ...]) -> dict[str, slice]:
@@ -116,7 +129,7 @@ def _build_slice_table(fields: tuple[tuple[str, int, str], ...]) -> dict[str, sl
 
 
 _ACTOR_SLICES: dict[str, slice] = _build_slice_table(ACTOR_PHASE1_FIELDS)
-_CRITIC_SLICES: dict[str, slice] = _build_slice_table(CRITIC_PHASE1_FIELDS)
+_CRITIC_SLICES: dict[str, slice] = _build_slice_table(CRITIC_FIELDS)
 
 
 def actor_field_slice(name: str) -> slice:

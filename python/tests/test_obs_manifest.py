@@ -1,4 +1,4 @@
-"""Tests for the Phase-1 observation manifest.
+"""Tests for the observation manifest.
 
 The manifest is the source of truth for the actor- and critic-side flat
 observation tensors. Field widths sum to the declared total, and the slice
@@ -12,8 +12,8 @@ import pytest
 from xushi2.obs_manifest import (
     ACTOR_PHASE1_DIM,
     ACTOR_PHASE1_FIELDS,
-    CRITIC_PHASE1_DIM,
-    CRITIC_PHASE1_FIELDS,
+    CRITIC_DIM,
+    CRITIC_FIELDS,
     actor_field_slice,
     critic_field_slice,
 )
@@ -30,17 +30,17 @@ def test_actor_dim_matches_spec_value():
 
 
 def test_critic_dim_matches_field_widths():
-    assert CRITIC_PHASE1_DIM == sum(width for _, width, _ in CRITIC_PHASE1_FIELDS)
+    assert CRITIC_DIM == sum(width for _, width, _ in CRITIC_FIELDS)
 
 
-def test_critic_dim_matches_spec_value():
-    # Must equal src/sim/include/xushi2/sim/obs.h::kCriticObsPhase1Dim.
-    assert CRITIC_PHASE1_DIM == 45
+def test_critic_dim_is_135():
+    # Must equal src/sim/include/xushi2/sim/obs.h::kCriticObsDim.
+    assert CRITIC_DIM == 135
 
 
 def test_critic_is_at_least_as_wide_as_actor():
     # Critic obs is a superset; the minimum invariant is >= actor dim.
-    assert CRITIC_PHASE1_DIM >= ACTOR_PHASE1_DIM
+    assert CRITIC_DIM >= ACTOR_PHASE1_DIM
 
 
 def test_actor_field_names_are_unique():
@@ -49,8 +49,47 @@ def test_actor_field_names_are_unique():
 
 
 def test_critic_field_names_are_unique():
-    names = [name for name, _, _ in CRITIC_PHASE1_FIELDS]
+    names = [name for name, _, _ in CRITIC_FIELDS]
     assert len(names) == len(set(names))
+
+
+def test_critic_fields_have_expected_layout():
+    # First 3*len(actor_fields) are slotN/<actor_field> for N in 0,1,2.
+    actor_names = [name for name, _, _ in ACTOR_PHASE1_FIELDS]
+    expected_prefix: list[str] = []
+    for slot in range(3):
+        for name in actor_names:
+            expected_prefix.append(f"slot{slot}/{name}")
+
+    actual_names = [name for name, _, _ in CRITIC_FIELDS]
+    assert actual_names[: len(expected_prefix)] == expected_prefix
+
+    # Then enemyN/<world block> for N in 0,1,2 (9 fields each).
+    enemy_field_names = [
+        "world_position", "world_velocity", "world_aim_unit",
+        "hp_normalized", "alive_flag", "respawn_timer",
+        "ammo", "reloading", "combat_roll_cd",
+    ]
+    cursor = len(expected_prefix)
+    for enemy in range(3):
+        for name in enemy_field_names:
+            assert actual_names[cursor] == f"enemy{enemy}/{name}", (
+                f"at index {cursor}, got {actual_names[cursor]!r}"
+            )
+            cursor += 1
+
+    # Then objective + seed unprefixed.
+    tail = [
+        "cap_progress_ticks", "team_a_score_ticks",
+        "team_b_score_ticks", "tick_raw", "seed_hi", "seed_lo",
+    ]
+    assert actual_names[cursor:] == tail
+
+
+def test_critic_phase1_symbols_removed():
+    import xushi2.obs_manifest as m
+    assert not hasattr(m, "CRITIC_PHASE1_FIELDS")
+    assert not hasattr(m, "CRITIC_PHASE1_DIM")
 
 
 def test_actor_slice_own_hp_first():
@@ -71,8 +110,6 @@ def test_actor_slice_objective_owner_onehot_width_three():
 
 
 def test_actor_slices_cover_full_tensor_contiguously():
-    # Walking the fields in order yields non-overlapping, contiguous slices
-    # that together span [0, ACTOR_PHASE1_DIM).
     cursor = 0
     for name, width, _ in ACTOR_PHASE1_FIELDS:
         s = actor_field_slice(name)
@@ -84,12 +121,12 @@ def test_actor_slices_cover_full_tensor_contiguously():
 
 def test_critic_slices_cover_full_tensor_contiguously():
     cursor = 0
-    for name, width, _ in CRITIC_PHASE1_FIELDS:
+    for name, width, _ in CRITIC_FIELDS:
         s = critic_field_slice(name)
         assert s.start == cursor
         assert s.stop == cursor + width
         cursor = s.stop
-    assert cursor == CRITIC_PHASE1_DIM
+    assert cursor == CRITIC_DIM
 
 
 def test_unknown_actor_field_raises_key_error():
@@ -103,8 +140,6 @@ def test_unknown_critic_field_raises_key_error():
 
 
 def test_actor_expected_field_count_equals_spec():
-    # Checkpoint: observation_spec.md §Phase 1 enumerates the fields below.
-    # Changes here are breaking — bump a version and update C++ obs.h.
     expected = {
         "own_hp",
         "own_velocity",

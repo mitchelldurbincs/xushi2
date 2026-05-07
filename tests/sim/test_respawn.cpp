@@ -86,6 +86,37 @@ TEST(Respawn, KillsDeathsCountersPreservedAcrossRespawn) {
     EXPECT_EQ(sim.state().heroes[3].deaths, 1U);
 }
 
+TEST(Respawn, RespawnReturnsToOwnSlotPointFor3v3) {
+    auto cfg = xushi2::test_support::make_test_config();
+    cfg.seed = 7;
+    cfg.team_size = 3;
+    Sim sim(cfg);
+
+    std::array<xushi2::common::Vec2, 3> origins;
+    for (std::uint32_t i = 0; i < 3; ++i) {
+        origins[i] = sim.state().heroes[i].position;
+    }
+
+    // Force-kill slot 1 by mutating state, then step until respawn fires.
+    // Use slot 0 (x = cx - dx). Slot 1's origin coincides with the 1v1
+    // spawn point (cx, team_a_y), so it cannot distinguish a buggy
+    // fallback from the correct per-slot path.
+    auto& mutable_h = const_cast<xushi2::sim::HeroState&>(sim.state().heroes[0]);
+    mutable_h.alive = false;
+    mutable_h.health_centi_hp = 0;
+    mutable_h.respawn_tick =
+        sim.state().tick + cfg.mechanics.respawn_ticks;
+
+    std::array<Action, kAgentsPerMatch> idle{};
+    for (std::uint32_t k = 0; k < cfg.mechanics.respawn_ticks + 4U; ++k) {
+        sim.step(idle);
+        if (sim.state().heroes[0].alive) break;
+    }
+    ASSERT_TRUE(sim.state().heroes[0].alive);
+    EXPECT_NEAR(sim.state().heroes[0].position.x, origins[0].x, 1e-4F);
+    EXPECT_NEAR(sim.state().heroes[0].position.y, origins[0].y, 1e-4F);
+}
+
 TEST(Respawn, DeadHeroDoesNotCountForObjectiveOccupancy) {
     // Use full-size arena so the spawn is OUT of the objective circle.
     auto cfg = xushi2::test_support::make_test_config();

@@ -12,13 +12,13 @@ TEST(ObsDims, ActorPhase1DimIs31) {
     EXPECT_EQ(xushi2::sim::kActorObsPhase1Dim, 31U);
 }
 
-TEST(ObsDims, CriticPhase1DimIs45) {
-    // Actor 31 + privileged 14 (world-frame positions/velocities, raw
-    // tick counters, seed bits). Must equal
-    // python/xushi2/obs_manifest.py::CRITIC_PHASE1_DIM.
-    EXPECT_EQ(xushi2::sim::kCriticObsPhase1Dim, 45U);
+TEST(ObsDims, CriticDimIs135) {
+    // 3 own-team actor mirrors (3*31=93) + 3 enemy world blocks (3*12=36)
+    // + 4 raw objective counters + 2 seed bits = 135. Must equal
+    // python/xushi2/obs_manifest.py::CRITIC_DIM.
+    EXPECT_EQ(xushi2::sim::kCriticObsDim, 135U);
 }
 
 TEST(ObsDims, CriticIsAtLeastAsWideAsActor) {
-    EXPECT_GE(xushi2::sim::kCriticObsPhase1Dim, xushi2::sim::kActorObsPhase1Dim);
+    EXPECT_GE(xushi2::sim::kCriticObsDim, xushi2::sim::kActorObsPhase1Dim);
 }

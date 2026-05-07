@@ -27,10 +27,11 @@ class Sim;
 // python/xushi2/obs_manifest.py. See docs/observation_spec.md §Phase 1.
 inline constexpr std::uint32_t kActorObsPhase1Dim = 31;
 
-// Phase-1 critic obs tensor width. Mirrors CRITIC_PHASE1_DIM in
-// python/xushi2/obs_manifest.py. Actor surface plus world-frame positions,
-// raw tick counters, and seed bits.
-inline constexpr std::uint32_t kCriticObsPhase1Dim = 45;
+// Phase-4 critic obs tensor width. Mirrors CRITIC_DIM in
+// python/xushi2/obs_manifest.py. Layout: 3 own-team actor mirrors
+// (3 × kActorObsPhase1Dim = 93 floats) + 3 enemy world blocks
+// (12 floats each = 36) + 4 raw objective counters + 2 seed bits = 135.
+inline constexpr std::uint32_t kCriticObsDim = 135;
 
 // Build the Phase-1 actor observation for the agent in `agent_slot` into the
 // caller-provided `out_buffer` of capacity `out_capacity` float32 entries.
@@ -51,23 +52,29 @@ void build_actor_obs_phase1(const Sim& sim,
                             float* out_buffer,
                             std::uint32_t out_capacity) noexcept;
 
-// Build the Phase-1 critic observation for the given team perspective into
-// the caller-provided `out_buffer` of capacity `out_capacity` float32
-// entries.
+// Build the Phase-4 centralized-critic observation for the given team
+// perspective into the caller-provided `out_buffer` of capacity
+// `out_capacity` float32 entries.
 //
 // Contract:
-//  - Writes exactly `kCriticObsPhase1Dim` floats starting at out_buffer[0].
-//  - Requires `out_capacity >= kCriticObsPhase1Dim`; aborts otherwise.
-//  - `team_perspective` must be `Team::A` or `Team::B`; the first
-//    `kActorObsPhase1Dim` entries match the actor obs for that team's Ranger
-//    slot, followed by privileged fields (world-frame absolute positions
-//    and velocities, raw tick counters, match seed bits).
-//  - The critic may iterate full sim state; it is the centralized-training
-//    side. It MUST NOT be called from any code path that builds an actor
-//    obs.
-void build_critic_obs_phase1(const Sim& sim,
-                             common::Team team_perspective,
-                             float* out_buffer,
-                             std::uint32_t out_capacity) noexcept;
+//  - Writes exactly `kCriticObsDim` floats starting at out_buffer[0].
+//  - Requires `out_capacity >= kCriticObsDim`; aborts otherwise.
+//  - Requires the `Sim` to have been constructed with
+//    `MatchConfig::team_size == 3`. With team_size == 1 the builder
+//    will assert because the team has fewer than 3 present Rangers.
+//  - `team_perspective` must be `Team::A` or `Team::B`.
+//  - Layout: for the team's three Ranger slots in ascending order,
+//    emit the 31-float actor obs of each (team-frame). Then for the
+//    enemy team's three slots, emit a 12-float world-frame block
+//    (position, velocity, aim_unit, hp, alive, respawn_timer, ammo,
+//    reloading, combat_roll_cd). Then 4 raw objective tick counters
+//    and 2 normalized seed bits. See python/xushi2/obs_manifest.py
+//    CRITIC_FIELDS for the field-by-field catalog.
+//  - The critic may iterate full sim state. It MUST NOT be called
+//    from any code path that builds an actor obs.
+void build_critic_obs(const Sim& sim,
+                      common::Team team_perspective,
+                      float* out_buffer,
+                      std::uint32_t out_capacity) noexcept;
 
 }  // namespace xushi2::sim

@@ -188,7 +188,7 @@ static void stage_process_deaths(MatchState& state,
 //      hero that died and revived in the same tick is impossible.
 static void stage_respawn(MatchState& state, const MatchConfig& config) {
     for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
-        respawn_tick_update(state.heroes[i], state.tick, config);
+        respawn_tick_update(state.heroes[i], i, state.tick, config);
     }
 }
 

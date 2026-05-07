@@ -9,6 +9,7 @@ void spawn_ranger(HeroState& h, common::Team team, common::EntityId id,
 
 void reset_state(MatchState& state, const MatchConfig& config);
 
-void respawn_tick_update(HeroState& h, common::Tick now, const MatchConfig& config);
+void respawn_tick_update(HeroState& h, std::uint32_t slot,
+                         common::Tick now, const MatchConfig& config);
 
 }  // namespace xushi2::sim::internal

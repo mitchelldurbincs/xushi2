@@ -9,17 +9,24 @@ observation tensors for each curriculum phase.
 in CI — any code path that iterates hidden enemies must not be
 callable from `actor_obs_builder`.
 
-**Status: Phase 1b — actor + critic builders live for 1v1 Ranger.** The
-Phase 1 layouts below are canonical and implemented
-(`src/sim/src/actor_obs.cpp`, `src/sim/src/critic_obs.cpp`). Dim constants
-are mirrored by `python/xushi2/obs_manifest.py` and
-`src/sim/include/xushi2/sim/obs.h`. Phase 2+ layouts remain spec-only.
+**Status: Phase 4 critic obs live for 3v3 Ranger; Phase 1 actor obs
+unchanged.** The actor builder remains at the Phase-1 layout (31 floats,
+1v1-flavored — see Phase 1 table below). The critic builder has been
+widened to the Phase-4 (3v3) layout: `build_critic_obs` (no phase suffix;
+the previous `build_critic_obs_phase1` has been retired). The Phase-4
+critic builder requires `MatchConfig::team_size == 3`; passing
+`team_size == 1` will assert. Phase 1–3 trainers do not call the critic
+builder at all (they use a shared-trunk actor-critic), so this swap is
+not load-bearing for the single-agent phases. See
+`docs/plans/2026-05-07-phase4-critic-obs-design.md` for the layout
+rationale.
 
-Totals at Phase 1: **actor = 31 floats**, **critic = 45 floats**.
-The "~28" mentioned in the Phase 1 table below was an early estimate;
-the canonical totals above are computed from the field list and kept in
-lockstep by tests (`tests/observations/test_obs_dims.cpp` and
-`python/tests/test_obs_manifest.py`).
+Totals: **actor = 31 floats** (Phase 1 table below),
+**critic = 135 floats** (Phase 4 table further below). Dim constants are
+mirrored across `python/xushi2/obs_manifest.py`,
+`src/sim/include/xushi2/sim/obs.h`, and tested in lockstep by
+`tests/observations/test_obs_dims.cpp` and
+`python/tests/test_obs_manifest.py`.
 
 ## Observation invariants
 
@@ -86,6 +93,14 @@ Presence/alive fields:
 the actor / critic builders must already be separate top-level
 functions; this is the phase that establishes the contract.
 
+**Phase 1 critic builder retired.** The 1v1 critic builder
+(`build_critic_obs_phase1`, dim 45) has been removed. The current
+`build_critic_obs` requires `MatchConfig::team_size == 3` and emits
+the 135-float Phase-4 layout; phases 2 and 3 do not consume a
+centralized critic at all (shared-trunk actor-critic), so retiring the
+1v1 builder costs nothing operationally. Old training checkpoints
+remain valid since they store actor weights only.
+
 ### Phase 2 (recurrent PPO on 1v1 memory toy)
 
 Toy env spec lives elsewhere (`docs/memory_toy.md`, TBD). Purpose is to
@@ -95,23 +110,70 @@ validate RNN training, not to exercise the real obs pipeline.
 
 Same flat obs as Phase 1. The only difference is the policy has a GRU.
 
-### Phase 4 (recurrent IPPO/MAPPO, 2v2, flat obs)
+### Phase 4 (recurrent MAPPO, 3v3 Ranger, flat obs)
 
-Expand flat obs to cover 2 allies and up-to-2 enemies. Fixed-size slots
-(no variable-length — that's Phase 5). Missing allies/enemies are zero-
-padded with a presence flag.
+Phase 4 is centralized-training / decentralized-execution (CTDE) MAPPO
+with shared actor weights across the three Ranger slots per team. The
+**actor obs** at Phase 4 is the existing 31-float Phase-1 layout, run
+once per agent slot (no per-slot widening — all three Rangers are
+role-identical and share the same actor network).
 
-| Added fields                    | Dim per slot | Count |
-|---------------------------------|--------------|-------|
-| ally presence flag              | 1            | × 1 (one teammate) |
-| ally HP, position, velocity, aim| ≈ 7          | × 1 |
-| enemy presence/alive flag       | 1            | × 1 |
-| enemy HP, pos, vel, aim         | ≈ 7          | × 1 |
+The **critic obs** is the only obs surface that grows. Layout (135 floats):
 
-Critic obs at Phase 4: flat vector containing the full sim state
-(positions, HP, cooldowns, ability states, RNG-independent counters).
-Critic-side fields MUST include ground-truth enemy positions regardless
-of visibility.
+```
+[0   ..  31)   actor_obs(team_perspective, own slot 0)   31 floats, team-frame
+[31  ..  62)   actor_obs(team_perspective, own slot 1)   31 floats, team-frame
+[62  ..  93)   actor_obs(team_perspective, own slot 2)   31 floats, team-frame
+[93  .. 105)   enemy_world_block(enemy slot 0)           12 floats, world-frame
+[105 .. 117)   enemy_world_block(enemy slot 1)           12 floats, world-frame
+[117 .. 129)   enemy_world_block(enemy slot 2)           12 floats, world-frame
+[129 .. 133)   cap_progress_ticks, team_a_score_ticks,
+               team_b_score_ticks, tick_raw              4 floats, raw counters
+[133 .. 135)   seed_hi, seed_lo                          2 floats, normalized
+```
+
+**Per-enemy world block (12 floats), world-frame, no team mirroring:**
+
+| Field             | Dim | Notes                                              |
+|-------------------|-----|----------------------------------------------------|
+| world_position    | 2   | raw `(x, y)` from `HeroState::position`            |
+| world_velocity    | 2   | raw `(vx, vy)` from `HeroState::velocity`          |
+| world_aim_unit    | 2   | `(sin(aim_angle), cos(aim_angle))`, no mirror      |
+| hp_normalized     | 1   | `health_centi_hp / max_health_centi_hp`            |
+| alive_flag        | 1   | `{0, 1}`                                           |
+| respawn_timer     | 1   | `(respawn_tick − now) / respawn_ticks`, clamped, 0 when alive |
+| ammo              | 1   | `weapon.magazine / kRangerMaxMagazine`             |
+| reloading         | 1   | `{0, 1}` from `weapon.reloading`                   |
+| combat_roll_cd    | 1   | `cd_ability_1 / kRangerCombatRollCooldownTicks`    |
+
+**Frame conventions:**
+
+- The 3 own-team actor mirrors are **team-frame** (Team A as-is, Team B
+  mirrored across map center) — exactly what each agent's actor would
+  see. This makes the CTDE "critic sees ≥ actor" contract trivial to
+  assert in tests.
+- The 3 enemy world blocks are **world-frame, no mirror**, regardless of
+  `team_perspective`. The critic must learn the team-frame ↔ world-frame
+  bridge — same convention as Phase 1.
+
+**Slot order:** within each team, the three Ranger slots are emitted in
+ascending index order. Team A occupies slots 0–2, Team B slots 3–5; the
+critic for `team_perspective == Team::A` sees own slots in the order
+0,1,2 and enemy slots in order 3,4,5, and vice versa for Team B. The
+sim does not permute slot identities, so this offset coupling is stable
+in practice.
+
+**Sim prerequisite:** the Phase-4 critic builder requires
+`MatchConfig::team_size == 3`. The sim's spawn logic gates 3v3 spawning
+on this field; the default (`team_size == 1`) preserves the 1v1
+Phase-1/2/3 path bit-identically.
+
+The canonical field list lives in `python/xushi2/obs_manifest.py`'s
+`CRITIC_FIELDS` and is mirrored by the C++ implementation at
+`src/sim/src/critic_obs.cpp`. See
+`docs/plans/2026-05-07-phase4-critic-obs-design.md` for layout rationale
+and trade-offs (in particular: why concat-actor-mirrors over a pure
+team-level layout, and why per-enemy aim/ammo/cooldowns are privileged).
 
 ### Phase 5 (add entity attention)
 
@@ -169,15 +231,16 @@ Critic always sees (full target, Phase 4+ once the full roster is in play):
 - Map layout / seed
 - Team side (A or B)
 
-**Phase 3 subset (currently implemented):** the critic sees the flat actor
-prefix for team-perspective, plus world-frame own/enemy position and
-velocity, `cap_progress_ticks`, `team_a_score_ticks`,
-`team_b_score_ticks`, the raw tick counter, and `seed_hi`/`seed_lo`.
-Per-hero cooldown / ammo / weapon-state / beam-lock-target fields enter
-with the corresponding heroes as the roster grows in Phase 4+ (Mender
-weapon state and beam-lock target; Vanguard Barrier state). No explicit
-`team_side` scalar today — team perspective is implicit in which slot's
-actor prefix the critic consumes (see code-side follow-up).
+**Phase 4 subset (currently implemented):** the critic sees the
+team-frame actor obs of all three own-team Ranger slots in ascending
+slot order, then a 12-float world-frame block per enemy Ranger
+(position, velocity, `(sin, cos)` of aim, hp, alive flag, respawn
+timer, ammo, reloading flag, combat-roll cooldown), then raw objective
+tick counters (`cap_progress_ticks`, `team_a_score_ticks`,
+`team_b_score_ticks`, `tick_raw`), then `seed_hi`/`seed_lo`. Mender
+weapon state / beam-lock target and Vanguard Barrier state enter when
+those heroes land at Phase 10+. No explicit `team_side` scalar — team
+perspective is implicit in the actor-mirror prefix.
 
 Never exposed to actor:
 - Hidden enemy positions (when outside this agent's LoS)

@@ -1,24 +1,29 @@
-// Phase-1 critic (centralized) observation builder.
+// Phase-4 critic (centralized) observation builder.
 //
-// The critic obs is a superset of the actor obs for the given team's
-// Ranger slot. The first kActorObsPhase1Dim floats are produced by the
-// public actor builder so actor and critic stay aligned on that prefix by
-// construction. The remainder carries privileged information (world-frame
-// absolute positions and velocities, raw tick counters, match seed bits)
-// that the actor MUST NEVER see.
+// Layout (135 floats):
+//   - 3 own-team actor mirrors (3 × kActorObsPhase1Dim = 93 floats),
+//     emitted by calling `build_actor_obs_phase1` for each of the team's
+//     three Ranger slots in ascending slot order.
+//   - 3 enemy world-frame blocks (3 × 12 = 36 floats), one per enemy
+//     Ranger in ascending slot order: (position, velocity, aim_unit,
+//     hp_normalized, alive_flag, respawn_timer, ammo, reloading,
+//     combat_roll_cd).
+//   - 4 raw objective tick counters (cap_progress, team_a_score,
+//     team_b_score, sim tick).
+//   - 2 normalized seed bits (hi, lo), each in [-1, 1].
 //
 // Field order and widths MUST match python/xushi2/obs_manifest.py
-// CRITIC_PHASE1_FIELDS.
+// CRITIC_FIELDS. Requires `MatchConfig::team_size == 3`.
 
 #include <xushi2/sim/obs.h>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
-#include <limits>
 
 #include <xushi2/common/assert.hpp>
+#include <xushi2/common/limits.hpp>
 #include <xushi2/common/types.h>
-#include <xushi2/sim/obs_utils.h>
 #include <xushi2/sim/sim.h>
 
 namespace xushi2::sim {
@@ -35,36 +40,96 @@ struct Writer {
     void push2(float a, float b) noexcept { push1(a); push1(b); }
 };
 
-// Find the Phase-1 Ranger slot for a team. Returns kAgentsPerMatch if the
-// team has no occupied Ranger (should not happen at Phase 1).
-std::uint32_t find_team_ranger_slot(const MatchState& s,
-                                    common::Team team) noexcept {
-    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
-        const auto& h = s.heroes[i];
-        if (h.present && h.team == team) {
-            return i;
-        }
-    }
-    return static_cast<std::uint32_t>(s.heroes.size());
+float clamp01(float v) noexcept {
+    if (v < 0.0F) return 0.0F;
+    if (v > 1.0F) return 1.0F;
+    return v;
 }
 
-// Normalize a uint32 to [-1, 1] by dividing by 2^32. For seed bits we lose
-// precision but that is fine — these fields are included so the critic can
-// in principle distinguish maps; Phase-1 has a single map so precision is
-// not load-bearing.
 float norm_u32(std::uint32_t v) noexcept {
     constexpr float kTwoPow32 = 4294967296.0F;
     return 2.0F * (static_cast<float>(v) / kTwoPow32) - 1.0F;
 }
 
+std::array<std::uint32_t, 3> find_team_ranger_slots(
+        const MatchState& s, common::Team team) noexcept {
+    std::array<std::uint32_t, 3> slots{
+        static_cast<std::uint32_t>(s.heroes.size()),
+        static_cast<std::uint32_t>(s.heroes.size()),
+        static_cast<std::uint32_t>(s.heroes.size()),
+    };
+    std::uint32_t found = 0;
+    for (std::uint32_t i = 0; i < s.heroes.size() && found < 3; ++i) {
+        const auto& h = s.heroes[i];
+        if (h.present && h.team == team) {
+            slots[found++] = i;
+        }
+    }
+    X2_REQUIRE(found == 3, common::ErrorCode::InvalidHeroId);
+    return slots;
+}
+
+void emit_enemy_world_block(Writer& w,
+                            const HeroState& h,
+                            common::Tick now,
+                            const MatchConfig& cfg) noexcept {
+    // World-frame position and velocity, no mirror.
+    w.push2(h.position.x, h.position.y);
+    w.push2(h.velocity.x, h.velocity.y);
+
+    // World-frame aim as (sin, cos) — no mirror, raw aim_angle.
+    w.push2(std::sin(h.aim_angle), std::cos(h.aim_angle));
+
+    // hp_normalized.
+    const float hp = (h.max_health_centi_hp > 0)
+        ? (static_cast<float>(h.health_centi_hp) /
+           static_cast<float>(h.max_health_centi_hp))
+        : 0.0F;
+    w.push1(hp);
+
+    // alive_flag.
+    w.push1(h.alive ? 1.0F : 0.0F);
+
+    // respawn_timer normalized to [0, 1] using cfg.mechanics.respawn_ticks.
+    // Mirrors the actor's enemy_respawn_timer convention exactly.
+    float respawn_norm = 0.0F;
+    if (h.present && !h.alive && cfg.mechanics.respawn_ticks > 0U) {
+        std::int64_t remaining =
+            static_cast<std::int64_t>(h.respawn_tick) -
+            static_cast<std::int64_t>(now);
+        if (remaining < 0) remaining = 0;
+        respawn_norm = clamp01(
+            static_cast<float>(remaining) /
+            static_cast<float>(cfg.mechanics.respawn_ticks));
+    }
+    w.push1(respawn_norm);
+
+    // ammo.
+    const float ammo = (common::kRangerMaxMagazine > 0)
+        ? (static_cast<float>(h.weapon.magazine) /
+           static_cast<float>(common::kRangerMaxMagazine))
+        : 0.0F;
+    w.push1(ammo);
+
+    // reloading: same predicate the actor builder uses.
+    w.push1(h.weapon.reloading ? 1.0F : 0.0F);
+
+    // combat_roll_cd normalized.
+    const float roll_cd = (common::kRangerCombatRollCooldownTicks > 0)
+        ? clamp01(static_cast<float>(h.cd_ability_1) /
+                  static_cast<float>(common::kRangerCombatRollCooldownTicks))
+        : 0.0F;
+    w.push1(roll_cd);
+}
+
 }  // namespace
 
-void build_critic_obs_phase1(const Sim& sim,
-                             common::Team team_perspective,
-                             float* out_buffer,
-                             std::uint32_t out_capacity) noexcept {
+void build_critic_obs(const Sim& sim,
+                      common::Team team_perspective,
+                      float* out_buffer,
+                      std::uint32_t out_capacity) noexcept {
     X2_REQUIRE(out_buffer != nullptr, common::ErrorCode::CorruptState);
-    X2_REQUIRE(out_capacity >= kCriticObsPhase1Dim,
+    X2_REQUIRE(out_capacity >= kCriticObsDim,
                common::ErrorCode::CapacityExceeded);
     X2_REQUIRE(team_perspective == common::Team::A ||
                    team_perspective == common::Team::B,
@@ -72,54 +137,34 @@ void build_critic_obs_phase1(const Sim& sim,
 
     const MatchState& s = sim.state();
     const MatchConfig& cfg = sim.config();
+    X2_REQUIRE(cfg.team_size == 3, common::ErrorCode::CorruptState);
 
-    const std::uint32_t team_slot =
-        find_team_ranger_slot(s, team_perspective);
-    X2_REQUIRE(team_slot < s.heroes.size(),
-               common::ErrorCode::InvalidHeroId);
+    // 1) Three own-team actor mirrors, each kActorObsPhase1Dim floats.
+    const auto own_slots = find_team_ranger_slots(s, team_perspective);
+    for (std::uint32_t i = 0; i < 3; ++i) {
+        build_actor_obs_phase1(sim, own_slots[i],
+                               out_buffer + i * kActorObsPhase1Dim,
+                               kActorObsPhase1Dim);
+    }
 
-    // --- First kActorObsPhase1Dim floats: actor-shape mirror for this team.
-    // We call the public actor builder because the critic's first N floats
-    // must be exactly what the actor of that team would see. This keeps the
-    // two surfaces aligned by construction.
-    build_actor_obs_phase1(sim, team_slot, out_buffer,
-                           kActorObsPhase1Dim);
+    Writer w{out_buffer, 3U * kActorObsPhase1Dim};
 
-    // --- Privileged section. Cursor picks up after the actor prefix. ---
-    Writer w{out_buffer, kActorObsPhase1Dim};
-
-    // Find the opposite team's Ranger slot. If missing, degenerate to zeros.
+    // 2) Three enemy-team world-frame blocks, 12 floats each.
     const common::Team enemy_team =
         (team_perspective == common::Team::A) ? common::Team::B
                                               : common::Team::A;
-    const std::uint32_t enemy_slot = find_team_ranger_slot(s, enemy_team);
-
-    // world_own_position, world_enemy_position — no mirror, raw world coords.
-    const HeroState& own = s.heroes[team_slot];
-    w.push2(own.position.x, own.position.y);
-    if (enemy_slot < s.heroes.size() && s.heroes[enemy_slot].present) {
-        w.push2(s.heroes[enemy_slot].position.x,
-                s.heroes[enemy_slot].position.y);
-    } else {
-        w.push2(0.0F, 0.0F);
+    const auto enemy_slots = find_team_ranger_slots(s, enemy_team);
+    for (std::uint32_t i = 0; i < 3; ++i) {
+        emit_enemy_world_block(w, s.heroes[enemy_slots[i]], s.tick, cfg);
     }
 
-    // world_own_velocity, world_enemy_velocity — no mirror, raw.
-    w.push2(own.velocity.x, own.velocity.y);
-    if (enemy_slot < s.heroes.size() && s.heroes[enemy_slot].present) {
-        w.push2(s.heroes[enemy_slot].velocity.x,
-                s.heroes[enemy_slot].velocity.y);
-    } else {
-        w.push2(0.0F, 0.0F);
-    }
-
-    // Raw tick counters.
+    // 3) Raw objective counters.
     w.push1(static_cast<float>(s.objective.cap_progress_ticks));
     w.push1(static_cast<float>(s.objective.team_a_score_ticks));
     w.push1(static_cast<float>(s.objective.team_b_score_ticks));
     w.push1(static_cast<float>(s.tick));
 
-    // Seed bits, normalized to [-1, 1].
+    // 4) Seed bits, normalized to [-1, 1].
     const std::uint64_t seed = cfg.seed;
     const std::uint32_t seed_hi =
         static_cast<std::uint32_t>((seed >> 32) & 0xFFFFFFFFULL);
@@ -128,7 +173,7 @@ void build_critic_obs_phase1(const Sim& sim,
     w.push1(norm_u32(seed_hi));
     w.push1(norm_u32(seed_lo));
 
-    X2_ENSURE(w.cursor == kCriticObsPhase1Dim,
+    X2_ENSURE(w.cursor == kCriticObsDim,
               common::ErrorCode::CapacityExceeded);
 }
 

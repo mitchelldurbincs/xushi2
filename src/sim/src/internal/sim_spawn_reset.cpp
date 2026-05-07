@@ -43,21 +43,40 @@ void reset_state(MatchState& state, const MatchConfig& config) {
     state.objective.team_b_score_ticks = 0;
     state.objective.unlocked = false;
 
-    // Phase-1a: two Rangers, one per team, fixed spawn points. Other slots
-    // unoccupied until Phase 4+.
     const float cx = 0.5F * (config.map.min_x + config.map.max_x);
     const float span_y = config.map.max_y - config.map.min_y;
-    spawn_ranger(state.heroes[0], common::Team::A, 1,
-                 common::Vec2{cx, config.map.min_y + 0.1F * span_y},
-                 0.5F * common::kPi);   // face +y (toward center)
-    spawn_ranger(state.heroes[3], common::Team::B, 2,
-                 common::Vec2{cx, config.map.min_y + 0.9F * span_y},
-                 -0.5F * common::kPi);  // face -y (toward center)
+    const float team_a_y = config.map.min_y + 0.1F * span_y;
+    const float team_b_y = config.map.min_y + 0.9F * span_y;
+
+    if (config.team_size == 1) {
+        // Phase-1a: two Rangers, one per team. Slots 1, 2, 4, 5 unoccupied.
+        spawn_ranger(state.heroes[0], common::Team::A, 1,
+                     common::Vec2{cx, team_a_y},
+                     0.5F * common::kPi);
+        spawn_ranger(state.heroes[3], common::Team::B, 2,
+                     common::Vec2{cx, team_b_y},
+                     -0.5F * common::kPi);
+    } else {
+        // Phase 4: 3v3, slots 0–2 (A) and 3–5 (B), x-offset by ±dx.
+        const float dx = 0.15F * (config.map.max_x - config.map.min_x);
+        const float xs[3] = {cx - dx, cx, cx + dx};
+        for (std::uint32_t i = 0; i < 3; ++i) {
+            spawn_ranger(state.heroes[i], common::Team::A,
+                         static_cast<common::EntityId>(i + 1),
+                         common::Vec2{xs[i], team_a_y},
+                         0.5F * common::kPi);
+            spawn_ranger(state.heroes[3 + i], common::Team::B,
+                         static_cast<common::EntityId>(4 + i),
+                         common::Vec2{xs[i], team_b_y},
+                         -0.5F * common::kPi);
+        }
+    }
 }
 
 // --- Tick-pipeline step 14: respawn heroes whose timer elapsed. ---
 
-void respawn_tick_update(HeroState& h, common::Tick now, const MatchConfig& config) {
+void respawn_tick_update(HeroState& h, std::uint32_t slot,
+                         common::Tick now, const MatchConfig& config) {
     if (h.alive || !h.present) {
         return;
     }
@@ -67,15 +86,32 @@ void respawn_tick_update(HeroState& h, common::Tick now, const MatchConfig& conf
     // Respawn at original team spawn point; preserve kills/deaths counters.
     const float cx = 0.5F * (config.map.min_x + config.map.max_x);
     const float span_y = config.map.max_y - config.map.min_y;
+    const float team_a_y = config.map.min_y + 0.1F * span_y;
+    const float team_b_y = config.map.min_y + 0.9F * span_y;
+
     common::Vec2 spawn_pos{};
     float aim_angle = 0.0F;
-    if (h.team == common::Team::A) {
-        spawn_pos = common::Vec2{cx, config.map.min_y + 0.1F * span_y};
-        aim_angle = 0.5F * common::kPi;
+    if (config.team_size == 1) {
+        if (h.team == common::Team::A) {
+            spawn_pos = common::Vec2{cx, team_a_y};
+            aim_angle = 0.5F * common::kPi;
+        } else {
+            spawn_pos = common::Vec2{cx, team_b_y};
+            aim_angle = -0.5F * common::kPi;
+        }
     } else {
-        spawn_pos = common::Vec2{cx, config.map.min_y + 0.9F * span_y};
-        aim_angle = -0.5F * common::kPi;
+        const float dx = 0.15F * (config.map.max_x - config.map.min_x);
+        const std::uint32_t local =
+            (h.team == common::Team::A) ? slot : (slot - 3U);
+        const float xs[3] = {cx - dx, cx, cx + dx};
+        spawn_pos = common::Vec2{
+            xs[local],
+            (h.team == common::Team::A) ? team_a_y : team_b_y};
+        aim_angle = (h.team == common::Team::A)
+                        ? 0.5F * common::kPi
+                        : -0.5F * common::kPi;
     }
+
     const std::uint32_t preserved_kills = h.kills;
     const std::uint32_t preserved_deaths = h.deaths;
     spawn_ranger(h, h.team, h.id, spawn_pos, aim_angle);

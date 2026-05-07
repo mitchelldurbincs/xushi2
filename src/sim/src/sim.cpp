@@ -49,6 +49,8 @@ Sim::Sim(const MatchConfig& config) : config_(config) {
                ErrorCode::CorruptState);
     X2_REQUIRE(config.map.max_x > config.map.min_x, ErrorCode::CorruptState);
     X2_REQUIRE(config.map.max_y > config.map.min_y, ErrorCode::CorruptState);
+    X2_REQUIRE(config.team_size == 1 || config.team_size == 3,
+               ErrorCode::CorruptState);
     validate_mechanics(config.mechanics);
     internal::reset_state(state_, config_);
 }
