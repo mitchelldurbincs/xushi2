@@ -72,3 +72,6 @@ python/xushi2/Release/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Git worktrees
+.worktrees/
