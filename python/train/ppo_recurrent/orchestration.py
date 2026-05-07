@@ -186,12 +186,30 @@ def _load_init_checkpoint(
     model.load_state_dict(state["model_state_dict"])
 
 
+def _migrate_ckpt_v0_to_v1(config: dict) -> dict:
+    # v0 and v1 share the same fields; this is a version stamp only.
+    return config
+
+
+_CKPT_MIGRATIONS: dict[int, Callable[[dict], dict]] = {
+    0: _migrate_ckpt_v0_to_v1,
+}
+
+
 def _normalize_checkpoint_config(raw_config: dict) -> dict:
-    """Normalize older/newer checkpoint config shapes into current schema."""
+    """Normalize older checkpoint config shapes into the current schema."""
     schema_version = int(raw_config.get("schema_version", 0))
     normalized = dict(raw_config)
-    if schema_version == 0:
-        normalized["schema_version"] = _CKPT_SCHEMA_VERSION
+    while schema_version < _CKPT_SCHEMA_VERSION:
+        migrate = _CKPT_MIGRATIONS.get(schema_version)
+        if migrate is None:
+            raise ValueError(
+                f"no migration registered for checkpoint schema_version={schema_version} "
+                f"(current schema_version={_CKPT_SCHEMA_VERSION})"
+            )
+        normalized = migrate(normalized)
+        schema_version += 1
+    normalized["schema_version"] = _CKPT_SCHEMA_VERSION
     return normalized
 
 

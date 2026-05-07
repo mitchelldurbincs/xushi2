@@ -9,7 +9,8 @@
       "Bash(ps -p 1041 -o pid,etime,cmd)",
       "PowerShell(py *)",
       "Bash(nohup python -m train.train --config ../experiments/configs/phase3_ranger_objective_curriculum_warmstart.yaml)",
-      "Bash(echo \"launched PID $!\")"
+      "Bash(echo \"launched PID $!\")",
+      "Bash(Select-String -Pattern \"_make_phase|partial|gymnasium|_phase_task_spec|_load_init_checkpoint|_save_checkpoint\" -SimpleMatch)"
     ]
   }
 }

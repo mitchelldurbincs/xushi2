@@ -119,15 +119,16 @@ def main() -> int:
 
         result = train_from_config(config)
         recurrent = float(result["recurrent"])
+        label = phase_spec["label"]
         if "feedforward" in phase_spec.get("training_variants", ()):
             feedforward = float(result["feedforward"])
             gap = recurrent - feedforward
             print(
-                f"[phase2] recurrent_final={recurrent:.3f} "
+                f"[{label}] recurrent_final={recurrent:.3f} "
                 f"feedforward_final={feedforward:.3f} gap={gap:.3f}"
             )
         else:
-            print(f"[phase3] recurrent_final={recurrent:.3f}")
+            print(f"[{label}] recurrent_final={recurrent:.3f}")
         return 0
 
     print(f"[xushi2] unsupported phase/config shape: phase={phase!r}")
