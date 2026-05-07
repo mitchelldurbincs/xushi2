@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 
+from train.phases import resolve_phase
 from xushi2.runner import EpisodeResult, run_episode
 
 
@@ -66,11 +67,13 @@ def main() -> int:
     args = parser.parse_args()
 
     config = load_config(args.config)
-    phase = config.get("phase", "unknown")
+    phase_raw = config.get("phase", "unknown")
     try:
-        phase_int = int(phase)
-    except (TypeError, ValueError):
-        phase_int = -1
+        phase_int, phase_spec = resolve_phase(config)
+    except ValueError as exc:
+        print(f"[xushi2] {exc}")
+        return 2
+    phase = phase_raw
     env_cfg = config.get("env", {})
     sim_cfg = config.get("sim", {})
     if phase_int in (2, 3):
@@ -94,7 +97,7 @@ def main() -> int:
         print(f"[xushi2] phase={phase} episodes={episodes} "
               f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")
 
-    if phase == 0:
+    if phase_int == 0:
         if not assert_determinism:
             # Later phases will slot in here. For now the harness is Phase-0-only.
             print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
@@ -111,27 +114,23 @@ def main() -> int:
                   f"({total} hashes) all identical")
         return rc
 
-    if phase == 2:
+    if phase_int in (2, 3):
         from train.ppo_recurrent import train_from_config
 
         result = train_from_config(config)
         recurrent = float(result["recurrent"])
-        feedforward = float(result["feedforward"])
-        gap = recurrent - feedforward
-        print(f"[phase2] recurrent_final={recurrent:.3f} "
-              f"feedforward_final={feedforward:.3f} gap={gap:.3f}")
+        if "feedforward" in phase_spec.get("training_variants", ()):
+            feedforward = float(result["feedforward"])
+            gap = recurrent - feedforward
+            print(
+                f"[phase2] recurrent_final={recurrent:.3f} "
+                f"feedforward_final={feedforward:.3f} gap={gap:.3f}"
+            )
+        else:
+            print(f"[phase3] recurrent_final={recurrent:.3f}")
         return 0
 
-    if phase == 3:
-        from train.ppo_recurrent import train_from_config
-
-        result = train_from_config(config)
-        recurrent = float(result["recurrent"])
-        print(f"[phase3] recurrent_final={recurrent:.3f}")
-        return 0
-
-    # Later phases will slot in here. For now the harness is Phase-0-only.
-    print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
+    print(f"[xushi2] unsupported phase/config shape: phase={phase!r}")
     return 2
 
 
