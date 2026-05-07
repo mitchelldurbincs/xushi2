@@ -3,64 +3,44 @@
 from __future__ import annotations
 
 import copy
-from functools import partial
 from pathlib import Path
 from typing import Callable
 
-import gymnasium as gym
 import torch
 
-
-def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
-    from envs.memory_toy import MemoryToyEnv
-
-    return MemoryToyEnv(
-        episode_length=episode_length, cue_visible_ticks=cue_visible_ticks
-    )
-
-
-def _make_phase3_env(
-    sim_cfg: dict,
-    opponent_bot: str,
-    learner_team: str,
-    reward_cfg: dict,
-):
-    from envs.phase3_ranger import Phase3RangerEnv
-
-    return Phase3RangerEnv(
-        sim_cfg,
-        opponent_bot=opponent_bot,
-        learner_team=learner_team,
-        reward_cfg=reward_cfg,
-    )
-
-
 from train.models import ActorCritic
+from train.phases import resolve_phase
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy_stats
 from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.trainer import PPOTrainer
 
 
+def make_env_fn(config: dict) -> tuple[Callable[[], object], dict, int]:
+    _, phase_spec = resolve_phase(config)
+    env_bundle = phase_spec.get("env_bundle")
+    if env_bundle is None:
+        raise ValueError(f"unsupported phase/config shape: phase={config.get('phase')!r}")
+    return env_bundle(config)
+
+
 def _phase_task_spec(config: dict) -> dict:
-    phase = int(config.get("phase", 2))
-    if phase == 2:
-        return {
-            "label": "phase2",
-            "obs_dim": 3,
-            "action_dim": 2,
-            "continuous_action_dim": 2,
-            "binary_action_dim": 0,
-        }
-    if phase == 3:
-        return {
-            "label": "phase3",
-            "obs_dim": 31,
-            "action_dim": 6,
-            "continuous_action_dim": 3,
-            "binary_action_dim": 3,
-        }
-    raise ValueError(f"unsupported recurrent PPO phase: {phase}")
+    _, phase_spec = resolve_phase(config)
+    required = (
+        "label",
+        "obs_dim",
+        "action_dim",
+        "continuous_action_dim",
+        "binary_action_dim",
+    )
+    missing = [k for k in required if k not in phase_spec]
+    if missing:
+        raise ValueError(
+            f"unsupported phase/config shape: phase={config.get('phase')!r} missing={missing}"
+        )
+    return {k: phase_spec[k] for k in required}
+
+
 
 
 def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
@@ -96,42 +76,6 @@ def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
         vector_env=str(ppo_cfg.get("vector_env", "sync")),
         torch_num_threads=int(ppo_cfg.get("torch_num_threads", 0)),
     )
-
-
-def make_env_fn(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
-    phase = int(config.get("phase", 2))
-    env_cfg = config.get("env", {})
-    if phase == 2:
-        ep_len = int(env_cfg.get("episode_length", 64))
-        cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
-        env_fn = partial(_make_phase2_env, ep_len, cue_ticks)
-        return (
-            env_fn,
-            {"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
-            int(env_cfg.get("seed_base", 0)),
-        )
-
-    if phase == 3:
-        sim_cfg = dict(env_cfg.get("sim", {}))
-        opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-        learner_team = str(env_cfg.get("learner_team", "A"))
-        reward_cfg = dict(env_cfg.get("reward", {}))
-        env_fn = partial(
-            _make_phase3_env, sim_cfg, opponent_bot, learner_team, reward_cfg
-        )
-        return (
-            env_fn,
-            {
-                "sim": sim_cfg,
-                "opponent_bot": opponent_bot,
-                "learner_team": learner_team,
-                "reward": reward_cfg,
-            },
-            int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
-        )
-
-    raise ValueError(f"unsupported recurrent PPO phase: {phase}")
-
 
 def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -367,14 +311,14 @@ def _run_variant(
 
 def train_from_config(config: dict) -> dict[str, float]:
     """Train one or more variants for the selected recurrent PPO phase."""
-    phase = int(config.get("phase", 2))
+    phase, phase_spec = resolve_phase(config)
     run_cfg = config.get("run", {})
     default_out = "runs/phase2_memory_toy" if phase == 2 else "runs/phase3_ranger"
     out_root = Path(str(run_cfg.get("output_dir", default_out)))
     rec_eval = _run_variant(
         config, use_recurrence=True, output_dir=out_root / "recurrent"
     )
-    if phase == 2:
+    if "feedforward" in phase_spec.get("training_variants", ()):
         ff_eval = _run_variant(
             config, use_recurrence=False, output_dir=out_root / "feedforward"
         )
