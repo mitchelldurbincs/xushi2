@@ -35,3 +35,5 @@ xushi2_add_test(test_integration          integration/test_smoke.cpp)
 # source tree. Pass the repo root in as a macro.
 target_compile_definitions(test_golden_replay
     PRIVATE XUSHI2_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+xushi2_add_test(test_movement_geometry    sim/test_movement_geometry.cpp)
