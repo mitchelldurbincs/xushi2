@@ -27,6 +27,8 @@
 #include <xushi2/common/limits.hpp>
 #include <xushi2/sim/sim.h>
 
+#include "panel.hpp"
+
 namespace {
 
 constexpr int kWindowWidth = 1280;
@@ -70,11 +72,6 @@ struct WallMarker {
     xushi2::common::Vec2 a{};
     xushi2::common::Vec2 b{};
     float half_width = 0.25F;
-};
-
-struct LosDebugCounts {
-    std::size_t visible = 0;
-    std::size_t blocked = 0;
 };
 
 xushi2::sim::MatchConfig make_viewer_config() {
@@ -211,23 +208,6 @@ xushi2::common::HeroKind parse_hero_kind(std::string_view s) {
     if (s == "vanguard") return xushi2::common::HeroKind::Vanguard;
     if (s == "mender") return xushi2::common::HeroKind::Mender;
     return xushi2::common::HeroKind::Ranger;
-}
-
-const char* hero_kind_label(xushi2::common::HeroKind kind) {
-    switch (kind) {
-        case xushi2::common::HeroKind::Vanguard: return "vanguard";
-        case xushi2::common::HeroKind::Ranger:   return "ranger";
-        case xushi2::common::HeroKind::Mender:   return "mender";
-    }
-    return "unknown";
-}
-
-const char* mender_weapon_label(xushi2::common::MenderWeapon weapon) {
-    switch (weapon) {
-        case xushi2::common::MenderWeapon::Staff:   return "staff";
-        case xushi2::common::MenderWeapon::Sidearm: return "sidearm";
-    }
-    return "unknown";
 }
 
 const char* target_token_label(std::uint8_t target_slot) {
@@ -707,166 +687,6 @@ void update_tether_trails(
     }
 }
 
-void draw_panel(const xushi2::sim::MatchState& s,
-                bool replay_mode,
-                bool paused,
-                float playback_speed,
-                int replay_phase,
-                bool replay_fog,
-                const std::string& replay_fog_mode,
-                const std::string& replay_layout_hash,
-                const std::string& replay_match_type,
-                const std::string& replay_schedule_summary,
-                const std::string& replay_league_summary,
-                const std::string& replay_snapshot_group,
-                const std::string& replay_snapshot_name,
-                const std::string& replay_loss_mask,
-                bool replay_target_slot,
-                bool replay_last_seen,
-                std::size_t replay_cover_count,
-                std::size_t replay_wall_count,
-                LosDebugCounts replay_los_counts,
-                const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& replay_actions,
-                std::size_t replay_idx,
-                std::size_t replay_total) {
-    const int x = kPanelX + 24;
-    int y = 32;
-    DrawText("xushi2 viewer", x, y, 22, RAYWHITE); y += 32;
-    DrawText(replay_mode ? "replay playback" : "basic vs basic",
-             x, y, 14, GRAY); y += 24;
-    DrawText(TextFormat("state    %s  %.1fx",
-                        paused ? "paused" : "running",
-                        static_cast<double>(playback_speed)),
-             x, y, 16, LIGHTGRAY); y += 22;
-    DrawText("keys     Space pause  Right step  R reset  1/2/3 speed",
-             x, y, 13, GRAY); y += 28;
-
-    DrawText(TextFormat("tick     %u", s.tick), x, y, 18, LIGHTGRAY); y += 24;
-    const float seconds = static_cast<float>(s.tick) /
-                          static_cast<float>(xushi2::common::kTickHz);
-    DrawText(TextFormat("time     %.1fs", seconds), x, y, 18, LIGHTGRAY); y += 32;
-
-    DrawText("score", x, y, 16, GRAY); y += 22;
-    DrawText(TextFormat("  A  %u", s.objective.team_a_score_ticks),
-             x, y, 18, team_color(xushi2::common::Team::A)); y += 22;
-    DrawText(TextFormat("  B  %u", s.objective.team_b_score_ticks),
-             x, y, 18, team_color(xushi2::common::Team::B)); y += 28;
-
-    DrawText("objective", x, y, 16, GRAY); y += 22;
-    const char* owner_label = "neutral";
-    Color owner_col = GRAY;
-    if (s.objective.owner == xushi2::common::Team::A) {
-        owner_label = "team A"; owner_col = team_color(xushi2::common::Team::A);
-    } else if (s.objective.owner == xushi2::common::Team::B) {
-        owner_label = "team B"; owner_col = team_color(xushi2::common::Team::B);
-    }
-    DrawText(TextFormat("  owner   %s", owner_label), x, y, 16, owner_col); y += 22;
-    DrawText(TextFormat("  cap     %u/%u",
-                        s.objective.cap_progress_ticks,
-                        xushi2::common::kCaptureTicks),
-             x, y, 16, LIGHTGRAY); y += 22;
-    DrawText(TextFormat("  unlocked %s", s.objective.unlocked ? "yes" : "no"),
-             x, y, 16, LIGHTGRAY); y += 32;
-
-    if (replay_mode) {
-        DrawText("replay", x, y, 16, GRAY); y += 22;
-        if (replay_phase > 0) {
-            DrawText(TextFormat("  phase    %d", replay_phase),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_fog) {
-            const char* mode =
-                replay_fog_mode.empty() ? "diagnostic" : replay_fog_mode.c_str();
-            DrawText(TextFormat("  fog      %s", mode), x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_layout_hash.empty()) {
-            DrawText(TextFormat("  layout   %s", replay_layout_hash.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_match_type.empty()) {
-            DrawText(TextFormat("  match    %s", replay_match_type.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_snapshot_group.empty()) {
-            DrawText(TextFormat("  league   %s", replay_snapshot_group.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_snapshot_name.empty()) {
-            DrawText(TextFormat("  snapshot %.28s", replay_snapshot_name.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_league_summary.empty()) {
-            DrawText(TextFormat("  weights  %.30s", replay_league_summary.c_str()),
-                     x, y, 13, GRAY); y += 18;
-        }
-        if (!replay_schedule_summary.empty()) {
-            DrawText(TextFormat("  schedule %.30s", replay_schedule_summary.c_str()),
-                     x, y, 13, GRAY); y += 18;
-        }
-        if (!replay_loss_mask.empty()) {
-            DrawText(TextFormat("  lossmask %s", replay_loss_mask.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_target_slot) {
-            DrawText("  target   enabled", x, y, 16, LIGHTGRAY); y += 22;
-            DrawText(
-                TextFormat("  tokens   0:%s 1:%s 2:%s",
-                           target_token_label(replay_actions[0].target_slot),
-                           target_token_label(replay_actions[1].target_slot),
-                           target_token_label(replay_actions[2].target_slot)),
-                x, y, 13, GRAY); y += 18;
-        }
-        if (replay_last_seen) {
-            DrawText("  lastseen enabled", x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_cover_count > 0) {
-            DrawText(TextFormat("  cover    %zu", replay_cover_count),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_wall_count > 0) {
-            DrawText(TextFormat("  walls    %zu", replay_wall_count),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_los_counts.visible + replay_los_counts.blocked > 0) {
-            DrawText(TextFormat("  los      %zu/%zu",
-                                replay_los_counts.visible,
-                                replay_los_counts.visible + replay_los_counts.blocked),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        DrawText(TextFormat("  decision %zu/%zu", replay_idx, replay_total),
-                 x, y, 16, LIGHTGRAY); y += 28;
-    }
-
-    DrawText("heroes", x, y, 16, GRAY); y += 22;
-    for (std::size_t i = 0; i < s.heroes.size(); ++i) {
-        const auto& h = s.heroes[i];
-        if (!h.present) continue;
-        const Color c = team_color(h.team);
-        const char* status = h.alive ? "alive" : "dead";
-        const int hp_show = h.health_centi_hp / 100;
-        const int hp_max  = h.max_health_centi_hp / 100;
-        DrawText(TextFormat("  slot %zu  %.3s  %s  %d/%d",
-                            i, hero_kind_label(h.kind), status, hp_show, hp_max),
-                 x, y, 14, c);
-        y += 18;
-        if (h.kind == xushi2::common::HeroKind::Mender) {
-            DrawText(TextFormat("    weapon  %s", mender_weapon_label(h.mender_weapon)),
-                     x, y, 13, LIGHTGRAY);
-            y += 16;
-            if (h.mender_beam_locked_on != 0) {
-                DrawText(TextFormat("    beam    id %u", h.mender_beam_locked_on),
-                         x, y, 13, Color{120, 255, 170, 255});
-                y += 16;
-            }
-        }
-        if (h.ranger_marked_ticks > 0) {
-            DrawText(TextFormat("    marked  %u", h.ranger_marked_ticks),
-                     x, y, 13, Color{255, 214, 92, 255});
-            y += 16;
-        }
-    }
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -972,28 +792,31 @@ int main(int argc, char** argv) {
         for (const auto& h : s.heroes) {
             draw_hero(arena, h);
         }
-        draw_panel(s,
-                   replay.has_value(),
-                   paused,
-                   playback_speed,
-                   replay ? replay->phase : 0,
-                   replay ? replay->fog : false,
-                   replay ? replay->fog_mode : std::string{},
-                   replay ? replay->layout_hash : std::string{},
-                   replay ? replay->match_type : std::string{},
-                   replay ? replay->schedule_summary : std::string{},
-                   replay ? replay->league_summary : std::string{},
-                   replay ? replay->snapshot_group : std::string{},
-                   replay ? replay->snapshot_name : std::string{},
-                   replay ? replay->loss_mask : std::string{},
-                   replay ? replay->target_slot : false,
-                   replay ? replay->last_seen : false,
-                   replay ? replay->cover_markers.size() : 0U,
-                   replay ? replay->wall_markers.size() : 0U,
-                   los_counts,
-                   actions,
-                   replay_idx,
-                   replay ? replay->decisions.size() : 0U);
+        const PanelViewModel panel_model{
+            .state = s,
+            .replay_mode = replay.has_value(),
+            .paused = paused,
+            .playback_speed = playback_speed,
+            .replay_phase = replay ? replay->phase : 0,
+            .replay_fog = replay ? replay->fog : false,
+            .replay_fog_mode = replay ? replay->fog_mode : std::string_view{},
+            .replay_layout_hash = replay ? replay->layout_hash : std::string_view{},
+            .replay_match_type = replay ? replay->match_type : std::string_view{},
+            .replay_schedule_summary = replay ? replay->schedule_summary : std::string_view{},
+            .replay_league_summary = replay ? replay->league_summary : std::string_view{},
+            .replay_snapshot_group = replay ? replay->snapshot_group : std::string_view{},
+            .replay_snapshot_name = replay ? replay->snapshot_name : std::string_view{},
+            .replay_loss_mask = replay ? replay->loss_mask : std::string_view{},
+            .replay_target_slot = replay ? replay->target_slot : false,
+            .replay_last_seen = replay ? replay->last_seen : false,
+            .replay_cover_count = replay ? replay->cover_markers.size() : 0U,
+            .replay_wall_count = replay ? replay->wall_markers.size() : 0U,
+            .replay_los_counts = los_counts,
+            .replay_actions = actions,
+            .replay_idx = replay_idx,
+            .replay_total = replay ? replay->decisions.size() : 0U,
+        };
+        draw_panel(panel_model);
 
         EndDrawing();
 
