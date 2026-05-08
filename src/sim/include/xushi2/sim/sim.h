@@ -189,6 +189,13 @@ class Sim {
     std::uint32_t team_a_kills() const noexcept;
     std::uint32_t team_b_kills() const noexcept;
 
+    // Per-slot lifetime kill / death counters (snapshot of HeroState.kills /
+    // HeroState.deaths for each of the kAgentsPerMatch slots). Used by the
+    // Python reward calculator to attribute kills and deaths to individual
+    // agents for OAI Five-style team_spirit credit assignment.
+    std::array<std::uint32_t, kAgentsPerMatch> kills_by_slot() const noexcept;
+    std::array<std::uint32_t, kAgentsPerMatch> deaths_by_slot() const noexcept;
+
     // Deterministic hash of the match state. Used by the golden-replay tests
     // (docs/determinism_rules.md). Manifest of included fields lives in
     // determinism_rules.md §"state_hash() manifest".

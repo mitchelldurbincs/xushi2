@@ -184,3 +184,15 @@ def test_build_critic_obs_rejects_too_small_buffer():
     too_small = np.zeros(CRITIC_DIM - 1, dtype=np.float32)
     with pytest.raises(ValueError):
         _cpp.build_critic_obs(sim, _cpp.Team.A, too_small)
+
+
+def test_sim_exposes_kills_and_deaths_by_slot_zeroed_on_fresh_sim():
+    sim = _fresh_sim(team_size=3)
+    kills = sim.kills_by_slot
+    deaths = sim.deaths_by_slot
+    assert hasattr(kills, "__len__")
+    assert hasattr(deaths, "__len__")
+    assert len(kills) == _cpp.AGENTS_PER_MATCH
+    assert len(deaths) == _cpp.AGENTS_PER_MATCH
+    assert all(k == 0 for k in kills)
+    assert all(d == 0 for d in deaths)

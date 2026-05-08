@@ -9,9 +9,11 @@ import yaml
 from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
+from xushi2 import xushi2_cpp as _cpp
 from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.map_randomization import map_layout_hash
 from xushi2.obs_manifest import CRITIC_DIM
+from xushi2.runner import _build_config
 from xushi2.snapshot_policy import SnapshotLeague, SnapshotPool, SnapshotPolicy
 from xushi2.snapshot_retention import SnapshotRetention
 from xushi2.self_play_schedule import SelfPlaySchedule
@@ -169,6 +171,55 @@ def test_snapshot_policy_loads_and_emits_actions(tmp_path: Path) -> None:
     policy = SnapshotPolicy(snapshot_path)
     assert policy.phase == 8
     assert policy.cfg.obs_encoder == "entity_attention_grid"
+
+
+def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    snapshot_path = tmp_path / "snapshot.pt"
+    _write_snapshot(snapshot_path)
+    policy = SnapshotPolicy(snapshot_path)
+    live_bounds = {
+        "min_x": -11.0,
+        "min_y": -13.0,
+        "max_x": 61.0,
+        "max_y": 67.0,
+    }
+    captured_multi: list[dict[str, float]] = []
+    captured_norm: list[dict[str, float]] = []
+
+    def fake_multi_enemy_obs(flat, **kwargs):
+        captured_multi.append(dict(kwargs["map_bounds"]))
+        return np.zeros((flat.shape[0], policy.cfg.obs_dim), dtype=np.float32)
+
+    def fake_normalize_world_for_team(world_xy, map_bounds, *, team_b_view):
+        captured_norm.append(dict(map_bounds))
+        return np.zeros(2, dtype=np.float32)
+
+    monkeypatch.setattr(
+        "xushi2.snapshot_policy.actor_obs_to_multi_enemy_entity_grid_obs",
+        fake_multi_enemy_obs,
+    )
+    monkeypatch.setattr(
+        "xushi2.snapshot_policy.normalize_world_for_team",
+        fake_normalize_world_for_team,
+    )
+    with open(
+        "../experiments/configs/phase8_random_map_probe.yaml",
+        "r",
+        encoding="utf-8",
+    ) as fh:
+        config = yaml.safe_load(fh)
+    cfg = _build_config(config["env"]["sim"], seed_override=123)
+    cfg.team_size = 3
+    sim = _cpp.Sim(cfg)
+
+    policy.act(sim, (3, 4, 5), map_bounds=live_bounds)
+
+    assert captured_multi == [live_bounds]
+    assert captured_norm
+    assert all(bounds == live_bounds for bounds in captured_norm)
 
 
 def test_phase9_env_uses_snapshot_opponent(tmp_path: Path) -> None:

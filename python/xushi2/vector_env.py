@@ -60,6 +60,9 @@ def _async_worker(
                 )
             elif cmd == "critic_obs":
                 conn.send(_worker_critic_obs(env, critic_obs_dim))
+            elif cmd == "set_team_spirit":
+                env.set_team_spirit(float(payload))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -191,6 +194,14 @@ class XushiVectorEnv:
         reward_batch = np.stack(reward_parts, axis=0)
         self._last_obs = obs_batch
         return obs_batch, reward_batch, terminated, truncated, self.critic_obs(), infos
+
+    def set_team_spirit(self, value: float) -> None:
+        """Push team_spirit value to every wrapped env. Envs that don't
+        define ``set_team_spirit`` (scalar-reward envs) are skipped."""
+        for env in self.envs:
+            setter = getattr(env, "set_team_spirit", None)
+            if setter is not None:
+                setter(float(value))
 
     def close(self) -> None:
         for env in self.envs:
@@ -344,6 +355,16 @@ class XushiAsyncVectorEnv:
             self._last_critic_obs.copy(),
             infos,
         )
+
+    def set_team_spirit(self, value: float) -> None:
+        """Push team_spirit value to every worker. Awaits per-worker ack."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        value = float(value)
+        for conn in self._conns:
+            conn.send(("set_team_spirit", value))
+        for i in range(self.num_envs):
+            self._recv(i)
 
     def close(self) -> None:
         if self._closed:

@@ -288,6 +288,34 @@ TEST(Combat, KillsCreditedAndDeathsTracked) {
     EXPECT_EQ(sim.team_b_kills(), 0U);
 }
 
+TEST(Combat, KillsBySlotAndDeathsBySlotMirrorHeroStateCounters) {
+    // Same setup as KillsCreditedAndDeathsTracked: slot 0 (A Ranger) kills
+    // slot 3 (B Ranger). Verify the new array-shaped accessors snapshot the
+    // per-slot counters that already live on HeroState.
+    Sim sim(close_arena_config());
+    std::array<Action, kAgentsPerMatch> actions{};
+    actions[0].primary_fire = true;
+    sim.step(actions);
+    for (int j = 0; j < 14; ++j) {
+        sim.step(actions);
+    }
+    sim.step(actions);  // killing shot
+
+    const auto kills = sim.kills_by_slot();
+    const auto deaths = sim.deaths_by_slot();
+    EXPECT_EQ(kills.size(), kAgentsPerMatch);
+    EXPECT_EQ(deaths.size(), kAgentsPerMatch);
+    EXPECT_EQ(kills[0], 1U);
+    EXPECT_EQ(deaths[3], 1U);
+    for (std::size_t i = 1; i < kAgentsPerMatch; ++i) {
+        EXPECT_EQ(kills[i], 0U) << "unexpected kill at slot " << i;
+    }
+    for (std::size_t i = 0; i < kAgentsPerMatch; ++i) {
+        if (i == 3) continue;
+        EXPECT_EQ(deaths[i], 0U) << "unexpected death at slot " << i;
+    }
+}
+
 TEST(Combat, SimultaneousKillBothDie) {
     // Drive both Rangers down to exactly 75 HP (one shot kill), then fire
     // on the same tick; both should die.

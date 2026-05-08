@@ -18,6 +18,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
+from xushi2.multi_enemy_obs import map_bounds_from_sim_cfg
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
@@ -80,7 +81,12 @@ class Phase4MappoEnv(gym.Env):
         self._sim: _cpp.Sim | None = None
         self._opponent_policy = opponent_policy
         self._reward_cfg = dict(reward_cfg or {})
-        self._reward_calc = RewardCalculator(**self._reward_cfg)
+        # Phase 4 always emits per-agent rewards so MAPPO can use individual
+        # credit assignment + the team_spirit lever.
+        self._reward_cfg.pop("per_agent_rewards", None)
+        self._reward_calc = RewardCalculator(
+            per_agent_rewards=True, **self._reward_cfg
+        )
 
         self._actor_obs_buf = np.zeros(
             (3, ACTOR_PHASE1_DIM), dtype=np.float32
@@ -135,7 +141,11 @@ class Phase4MappoEnv(gym.Env):
         opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._opponent_policy is not None:
             enemy_actions = np.asarray(
-                self._opponent_policy.act(self._sim, self._enemy_slots),
+                self._opponent_policy.act(
+                    self._sim,
+                    self._enemy_slots,
+                    map_bounds=map_bounds_from_sim_cfg(self._sim_cfg),
+                ),
                 dtype=np.float32,
             )
             if enemy_actions.shape[0] != 3 or enemy_actions.shape[1] < 6:
@@ -167,8 +177,8 @@ class Phase4MappoEnv(gym.Env):
 
         self._sim.step_decision(actions)
 
-        r_a, r_b = self._reward_calc.step(self._sim)
-        team_reward = r_a if self._learner_team_str == "A" else r_b
+        r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
+        own_reward = r_a if self._learner_team_str == "A" else r_b
 
         terminated = bool(self._sim.episode_over) and (
             self._sim.winner != _cpp.Team.Neutral
@@ -177,14 +187,16 @@ class Phase4MappoEnv(gym.Env):
             self._sim.winner == _cpp.Team.Neutral
         )
         if terminated or truncated:
-            ta, tb = self._reward_calc.add_terminal(self._sim)
-            team_reward += ta if self._learner_team_str == "A" else tb
+            ta, tb = self._reward_calc.add_terminal(self._sim)  # (3,) each
+            own_reward = own_reward + (
+                ta if self._learner_team_str == "A" else tb
+            )
 
-        reward = np.full(3, team_reward, dtype=np.float32)
+        reward = np.asarray(own_reward, dtype=np.float32)
         self._build_actor_obs_all()
         info = self._make_info()
-        info["reward_team_a"] = float(r_a)
-        info["reward_team_b"] = float(r_b)
+        info["reward_team_a"] = float(np.asarray(r_a).sum())
+        info["reward_team_b"] = float(np.asarray(r_b).sum())
         info["opponent_actions"] = opponent_actions.copy()
         return self._actor_obs_buf.copy(), reward, terminated, truncated, info
 
@@ -235,6 +247,13 @@ class Phase4MappoEnv(gym.Env):
                     _cpp.observable_enemy_slots(self._sim, own_slot)[enemy_slot]
                 )
         return mask
+
+    def set_team_spirit(self, value: float) -> None:
+        """Update the team_spirit ramp value on the underlying reward calc.
+
+        Trainer calls this once per update with the schedule output of
+        ``compute_team_spirit``."""
+        self._reward_calc.set_team_spirit(value)
 
     def close(self) -> None:
         self._sim = None

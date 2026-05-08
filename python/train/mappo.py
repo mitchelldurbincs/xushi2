@@ -77,6 +77,13 @@ class MappoConfig:
     grid_channels: int = 0
     grid_size: int = 0
     agent_loss_mask: tuple[float, ...] = ()
+    # OAI Five-style team_spirit ramp on per-agent shaped rewards. The ramp
+    # is linear from `team_spirit_initial` at update 0 to `team_spirit_final`
+    # at `team_spirit_ramp_fraction * total_updates`, then held at final.
+    # All-zero defaults keep team_spirit OFF for back-compat.
+    team_spirit_initial: float = 0.0
+    team_spirit_final: float = 0.0
+    team_spirit_ramp_fraction: float = 0.3
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,41 @@ class MappoEvalStats:
     mean_team_b_score: float
     mean_team_a_kills: float
     mean_team_b_kills: float
+
+
+def compute_team_spirit(
+    *,
+    update: int,
+    total: int,
+    initial: float,
+    final: float,
+    ramp_fraction: float,
+) -> float:
+    """Linear ramp from ``initial`` at update 0 (1-indexed: update=1 is the
+    first update) to ``final`` at ``ramp_fraction * total``, then held at
+    ``final``. ``ramp_fraction <= 0`` jumps to ``final`` immediately."""
+    if ramp_fraction <= 0.0:
+        return final
+    ramp_end_update = max(1, int(ramp_fraction * total))
+    if update >= ramp_end_update:
+        return final
+    progress = update / ramp_end_update
+    return initial + progress * (final - initial)
+
+
+def _eval_outcome_counts(
+    *,
+    winner: str,
+    learner_team: str,
+    truncated: bool,
+) -> tuple[int, int, int]:
+    if learner_team == "both":
+        return (0, 0, 1)
+    if winner in ("A", "B") and learner_team in ("A", "B"):
+        return (1, 0, 0) if winner == learner_team else (0, 1, 0)
+    if winner == "Neutral" or truncated:
+        return (0, 0, 1)
+    return (0, 0, 0)
 
 
 class MappoActorCritic(nn.Module):
@@ -451,6 +493,14 @@ class MappoTrainer:
         self.current_learning_rate = float(lr)
         for group in self.optimizer.param_groups:
             group["lr"] = self.current_learning_rate
+
+    def set_team_spirit(self, value: float) -> None:
+        """Push team_spirit value to every wrapped env via the vector wrapper.
+
+        Envs whose reward calculator is in scalar mode silently ignore the
+        update (their ``set_team_spirit`` is a no-op stash); only Phase 4+
+        per-agent envs actually reweight their per-step rewards."""
+        self.vec_env.set_team_spirit(float(value))
 
     @staticmethod
     def _group_grad_norm(params: list[torch.nn.Parameter]) -> float:
@@ -840,6 +890,11 @@ def make_mappo_config(config: dict) -> MappoConfig:
         entity_num_heads=int(model_cfg.get("entity_num_heads", 1)),
         grid_channels=int(model_cfg.get("grid_channels", 0)),
         grid_size=int(model_cfg.get("grid_size", 0)),
+        team_spirit_initial=float(ppo_cfg.get("team_spirit_initial", 0.0)),
+        team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
+        team_spirit_ramp_fraction=float(
+            ppo_cfg.get("team_spirit_ramp_fraction", 0.3)
+        ),
     )
 
 
@@ -985,13 +1040,14 @@ def evaluate_mappo(
 
             winner = str(info.get("winner", ""))
             learner_team = str(info.get("learner_team", ""))
-            if winner in ("A", "B") and learner_team in ("A", "B"):
-                if winner == learner_team:
-                    wins += 1
-                else:
-                    losses += 1
-            elif winner == "Neutral" or trunc:
-                draws += 1
+            w, l, d = _eval_outcome_counts(
+                winner=winner,
+                learner_team=learner_team,
+                truncated=bool(trunc),
+            )
+            wins += w
+            losses += l
+            draws += d
 
             terminated_count += int(bool(term))
             truncated_count += int(bool(trunc))
@@ -1386,7 +1442,16 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 warmup_updates=cfg.warmup_updates,
             )
             trainer.set_learning_rate(lr)
+            tau = compute_team_spirit(
+                update=update_idx,
+                total=total_updates,
+                initial=cfg.team_spirit_initial,
+                final=cfg.team_spirit_final,
+                ramp_fraction=cfg.team_spirit_ramp_fraction,
+            )
+            trainer.set_team_spirit(tau)
             metrics = trainer.update(trainer.collect_rollout())
+            metrics["team_spirit"] = tau
             if update_idx % int(run_cfg.get("log_every", 1)) == 0:
                 print(
                     f"[{phase_label}/mappo] update={update_idx}/{total_updates} "
@@ -1404,7 +1469,8 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"gn={metrics['actor_grad_norm']:.2e}/"
                     f"{metrics['critic_grad_norm']:.2e}/"
                     f"{metrics['trunk_grad_norm']:.2e} "
-                    f"lr={lr:.2e}",
+                    f"lr={lr:.2e} "
+                    f"ts={metrics['team_spirit']:.2f}",
                     flush=True,
                 )
             if update_idx % eval_every == 0 or update_idx == total_updates:

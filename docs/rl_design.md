@@ -237,9 +237,11 @@ Where `r_individual_i` is the existing per-agent reward after terminal + shaping
 
 This is the OpenAI Five credit-assignment lever. It is **not** a substitute for the centralized critic (§3) — the critic reduces variance on the value target, while `team_spirit` shapes what "success" means for each agent's policy gradient. Both are needed.
 
-**Ramp schedule:** start Phase 4 at `team_spirit = 0.3` and ramp linearly to `0.9` over the first ~30% of training, then hold. Early training wants enough individual signal to discover basic kit usage; late training wants enough team signal to discover coordination. Log `team_spirit` in the tensorboard run; treat it as a first-class hyperparameter, not a constant.
+**Ramp schedule:** start Phase 4 at `team_spirit = 0.3` and ramp linearly to `1.0` over the first ~30% of training, then hold (OpenAI Five-style — once team coordination is the dominant signal, individual credit becomes vestigial and adds variance). Early training wants enough individual signal to discover basic kit usage; late training wants every teammate to optimize the same coordinated outcome. Log `team_spirit` in the tensorboard run; treat it as a first-class hyperparameter, not a constant.
 
 **Applies to shaped rewards only.** The ±10 terminal reward is already a team-outcome signal (win/loss is team-defined), so interpolating it against its own mean is a no-op. Implementation applies the mix to the shaped component before the per-episode `[-3.0, +3.0]` clip.
+
+**Per-agent attribution.** Each agent's pre-mix individual reward `r_individual_i` comes from per-slot kill/death attribution (sim exposes `kills_by_slot` / `deaths_by_slot`), with score-tick rewards split among teammates by their per-tick on-point share. Enemy-team mirror events (their kills, their score) are subtracted *uniformly across own slots* — the killer's bonus already credits one team, the victim's penalty already debits the other, so a per-slot enemy-mirror term would double-count. Because the default `kill_bonus == death_penalty`, summing per-agent rewards over a team exactly reproduces the team-scalar reward used pre-Phase 4, so the cumulative `[-3.0, +3.0]` clip operates on the team sum and preserves the existing per-episode magnitude cap. The clip binds first; team_spirit's mixin is invariant under team mean and therefore commutes with it.
 
 ## 6. Training curriculum
 

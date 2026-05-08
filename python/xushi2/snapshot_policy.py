@@ -44,11 +44,17 @@ class SnapshotPolicy:
             self.cfg.n_agents if batch_size is None else int(batch_size)
         )
 
-    def act(self, sim: "_cpp.Sim", slots: Sequence[int]) -> np.ndarray:
+    def act(
+        self,
+        sim: "_cpp.Sim",
+        slots: Sequence[int],
+        *,
+        map_bounds: dict[str, float] | None = None,
+    ) -> np.ndarray:
         flat = np.zeros((len(slots), ACTOR_PHASE1_DIM), dtype=np.float32)
         for i, slot in enumerate(slots):
             _cpp.build_actor_obs(sim, int(slot), flat[i])
-        obs = self._convert_obs(sim, flat, slots)
+        obs = self._convert_obs(sim, flat, slots, map_bounds=map_bounds)
         obs_t = torch.as_tensor(obs, dtype=torch.float32)
         if self.h.shape[0] != len(slots):
             self.reset(batch_size=len(slots))
@@ -61,6 +67,8 @@ class SnapshotPolicy:
         sim: "_cpp.Sim",
         flat: np.ndarray,
         slots: Sequence[int],
+        *,
+        map_bounds: dict[str, float] | None = None,
     ) -> np.ndarray:
         if self.cfg.obs_encoder == "flat":
             return flat.astype(np.float32, copy=False)
@@ -69,7 +77,12 @@ class SnapshotPolicy:
         if self.cfg.obs_encoder == "entity_attention_grid":
             if self.phase >= 7:
                 if self.cfg.entity_token_count > 3:
-                    return self._convert_multi_enemy_obs(sim, flat, slots)
+                    return self._convert_multi_enemy_obs(
+                        sim,
+                        flat,
+                        slots,
+                        map_bounds=map_bounds,
+                    )
                 return actor_obs_to_partial_entity_grid_obs(
                     flat,
                     visible_radius=float(self.env_cfg.get("visible_radius", 0.65)),
@@ -84,8 +97,11 @@ class SnapshotPolicy:
         sim: "_cpp.Sim",
         flat: np.ndarray,
         slots: Sequence[int],
+        *,
+        map_bounds: dict[str, float] | None = None,
     ) -> np.ndarray:
         rows = len(slots)
+        bounds = self._map_bounds(map_bounds)
         critic = np.zeros((rows, CRITIC_DIM), dtype=np.float32)
         team_b_view = np.asarray([int(slot) >= 3 for slot in slots], dtype=bool)
         if bool(team_b_view[0]):
@@ -93,11 +109,18 @@ class SnapshotPolicy:
         else:
             _cpp.build_critic_obs(sim, _cpp.Team.A, critic[0])
         critic[1:] = critic[0]
-        visible = self._visible_enemy_matrix(sim, flat, critic, slots, team_b_view)
+        visible = self._visible_enemy_matrix(
+            sim,
+            flat,
+            critic,
+            slots,
+            team_b_view,
+            map_bounds=bounds,
+        )
         return actor_obs_to_multi_enemy_entity_grid_obs(
             flat,
             critic_obs=critic,
-            map_bounds=map_bounds_from_sim_cfg(dict(self.env_cfg.get("sim", {}))),
+            map_bounds=bounds,
             visible_radius=float(self.env_cfg.get("visible_radius", 0.65)),
             visible_override=visible,
             team_b_view=team_b_view,
@@ -110,10 +133,11 @@ class SnapshotPolicy:
         critic: np.ndarray,
         slots: Sequence[int],
         team_b_view: np.ndarray,
+        *,
+        map_bounds: dict[str, float],
     ) -> np.ndarray:
         rows = len(slots)
         own_pos = flat[:, actor_field_slice("own_position")]
-        map_bounds = map_bounds_from_sim_cfg(dict(self.env_cfg.get("sim", {})))
         enemy_pos = np.zeros((rows, 3, 2), dtype=np.float32)
         alive = np.zeros((rows, 3), dtype=bool)
         for row in range(rows):
@@ -148,6 +172,11 @@ class SnapshotPolicy:
                 for enemy_idx, enemy_slot in enumerate(enemy_slots):
                     los[row, enemy_idx] = bool(native[enemy_slot])
         return alive & radius & los
+
+    def _map_bounds(self, map_bounds: dict[str, float] | None) -> dict[str, float]:
+        if map_bounds is not None:
+            return dict(map_bounds)
+        return map_bounds_from_sim_cfg(dict(self.env_cfg.get("sim", {})))
 
     @staticmethod
     def _resolve_checkpoint_path(path: str | Path) -> Path:

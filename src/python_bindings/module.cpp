@@ -211,6 +211,18 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_property_readonly("winner", &xushi2::sim::Sim::winner)
         .def_property_readonly("team_a_kills", &xushi2::sim::Sim::team_a_kills)
         .def_property_readonly("team_b_kills", &xushi2::sim::Sim::team_b_kills)
+        .def_property_readonly("kills_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.kills_by_slot();
+                                   return std::vector<std::uint32_t>(a.begin(),
+                                                                     a.end());
+                               })
+        .def_property_readonly("deaths_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.deaths_by_slot();
+                                   return std::vector<std::uint32_t>(a.begin(),
+                                                                     a.end());
+                               })
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);
 
     m.def("line_of_sight",

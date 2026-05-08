@@ -173,7 +173,11 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
                 opponent = np.asarray(
-                    self._opponent_policy.act(self._sim, (3, 4, 5)),
+                    self._opponent_policy.act(
+                        self._sim,
+                        (3, 4, 5),
+                        map_bounds=dict(self._last_map_bounds or {}),
+                    ),
                     dtype=np.float32,
                 )
                 if opponent.shape[0] != 3 or opponent.shape[1] < 6:

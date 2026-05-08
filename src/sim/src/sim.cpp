@@ -179,6 +179,22 @@ std::uint32_t Sim::team_b_kills() const noexcept {
     return total;
 }
 
+std::array<std::uint32_t, kAgentsPerMatch> Sim::kills_by_slot() const noexcept {
+    std::array<std::uint32_t, kAgentsPerMatch> out{};
+    for (std::size_t i = 0; i < kAgentsPerMatch; ++i) {
+        out[i] = state_.heroes[i].kills;
+    }
+    return out;
+}
+
+std::array<std::uint32_t, kAgentsPerMatch> Sim::deaths_by_slot() const noexcept {
+    std::array<std::uint32_t, kAgentsPerMatch> out{};
+    for (std::size_t i = 0; i < kAgentsPerMatch; ++i) {
+        out[i] = state_.heroes[i].deaths;
+    }
+    return out;
+}
+
 std::uint64_t Sim::state_hash() const noexcept {
     return internal::compute_state_hash(state_);
 }

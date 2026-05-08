@@ -9,6 +9,7 @@ import torch
 import yaml
 
 from train.mappo import MappoActorCritic, make_mappo_config
+from train.mappo import _eval_outcome_counts
 from train.mappo import train_phase4_from_config
 from train.phases import resolve_phase
 
@@ -35,6 +36,19 @@ def _write_phase8_checkpoint(path: Path) -> None:
         },
         path,
     )
+
+
+def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
+    assert _eval_outcome_counts(
+        winner="A",
+        learner_team="both",
+        truncated=False,
+    ) == (0, 0, 1)
+    assert _eval_outcome_counts(
+        winner="B",
+        learner_team="both",
+        truncated=False,
+    ) == (0, 0, 1)
 
 
 def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
