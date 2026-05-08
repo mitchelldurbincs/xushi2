@@ -198,6 +198,33 @@ def _make_phase11_env(
     )
 
 
+
+
+def _extract_base_env_cfg(env_cfg: dict, *, opponent_default: str = "basic") -> dict:
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    return {
+        "sim": sim_cfg,
+        "opponent_bot": str(env_cfg.get("opponent_bot", opponent_default)),
+        "learner_team": str(env_cfg.get("learner_team", "A")),
+        "reward": dict(env_cfg.get("reward", {})),
+    }
+
+
+def _extract_fog_env_cfg(env_cfg: dict, *, visible_radius_default: float = 0.65) -> dict:
+    return {
+        "fog_mode": str(env_cfg.get("fog_mode", "team_shared")),
+        "visible_radius": float(env_cfg.get("visible_radius", visible_radius_default)),
+    }
+
+
+def _extract_map_randomization(env_cfg: dict) -> dict:
+    return {"map_randomization": dict(env_cfg.get("map_randomization", {}))}
+
+
+def _resolve_seed_base(env_cfg: dict, sim_cfg: dict) -> int:
+    return int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
+
+
 def _phase2_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
     ep_len = int(env_cfg.get("episode_length", 64))
@@ -211,210 +238,163 @@ def _phase2_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
 
 def _phase3_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg)
     return (
-        partial(_make_phase3_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        partial(
+            _make_phase3_env,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+        ),
+        base_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg)
     return (
-        partial(_make_phase4_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        partial(
+            _make_phase4_env,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+        ),
+        base_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase5_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg)
     return (
-        partial(_make_phase5_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        partial(
+            _make_phase5_env,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+        ),
+        base_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase6_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg)
     return (
-        partial(_make_phase6_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        partial(
+            _make_phase6_env,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+        ),
+        base_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase7_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
-    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
-    visible_radius = float(env_cfg.get("visible_radius", 0.6))
+    base_cfg = _extract_base_env_cfg(env_cfg)
+    fog_cfg = _extract_fog_env_cfg(env_cfg, visible_radius_default=0.6)
+    ckpt_env_cfg = {**base_cfg, **fog_cfg}
     return (
         partial(
             _make_phase7_env,
-            sim_cfg,
-            opponent_bot,
-            learner_team,
-            reward_cfg,
-            fog_mode,
-            visible_radius,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+            fog_cfg["fog_mode"],
+            fog_cfg["visible_radius"],
         ),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-            "fog_mode": fog_mode,
-            "visible_radius": visible_radius,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        ckpt_env_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase8_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
-    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
-    visible_radius = float(env_cfg.get("visible_radius", 0.65))
-    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg)
+    fog_cfg = _extract_fog_env_cfg(env_cfg)
+    map_cfg = _extract_map_randomization(env_cfg)
+    ckpt_env_cfg = {**base_cfg, **fog_cfg, **map_cfg}
     return (
         partial(
             _make_phase8_env,
-            sim_cfg,
-            opponent_bot,
-            learner_team,
-            reward_cfg,
-            fog_mode,
-            visible_radius,
-            map_randomization,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+            fog_cfg["fog_mode"],
+            fog_cfg["visible_radius"],
+            map_cfg["map_randomization"],
         ),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-            "fog_mode": fog_mode,
-            "visible_radius": visible_radius,
-            "map_randomization": map_randomization,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        ckpt_env_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase9_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "snapshot"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
-    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
-    visible_radius = float(env_cfg.get("visible_radius", 0.65))
-    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg, opponent_default="snapshot")
+    fog_cfg = _extract_fog_env_cfg(env_cfg)
+    map_cfg = _extract_map_randomization(env_cfg)
     snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
     snapshot_league = dict(env_cfg.get("snapshot_league", {}))
     self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
+    ckpt_env_cfg = {
+        **base_cfg,
+        **fog_cfg,
+        **map_cfg,
+        "snapshot_paths": snapshot_paths,
+        "snapshot_league": snapshot_league,
+        "self_play_schedule": self_play_schedule,
+    }
     return (
         partial(
             _make_phase9_env,
-            sim_cfg,
-            opponent_bot,
-            learner_team,
-            reward_cfg,
-            fog_mode,
-            visible_radius,
-            map_randomization,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+            fog_cfg["fog_mode"],
+            fog_cfg["visible_radius"],
+            map_cfg["map_randomization"],
             snapshot_paths,
             snapshot_league,
         ),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-            "fog_mode": fog_mode,
-            "visible_radius": visible_radius,
-            "map_randomization": map_randomization,
-            "snapshot_paths": snapshot_paths,
-            "snapshot_league": snapshot_league,
-            "self_play_schedule": self_play_schedule,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        ckpt_env_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
 def _phase10_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
-    sim_cfg = dict(env_cfg.get("sim", {}))
-    opponent_bot = str(env_cfg.get("opponent_bot", "noop"))
-    learner_team = str(env_cfg.get("learner_team", "A"))
-    reward_cfg = dict(env_cfg.get("reward", {}))
-    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
-    visible_radius = float(env_cfg.get("visible_radius", 0.65))
-    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    base_cfg = _extract_base_env_cfg(env_cfg, opponent_default="noop")
+    fog_cfg = _extract_fog_env_cfg(env_cfg)
+    map_cfg = _extract_map_randomization(env_cfg)
+    ckpt_env_cfg = {**base_cfg, **fog_cfg, **map_cfg}
     return (
         partial(
             _make_phase10_env,
-            sim_cfg,
-            opponent_bot,
-            learner_team,
-            reward_cfg,
-            fog_mode,
-            visible_radius,
-            map_randomization,
+            base_cfg["sim"],
+            base_cfg["opponent_bot"],
+            base_cfg["learner_team"],
+            base_cfg["reward"],
+            fog_cfg["fog_mode"],
+            fog_cfg["visible_radius"],
+            map_cfg["map_randomization"],
         ),
-        {
-            "sim": sim_cfg,
-            "opponent_bot": opponent_bot,
-            "learner_team": learner_team,
-            "reward": reward_cfg,
-            "fog_mode": fog_mode,
-            "visible_radius": visible_radius,
-            "map_randomization": map_randomization,
-        },
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        ckpt_env_cfg,
+        _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 
@@ -422,18 +402,16 @@ def _phase11_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]
     env_cfg = config.get("env", {})
     sim_cfg = dict(env_cfg.get("sim", {}))
     reward_cfg = dict(env_cfg.get("reward", {}))
-    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
-    visible_radius = float(env_cfg.get("visible_radius", 0.65))
-    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    fog_cfg = _extract_fog_env_cfg(env_cfg)
+    map_cfg = _extract_map_randomization(env_cfg)
     schedule_present = "self_play_schedule" in env_cfg
     self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
     snapshot_league = dict(env_cfg.get("snapshot_league", {}))
     ckpt_env_cfg = {
         "sim": sim_cfg,
         "reward": reward_cfg,
-        "fog_mode": fog_mode,
-        "visible_radius": visible_radius,
-        "map_randomization": map_randomization,
+        **fog_cfg,
+        **map_cfg,
         "match_type": "current",
     }
     if schedule_present:
@@ -445,14 +423,14 @@ def _phase11_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]
             _make_phase11_env,
             sim_cfg,
             reward_cfg,
-            fog_mode,
-            visible_radius,
-            map_randomization,
+            fog_cfg["fog_mode"],
+            fog_cfg["visible_radius"],
+            map_cfg["map_randomization"],
             self_play_schedule if schedule_present else None,
             snapshot_league,
         ),
         ckpt_env_cfg,
-        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+        _resolve_seed_base(env_cfg, sim_cfg),
     )
 
 
