@@ -195,6 +195,14 @@ std::array<std::uint32_t, kAgentsPerMatch> Sim::deaths_by_slot() const noexcept 
     return out;
 }
 
+std::array<std::uint64_t, kAgentsPerMatch> Sim::damage_dealt_by_slot() const noexcept {
+    std::array<std::uint64_t, kAgentsPerMatch> out{};
+    for (std::size_t i = 0; i < kAgentsPerMatch; ++i) {
+        out[i] = state_.heroes[i].damage_dealt_centi_hp;
+    }
+    return out;
+}
+
 std::uint64_t Sim::state_hash() const noexcept {
     return internal::compute_state_hash(state_);
 }

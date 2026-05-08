@@ -223,6 +223,12 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                                    return std::vector<std::uint32_t>(a.begin(),
                                                                      a.end());
                                })
+        .def_property_readonly("damage_dealt_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.damage_dealt_by_slot();
+                                   return std::vector<std::uint64_t>(a.begin(),
+                                                                     a.end());
+                               })
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);
 
     m.def("line_of_sight",

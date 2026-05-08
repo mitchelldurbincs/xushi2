@@ -256,10 +256,13 @@ def _dump_phase3(model, ckpt_config: dict, *, seed: int, episodes: int,
 
 
 def _dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
-                episodes: int, max_decisions: int | None, output_path: Path) -> int:
+                episodes: int, max_decisions: int | None, output_path: Path,
+                stochastic: bool = False) -> int:
     wanted_phase = int(ckpt_config.get("phase", 4))
-    if wanted_phase < 9 and ckpt_config["env"].get("opponent_bot") != "noop":
-        raise ValueError("MAPPO replay dumping currently requires opponent_bot='noop'")
+    # Phase 4-8 with non-noop opponents are viewable as long as the env
+    # exposes ``info["opponent_actions"]`` each step. Phase4MappoEnv (and
+    # downstream Phase 5-8 envs that inherit its opponent loop) does this,
+    # so we record opponent actions per decision instead of asserting noop.
     if wanted_phase != 11 and ckpt_config["env"].get("learner_team", "A") != "A":
         raise ValueError("MAPPO replay dumping currently supports learner_team='A'")
 
@@ -289,7 +292,13 @@ def _dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
                         return n_decisions
                     obs_t = torch.as_tensor(obs, dtype=torch.float32)
                     with torch.no_grad():
-                        action_t, h = model.greedy_action(obs_t, h)
+                        if stochastic:
+                            # sample_action returns (action, logprob, h_next).
+                            action_t, _logprob, h = model.sample_action(
+                                obs_t, h
+                            )
+                        else:
+                            action_t, h = model.greedy_action(obs_t, h)
                     action = action_t.cpu().numpy()
                     policy_slots = [
                         _action_to_fields(action[i], include_target=include_target)
@@ -317,28 +326,37 @@ def _dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
                                 for i in range(3)
                             ]
                             slots = policy_slots[:3] + opponent_slots
-                    elif phase >= 9:
+                    elif phase >= 4:
                         obs, _reward, term, trunc, info = env.step(action)
-                        opponent_actions = np.asarray(
-                            info.get("opponent_actions"), dtype=np.float32
-                        )
-                        if opponent_actions.shape != (3, 6):
-                            raise ValueError(
-                                "phase9 replay dump requires opponent_actions info"
+                        opponent_actions_raw = info.get("opponent_actions")
+                        if opponent_actions_raw is None:
+                            # Old code path for envs that don't expose
+                            # opponent_actions: assume zero (noop) opponent.
+                            slots = policy_slots[:3] + [
+                                zero_slot, zero_slot, zero_slot,
+                            ]
+                        else:
+                            opponent_actions = np.asarray(
+                                opponent_actions_raw, dtype=np.float32
                             )
-                        opponent_slots = [
-                            _action_to_fields(
-                                opponent_actions[i],
-                                include_target=include_target,
-                            )
-                            for i in range(3)
-                        ]
-                        slots = policy_slots[:3] + opponent_slots
+                            if opponent_actions.shape != (3, 6):
+                                raise ValueError(
+                                    "phase>=4 replay dump expects "
+                                    "opponent_actions of shape (3, 6)"
+                                )
+                            opponent_slots = [
+                                _action_to_fields(
+                                    opponent_actions[i],
+                                    include_target=include_target,
+                                )
+                                for i in range(3)
+                            ]
+                            slots = policy_slots[:3] + opponent_slots
                     else:
                         slots = policy_slots[:3] + [zero_slot, zero_slot, zero_slot]
                     f.write(_format_decision_six(tick, slots))
                     f.write("\n")
-                    if phase < 9:
+                    if phase < 4:
                         obs, _reward, term, trunc, info = env.step(action)
                     n_decisions += 1
                     tick = int(info.get("tick", tick + int(header_fields["action_repeat"])))
@@ -359,6 +377,9 @@ def main() -> int:
                         help="Number of consecutive episodes to dump")
     parser.add_argument("--max-decisions", type=int, default=None,
                         help="Optional cap for quick smoke dumps")
+    parser.add_argument("--stochastic", action="store_true",
+                        help="Sample actions from the policy distribution "
+                        "instead of greedy. Reflects training-time behavior.")
     args = parser.parse_args()
 
     output_path = Path(args.output)
@@ -375,6 +396,7 @@ def main() -> int:
             episodes=int(args.episodes),
             max_decisions=args.max_decisions,
             output_path=output_path,
+            stochastic=bool(args.stochastic),
         )
     else:
         model, ckpt_config = load_phase3_checkpoint(args.checkpoint)

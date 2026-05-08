@@ -33,6 +33,7 @@ __all__ = [
     "DISTANCE_SHAPING_COEF_DEFAULT",
     "ON_POINT_SHAPING_COEF_DEFAULT",
     "TIME_PENALTY_PER_SECOND_DEFAULT",
+    "DAMAGE_DEALT_COEF_DEFAULT",
 ]
 
 from . import xushi2_cpp as _cpp
@@ -65,6 +66,13 @@ ON_POINT_SHAPING_COEF_DEFAULT: float = 0.0
 # draw nets -30*tps for both teams, so denying is strictly worse than
 # attempting to score. 0.0 disables (default; backwards compatible).
 TIME_PENALTY_PER_SECOND_DEFAULT: float = 0.0
+# Per-HP-of-damage-dealt reward, credited to the attacker's slot. Used in
+# the per-agent path only; gives PPO a per-slot signal for "your shot
+# connected" so aim_delta gets a meaningful gradient. Damage is counted in
+# centi-HP internally; the coef here is reward per HP (we divide by 100).
+# 0.0 disables (default; backwards compatible).
+DAMAGE_DEALT_COEF_DEFAULT: float = 0.0
+_CENTI_HP_PER_HP: float = 100.0
 
 _TEAM_A_RANGER_SLOT: int = 0
 _TEAM_B_RANGER_SLOT: int = 3
@@ -85,6 +93,11 @@ class _EventCounters:
     deaths_by_slot: np.ndarray = field(
         default_factory=lambda: np.zeros(_cpp.AGENTS_PER_MATCH, dtype=np.int64)
     )
+    # Cumulative damage applied by each slot, in centi-HP. Read only on
+    # the per-agent path when damage_dealt_coef > 0.
+    damage_dealt_by_slot: np.ndarray = field(
+        default_factory=lambda: np.zeros(_cpp.AGENTS_PER_MATCH, dtype=np.int64)
+    )
 
 
 def _read_counters(sim, *, per_agent: bool = False) -> _EventCounters:
@@ -97,6 +110,11 @@ def _read_counters(sim, *, per_agent: bool = False) -> _EventCounters:
     if per_agent:
         out.kills_by_slot = np.asarray(sim.kills_by_slot, dtype=np.int64)
         out.deaths_by_slot = np.asarray(sim.deaths_by_slot, dtype=np.int64)
+        # damage_dealt_by_slot may be absent on test fakes that predate the
+        # field — fall back to zeros so existing tests don't break.
+        damage_attr = getattr(sim, "damage_dealt_by_slot", None)
+        if damage_attr is not None:
+            out.damage_dealt_by_slot = np.asarray(damage_attr, dtype=np.int64)
     return out
 
 
@@ -125,6 +143,7 @@ class RewardCalculator:
         time_penalty_per_second: float = TIME_PENALTY_PER_SECOND_DEFAULT,
         per_agent_rewards: bool = False,
         team_spirit: float = 0.0,
+        damage_dealt_coef: float = DAMAGE_DEALT_COEF_DEFAULT,
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
@@ -136,6 +155,8 @@ class RewardCalculator:
             raise ValueError(
                 f"team_spirit must be in [0, 1], got {team_spirit}"
             )
+        if damage_dealt_coef < 0.0:
+            raise ValueError("damage_dealt_coef must be >= 0")
         self._shaping_clip = float(shaping_clip)
         self._terminal_win = float(terminal_win)
         self._terminal_loss = float(terminal_loss)
@@ -147,6 +168,7 @@ class RewardCalculator:
         self._time_penalty_per_second = float(time_penalty_per_second)
         self._per_agent = bool(per_agent_rewards)
         self._team_spirit = float(team_spirit)
+        self._damage_dealt_coef = float(damage_dealt_coef)
         self._prev = _EventCounters()
         self._cum_shaped_a = 0.0
         self._cum_shaped_b = 0.0
@@ -293,6 +315,20 @@ class RewardCalculator:
         raw_b += self._kill_bonus * kills_delta_slot[3:6]
         raw_a -= self._death_penalty * deaths_delta_slot[0:3]
         raw_b -= self._death_penalty * deaths_delta_slot[3:6]
+
+        # Damage-dealt credit (opt-in via damage_dealt_coef). Each slot
+        # gets reward proportional to the HP they actually applied this
+        # step. Asymmetric (no enemy-side mirror) — this is a per-team
+        # shaping signal, not a zero-sum event credit. The team-sum clip
+        # downstream still bounds total cumulative shaping at the
+        # ±shaping_clip cap, so unbounded farming isn't possible.
+        if self._damage_dealt_coef > 0.0:
+            damage_delta_slot = (
+                now.damage_dealt_by_slot - self._prev.damage_dealt_by_slot
+            ).astype(np.float32)
+            per_hp = self._damage_dealt_coef / _CENTI_HP_PER_HP
+            raw_a += per_hp * damage_delta_slot[0:3]
+            raw_b += per_hp * damage_delta_slot[3:6]
 
         # Score: own split by per-slot on-point share; enemy subtracted
         # uniformly across own team's 3 slots.

@@ -371,7 +371,15 @@ void apply_damage_buffer(MatchState& state, const DamageBuffer& buf,
             continue;  // already dead this tick from earlier-slot attacker
         }
         const std::int32_t damage = static_cast<std::int32_t>(ev.damage_centi_hp);
+        const std::int32_t applied =
+            std::min<std::int32_t>(damage, victim.health_centi_hp);
         victim.health_centi_hp = std::max<std::int32_t>(0, victim.health_centi_hp - damage);
+        // Credit the attacker (slot i) for the damage that actually reduced
+        // HP — clamps to remaining HP so overflow past 0 isn't double-counted.
+        if (applied > 0) {
+            state.heroes[i].damage_dealt_centi_hp +=
+                static_cast<std::uint64_t>(applied);
+        }
     }
 }
 

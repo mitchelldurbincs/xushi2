@@ -89,6 +89,12 @@ struct HeroState {
     // Lifetime combat counters (game-design §13 behavioral metrics use these).
     std::uint32_t kills = 0;
     std::uint32_t deaths = 0;
+    // Lifetime cumulative damage actually applied by this slot's attacks
+    // (sum of clamped DamageEvent values — i.e. damage that reduced HP,
+    // not damage that overflowed into <0). Used by RewardCalculator's
+    // optional damage-dealt shaping to give a per-slot signal for "your
+    // shots connected" so PPO can learn aim, not just fire.
+    std::uint64_t damage_dealt_centi_hp = 0;
     // Whether this slot is actually occupied in the Phase-0/1 playable slice.
     // At Phase 4+, all six slots are occupied.
     bool present = false;
@@ -195,6 +201,12 @@ class Sim {
     // agents for OAI Five-style team_spirit credit assignment.
     std::array<std::uint32_t, kAgentsPerMatch> kills_by_slot() const noexcept;
     std::array<std::uint32_t, kAgentsPerMatch> deaths_by_slot() const noexcept;
+
+    // Per-slot lifetime damage actually applied by each attacker slot
+    // (cumulative, in centi-HP). Used by RewardCalculator's damage-dealt
+    // shaping to teach aim. Counts only damage that reduced HP — overflow
+    // damage past 0 HP is not credited.
+    std::array<std::uint64_t, kAgentsPerMatch> damage_dealt_by_slot() const noexcept;
 
     // Deterministic hash of the match state. Used by the golden-replay tests
     // (docs/determinism_rules.md). Manifest of included fields lives in

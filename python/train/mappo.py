@@ -1397,6 +1397,22 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         )
 
     trainer = MappoTrainer(env_fn, cfg, seed=seed_base)
+
+    # Warm-start: optionally load a previously-trained checkpoint into the
+    # newly-constructed trainer's model. Used by the Phase 4 cap-training
+    # escalation (docs/plans/2026-05-08-phase4-cap-training-escalation.md)
+    # to seed a basic-opponent run from a noop-trained policy that already
+    # knows how to hold the cap. Loaded BEFORE BC pretrain so BC, if also
+    # configured, fine-tunes on top of the warm-started weights.
+    init_ckpt = run_cfg.get("init_from_checkpoint")
+    if init_ckpt:
+        raw = torch.load(init_ckpt, map_location="cpu", weights_only=False)
+        trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
+        print(
+            f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}",
+            flush=True,
+        )
+
     best_eval = float("-inf")
     best_state: dict | None = None
     last_eval = float("nan")

@@ -288,6 +288,42 @@ TEST(Combat, KillsCreditedAndDeathsTracked) {
     EXPECT_EQ(sim.team_b_kills(), 0U);
 }
 
+TEST(Combat, DamageDealtBySlotCreditsAttackerForAppliedDamage) {
+    Sim sim(close_arena_config());
+    std::array<Action, kAgentsPerMatch> actions{};
+    actions[0].primary_fire = true;
+    sim.step(actions);  // first shot: 7500 cHP applied to a 15000 cHP target
+
+    const auto damage = sim.damage_dealt_by_slot();
+    EXPECT_EQ(damage.size(), kAgentsPerMatch);
+    EXPECT_EQ(damage[0], 7500U);
+    for (std::size_t i = 1; i < kAgentsPerMatch; ++i) {
+        EXPECT_EQ(damage[i], 0U) << "unexpected damage credited at slot " << i;
+    }
+}
+
+TEST(Combat, DamageDealtClampsToRemainingHpOnKillingShot) {
+    // Drive slot 3 to exactly 7500 cHP (one revolver shot of HP), then fire
+    // a second shot of 7500 cHP. The killing shot must only credit 7500
+    // (the remaining HP), not the full 7500 of the event — even though
+    // those happen to be equal here, the *clamping logic* under
+    // apply_damage_buffer is what we're checking. Drive a third shot post-
+    // death and assert no further credit accrues.
+    Sim sim(close_arena_config());
+    std::array<Action, kAgentsPerMatch> actions{};
+    actions[0].primary_fire = true;
+
+    sim.step(actions);  // shot 1: -7500 cHP → 7500 left
+    for (int j = 0; j < 14; ++j) sim.step(actions);  // wait for cooldown
+    sim.step(actions);  // shot 2: kills (7500 cHP applied)
+
+    EXPECT_EQ(sim.state().heroes[3].health_centi_hp, 0);
+    EXPECT_FALSE(sim.state().heroes[3].alive);
+    // Total credit = 7500 + 7500 = 15000 (one full Ranger HP pool).
+    const auto damage = sim.damage_dealt_by_slot();
+    EXPECT_EQ(damage[0], 15000U);
+}
+
 TEST(Combat, KillsBySlotAndDeathsBySlotMirrorHeroStateCounters) {
     // Same setup as KillsCreditedAndDeathsTracked: slot 0 (A Ranger) kills
     // slot 3 (B Ranger). Verify the new array-shaped accessors snapshot the

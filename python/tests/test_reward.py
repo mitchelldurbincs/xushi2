@@ -25,6 +25,7 @@ class _FakeSim:
         self.team_b_kills = 0
         self.kills_by_slot = [0, 0, 0, 0, 0, 0]
         self.deaths_by_slot = [0, 0, 0, 0, 0, 0]
+        self.damage_dealt_by_slot = [0, 0, 0, 0, 0, 0]
         self.episode_over = False
         self.winner = _cpp.Team.Neutral
 
@@ -400,6 +401,79 @@ def test_team_spirit_no_op_on_scalar_path():
     assert isinstance(a, float)
     assert a == pytest.approx(0.25)
     assert b == pytest.approx(-0.25)
+
+
+# --- damage-dealt shaping (per-agent, opt-in) --------------------------
+
+def test_damage_dealt_default_zero_no_op():
+    """Default damage_dealt_coef=0 produces no damage-related reward."""
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP applied by slot 0
+    a, b = rc.step(sim)
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+
+
+def test_damage_dealt_credits_attacker_slot_per_hp():
+    """coef=0.001 per HP: a 75-HP shot from slot 0 → +0.075 to slot 0."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP × 100 cHP/HP
+    a, b = rc.step(sim)
+    assert a[0] == pytest.approx(0.075)
+    assert a[1] == pytest.approx(0.0)
+    assert a[2] == pytest.approx(0.0)
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+
+
+def test_damage_dealt_diffs_against_prev():
+    """Subsequent shots only credit the *delta* in cumulative damage."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]
+    rc.step(sim)
+    # Second shot: another 75 HP applied — total cumulative now 150 HP.
+    sim.damage_dealt_by_slot = [15000, 0, 0, 0, 0, 0]
+    a, _ = rc.step(sim)
+    # Step reward should reflect just the 75 HP delta, not the 150 total.
+    assert a[0] == pytest.approx(0.075)
+
+
+def test_damage_dealt_independent_per_team():
+    """B's slot 3 dealing damage credits team B; doesn't affect team A."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [0, 0, 0, 7500, 0, 0]  # absolute slot 3 = team B local 0
+    a, b = rc.step(sim)
+    # Team A: no damage dealt → no per-damage reward.
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    # Team B: slot 3 (local 0) gets the credit.
+    assert b[0] == pytest.approx(0.075)
+    assert b[1] == pytest.approx(0.0)
+    assert b[2] == pytest.approx(0.0)
+
+
+def test_damage_dealt_negative_coef_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(damage_dealt_coef=-0.01)
+
+
+def test_damage_dealt_no_op_on_scalar_path():
+    """damage_dealt_coef has no effect on the scalar (default) path —
+    that path doesn't read damage_dealt_by_slot."""
+    rc = RewardCalculator(damage_dealt_coef=0.001)  # per_agent_rewards=False
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]
+    a, b = rc.step(sim)
+    assert isinstance(a, float)
+    assert a == pytest.approx(0.0)
+    assert b == pytest.approx(0.0)
 
 
 # --- per-agent rewards (opt-in flag) -----------------------------------
