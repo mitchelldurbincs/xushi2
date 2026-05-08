@@ -9,6 +9,7 @@
 
 #include <raylib.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <xushi2/bots/bot.h>
@@ -38,7 +40,6 @@ constexpr float kDecisionSeconds =
 constexpr int kArenaPx = 720;       // square; matches window height
 constexpr int kArenaMarginPx = 12;  // padding inside the arena viewport
 constexpr int kPanelX = kArenaPx;
-constexpr int kPanelW = kWindowWidth - kArenaPx;
 
 // Shot tracers: a brief line from shooter origin along aim direction, fading
 // over kShotFadeTicks (sim ticks). One slot per hero is plenty since the
@@ -50,6 +51,30 @@ struct ShotTracer {
     xushi2::common::Vec2 end{};
     xushi2::common::Team team = xushi2::common::Team::Neutral;
     xushi2::sim::Tick fired_tick = 0;
+};
+
+struct TetherTrail {
+    bool active = false;
+    xushi2::common::Vec2 start{};
+    xushi2::common::Vec2 end{};
+    xushi2::common::Team team = xushi2::common::Team::Neutral;
+    xushi2::sim::Tick fired_tick = 0;
+};
+
+struct CoverMarker {
+    xushi2::common::Vec2 center{};
+    float radius = 1.0F;
+};
+
+struct WallMarker {
+    xushi2::common::Vec2 a{};
+    xushi2::common::Vec2 b{};
+    float half_width = 0.25F;
+};
+
+struct LosDebugCounts {
+    std::size_t visible = 0;
+    std::size_t blocked = 0;
 };
 
 xushi2::sim::MatchConfig make_viewer_config() {
@@ -71,12 +96,25 @@ xushi2::sim::MatchConfig make_viewer_config() {
 
 struct ReplayDecision {
     std::uint32_t tick;
-    xushi2::common::Action slot0;
-    xushi2::common::Action slot3;
+    std::array<xushi2::common::Action, xushi2::sim::kAgentsPerMatch> actions{};
 };
 
 struct Replay {
     xushi2::sim::MatchConfig config;
+    int phase = 0;
+    bool fog = false;
+    std::string fog_mode;
+    std::string layout_hash;
+    std::string match_type;
+    std::string schedule_summary;
+    std::string league_summary;
+    std::string snapshot_group;
+    std::string snapshot_name;
+    std::string loss_mask;
+    bool target_slot = false;
+    bool last_seen = false;
+    std::vector<CoverMarker> cover_markers;
+    std::vector<WallMarker> wall_markers;
     std::vector<ReplayDecision> decisions;
 };
 
@@ -95,6 +133,114 @@ bool parse_kv_double(const std::string& s, const char* key, double& out) {
     return true;
 }
 
+std::optional<std::string> parse_kv_string(const std::string& s, const char* key) {
+    const std::string needle = std::string(key) + "=";
+    const auto pos = s.find(needle);
+    if (pos == std::string::npos) return std::nullopt;
+    const auto start = pos + needle.size();
+    const auto end = s.find(' ', start);
+    return s.substr(start, end - start);
+}
+
+std::vector<CoverMarker> parse_cover_markers(std::string_view s) {
+    std::vector<CoverMarker> markers;
+    std::size_t start = 0;
+    while (start < s.size()) {
+        const auto comma = s.find(',', start);
+        const auto len = (comma == std::string_view::npos)
+            ? std::string_view::npos
+            : comma - start;
+        const std::string_view token = s.substr(start, len);
+        const auto colon = token.find(':');
+        if (colon != std::string_view::npos) {
+            try {
+                const float x = std::stof(std::string(token.substr(0, colon)));
+                const auto radius_sep = token.find(':', colon + 1);
+                const float y = std::stof(std::string(
+                    token.substr(
+                        colon + 1,
+                        radius_sep == std::string_view::npos
+                            ? std::string_view::npos
+                            : radius_sep - colon - 1)));
+                const float radius =
+                    radius_sep == std::string_view::npos
+                        ? 1.0F
+                        : std::stof(std::string(token.substr(radius_sep + 1)));
+                markers.push_back(CoverMarker{xushi2::common::Vec2{x, y}, radius});
+            } catch (...) {
+                TraceLog(LOG_WARNING, "replay: skipping malformed cover marker");
+            }
+        }
+        if (comma == std::string_view::npos) break;
+        start = comma + 1;
+    }
+    return markers;
+}
+
+std::vector<WallMarker> parse_wall_markers(std::string_view s) {
+    std::vector<WallMarker> markers;
+    std::size_t start = 0;
+    while (start < s.size()) {
+        const std::size_t comma = s.find(',', start);
+        const std::size_t len = (comma == std::string_view::npos)
+            ? std::string_view::npos
+            : comma - start;
+        const std::string text(s.substr(start, len));
+        float x1 = 0.0F;
+        float y1 = 0.0F;
+        float x2 = 0.0F;
+        float y2 = 0.0F;
+        float half_width = 0.25F;
+        if (std::sscanf(text.c_str(), "%f:%f:%f:%f:%f",
+                        &x1, &y1, &x2, &y2, &half_width) == 5) {
+            markers.push_back(WallMarker{
+                xushi2::common::Vec2{x1, y1},
+                xushi2::common::Vec2{x2, y2},
+                half_width,
+            });
+        } else {
+            TraceLog(LOG_WARNING, "replay: skipping malformed wall marker");
+        }
+        if (comma == std::string_view::npos) break;
+        start = comma + 1;
+    }
+    return markers;
+}
+
+xushi2::common::HeroKind parse_hero_kind(std::string_view s) {
+    if (s == "vanguard") return xushi2::common::HeroKind::Vanguard;
+    if (s == "mender") return xushi2::common::HeroKind::Mender;
+    return xushi2::common::HeroKind::Ranger;
+}
+
+const char* hero_kind_label(xushi2::common::HeroKind kind) {
+    switch (kind) {
+        case xushi2::common::HeroKind::Vanguard: return "vanguard";
+        case xushi2::common::HeroKind::Ranger:   return "ranger";
+        case xushi2::common::HeroKind::Mender:   return "mender";
+    }
+    return "unknown";
+}
+
+const char* mender_weapon_label(xushi2::common::MenderWeapon weapon) {
+    switch (weapon) {
+        case xushi2::common::MenderWeapon::Staff:   return "staff";
+        case xushi2::common::MenderWeapon::Sidearm: return "sidearm";
+    }
+    return "unknown";
+}
+
+const char* target_token_label(std::uint8_t target_slot) {
+    switch (target_slot) {
+        case 0: return "self";
+        case 1: return "enemy0";
+        case 2: return "enemy1";
+        case 3: return "enemy2";
+        case 4: return "objective";
+        default: return "?";
+    }
+}
+
 std::optional<Replay> load_replay(const std::string& path) {
     std::ifstream in(path);
     if (!in.is_open()) {
@@ -111,12 +257,77 @@ std::optional<Replay> load_replay(const std::string& path) {
 
     double v = 0.0;
     if (parse_kv_double(header, "seed", v))           rep.config.seed = static_cast<std::uint64_t>(v);
+    if (parse_kv_double(header, "phase", v))          rep.phase = static_cast<int>(v);
+    if (parse_kv_double(header, "fog", v))            rep.fog = (v != 0.0);
+    if (parse_kv_double(header, "target_slot", v))    rep.target_slot = (v != 0.0);
+    if (parse_kv_double(header, "last_seen", v))      rep.last_seen = (v != 0.0);
+    if (const auto fog_mode = parse_kv_string(header, "fog_mode")) {
+        rep.fog_mode = *fog_mode;
+    }
+    if (const auto layout = parse_kv_string(header, "layout")) {
+        rep.layout_hash = *layout;
+    }
+    if (const auto match_type = parse_kv_string(header, "match_type")) {
+        rep.match_type = *match_type;
+    }
+    if (const auto league = parse_kv_string(header, "league")) {
+        rep.league_summary = *league;
+    }
+    if (const auto schedule = parse_kv_string(header, "schedule")) {
+        rep.schedule_summary = *schedule;
+    }
+    if (const auto group = parse_kv_string(header, "snapshot_group")) {
+        rep.snapshot_group = *group;
+    }
+    if (const auto snapshot = parse_kv_string(header, "snapshot")) {
+        rep.snapshot_name = *snapshot;
+    }
+    if (const auto loss_mask = parse_kv_string(header, "loss_mask")) {
+        rep.loss_mask = *loss_mask;
+    }
     if (parse_kv_double(header, "round_seconds", v))  rep.config.round_length_seconds = static_cast<int>(v);
     if (parse_kv_double(header, "action_repeat", v))  rep.config.action_repeat = static_cast<std::uint32_t>(v);
+    if (parse_kv_double(header, "team_size", v))       rep.config.team_size = static_cast<std::uint32_t>(v);
+    if (parse_kv_double(header, "map_min_x", v))       rep.config.map.min_x = static_cast<float>(v);
+    if (parse_kv_double(header, "map_min_y", v))       rep.config.map.min_y = static_cast<float>(v);
+    if (parse_kv_double(header, "map_max_x", v))       rep.config.map.max_x = static_cast<float>(v);
+    if (parse_kv_double(header, "map_max_y", v))       rep.config.map.max_y = static_cast<float>(v);
+    if (const auto covers = parse_kv_string(header, "cover")) {
+        rep.cover_markers = parse_cover_markers(*covers);
+    }
+    if (const auto walls = parse_kv_string(header, "walls")) {
+        rep.wall_markers = parse_wall_markers(*walls);
+    }
     if (parse_kv_double(header, "mech_dmg", v))       rep.config.mechanics.revolver_damage_centi_hp = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "mech_fcd", v))       rep.config.mechanics.revolver_fire_cooldown_ticks = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "mech_hbr", v))       rep.config.mechanics.revolver_hitbox_radius = static_cast<float>(v);
     if (parse_kv_double(header, "mech_resp", v))      rep.config.mechanics.respawn_ticks = static_cast<std::uint32_t>(v);
+    if (const auto heroes = parse_kv_string(header, "heroes")) {
+        std::size_t start = 0;
+        for (std::size_t slot = 0; slot < rep.config.hero_kinds.size(); ++slot) {
+            const auto end = heroes->find(',', start);
+            const auto len = (end == std::string::npos) ? std::string::npos : end - start;
+            rep.config.hero_kinds[slot] = parse_hero_kind(std::string_view(*heroes).substr(start, len));
+            if (end == std::string::npos) break;
+            start = end + 1;
+        }
+    }
+
+    const auto make_action = [](const std::vector<float>& values,
+                                std::size_t offset,
+                                std::size_t stride) {
+        return xushi2::common::Action{
+            values[offset + 0],
+            values[offset + 1],
+            values[offset + 2],
+            values[offset + 3] >= 0.5F,
+            values[offset + 4] >= 0.5F,
+            values[offset + 5] >= 0.5F,
+            static_cast<std::uint8_t>(
+                stride >= 7U ? std::clamp(values[offset + 6], 0.0F, 255.0F)
+                             : 0.0F),
+        };
+    };
 
     std::string line;
     while (std::getline(in, line)) {
@@ -124,16 +335,32 @@ std::optional<Replay> load_replay(const std::string& path) {
         std::istringstream iss(line);
         ReplayDecision d{};
         std::uint32_t tick = 0;
-        float mx0=0, my0=0, ad0=0, pf0=0, a10=0, a20=0;
-        float mx3=0, my3=0, ad3=0, pf3=0, a13=0, a23=0;
-        if (!(iss >> tick >> mx0 >> my0 >> ad0 >> pf0 >> a10 >> a20
-                  >> mx3 >> my3 >> ad3 >> pf3 >> a13 >> a23)) {
+        if (!(iss >> tick)) {
             TraceLog(LOG_WARNING, "replay: skipping malformed line");
             continue;
         }
+        std::vector<float> values;
+        float value = 0.0F;
+        while (iss >> value) {
+            values.push_back(value);
+        }
         d.tick = tick;
-        d.slot0 = xushi2::common::Action{mx0, my0, ad0, pf0 >= 0.5F, a10 >= 0.5F, a20 >= 0.5F, 0};
-        d.slot3 = xushi2::common::Action{mx3, my3, ad3, pf3 >= 0.5F, a13 >= 0.5F, a23 >= 0.5F, 0};
+        if (values.size() == 12U) {
+            // Legacy text replay: slot 0 then slot 3.
+            d.actions[0] = make_action(values, 0U, 6U);
+            d.actions[3] = make_action(values, 6U, 6U);
+        } else if (values.size() == xushi2::sim::kAgentsPerMatch * 6U) {
+            for (std::size_t slot = 0; slot < xushi2::sim::kAgentsPerMatch; ++slot) {
+                d.actions[slot] = make_action(values, slot * 6U, 6U);
+            }
+        } else if (values.size() == xushi2::sim::kAgentsPerMatch * 7U) {
+            for (std::size_t slot = 0; slot < xushi2::sim::kAgentsPerMatch; ++slot) {
+                d.actions[slot] = make_action(values, slot * 7U, 7U);
+            }
+        } else {
+            TraceLog(LOG_WARNING, "replay: skipping line with %zu action values", values.size());
+            continue;
+        }
         rep.decisions.push_back(d);
     }
     TraceLog(LOG_INFO, "replay: loaded %zu decisions from %s", rep.decisions.size(), path.c_str());
@@ -220,6 +447,59 @@ void draw_objective(const ArenaTransform& t, const xushi2::sim::ObjectiveState& 
     }
 }
 
+void draw_cover_markers(const ArenaTransform& t,
+                        const std::vector<CoverMarker>& markers) {
+    for (const auto marker : markers) {
+        const Vector2 c = world_to_screen(t, marker.center);
+        const float r = world_len_to_screen(t, marker.radius);
+        DrawCircleV(c, r, Color{95, 105, 112, 190});
+        DrawCircleLinesV(c, r, Color{190, 200, 210, 220});
+    }
+}
+
+void draw_wall_markers(const ArenaTransform& t,
+                       const std::vector<WallMarker>& markers) {
+    for (const auto marker : markers) {
+        const Vector2 a = world_to_screen(t, marker.a);
+        const Vector2 b = world_to_screen(t, marker.b);
+        const float width =
+            std::max(2.0F, world_len_to_screen(t, marker.half_width * 2.0F));
+        DrawLineEx(a, b, width, Color{90, 98, 106, 220});
+        DrawLineEx(a, b, 1.0F, Color{205, 214, 222, 220});
+    }
+}
+
+LosDebugCounts draw_line_of_sight_debug(const ArenaTransform& t,
+                                        const xushi2::sim::Sim& sim) {
+    LosDebugCounts counts{};
+    const auto& heroes = sim.state().heroes;
+    for (std::size_t a_slot = 0; a_slot < xushi2::common::kTeamSize; ++a_slot) {
+        const auto& a = heroes[a_slot];
+        if (!a.present || !a.alive) continue;
+        for (std::size_t b_slot = xushi2::common::kTeamSize;
+             b_slot < xushi2::sim::kAgentsPerMatch;
+             ++b_slot) {
+            const auto& b = heroes[b_slot];
+            if (!b.present || !b.alive) continue;
+            const bool visible = sim.line_of_sight(
+                static_cast<std::uint32_t>(a_slot),
+                static_cast<std::uint32_t>(b_slot));
+            const Color col = visible ? Color{90, 230, 135, 90}
+                                      : Color{255, 100, 100, 80};
+            DrawLineEx(world_to_screen(t, a.position),
+                       world_to_screen(t, b.position),
+                       visible ? 1.5F : 1.0F,
+                       col);
+            if (visible) {
+                ++counts.visible;
+            } else {
+                ++counts.blocked;
+            }
+        }
+    }
+    return counts;
+}
+
 void draw_hero(const ArenaTransform& t, const xushi2::sim::HeroState& h) {
     if (!h.present) return;
     const Vector2 c = world_to_screen(t, h.position);
@@ -236,6 +516,17 @@ void draw_hero(const ArenaTransform& t, const xushi2::sim::HeroState& h) {
     // Body.
     DrawCircleV(c, body_r, color);
     DrawCircleLinesV(c, body_r, RAYWHITE);
+    if (h.vanguard_barrier_active && h.vanguard_barrier_hp_centi > 0) {
+        Color barrier_col = color;
+        barrier_col.a = 90;
+        DrawCircleV(c, world_len_to_screen(t, xushi2::common::kVanguardBarrierRadius),
+                    barrier_col);
+        DrawCircleLinesV(c, world_len_to_screen(t, xushi2::common::kVanguardBarrierRadius),
+                         Color{180, 220, 255, 220});
+    }
+    if (h.ranger_marked_ticks > 0) {
+        DrawCircleLinesV(c, body_r + 6.0F, Color{255, 214, 92, 255});
+    }
 
     // Facing arrow: aim_angle is in radians, 0 = +x. World +Y is up, so on
     // screen we negate the y-component (matches world_to_screen's flip).
@@ -277,6 +568,77 @@ void draw_shot_tracers(const ArenaTransform& t,
     }
 }
 
+void draw_mender_beams(
+    const ArenaTransform& t,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& heroes) {
+    for (const auto& h : heroes) {
+        if (!h.present || !h.alive || h.kind != xushi2::common::HeroKind::Mender ||
+            h.mender_beam_locked_on == 0) {
+            continue;
+        }
+        const auto target_it = std::find_if(
+            heroes.begin(), heroes.end(),
+            [&](const xushi2::sim::HeroState& other) {
+                return other.present && other.id == h.mender_beam_locked_on;
+            });
+        if (target_it == heroes.end() || !target_it->alive) {
+            continue;
+        }
+        const Vector2 a = world_to_screen(t, h.position);
+        const Vector2 b = world_to_screen(t, target_it->position);
+        DrawLineEx(a, b, 3.0F, Color{120, 255, 170, 210});
+        DrawCircleV(b, 5.0F, Color{160, 255, 190, 180});
+    }
+}
+
+void draw_target_token_debug(
+    const ArenaTransform& t,
+    const xushi2::sim::MatchState& s,
+    const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& actions) {
+    for (std::uint32_t slot = 0; slot < s.heroes.size(); ++slot) {
+        const auto& h = s.heroes[slot];
+        if (!h.present || !h.alive) {
+            continue;
+        }
+        const auto target = actions[slot].target_slot;
+        if (target == 0 && !actions[slot].ability_2) {
+            continue;
+        }
+        const Vector2 p = world_to_screen(t, h.position);
+        Color col = Color{245, 225, 120, 220};
+        DrawText(TextFormat("t:%s", target_token_label(target)),
+                 static_cast<int>(p.x + 8.0F),
+                 static_cast<int>(p.y - 22.0F),
+                 13,
+                 col);
+        if (target >= 1 && target <= 3) {
+            const std::uint32_t enemy_idx = static_cast<std::uint32_t>(target - 1U);
+            const std::uint32_t enemy_slot = slot < 3U ? enemy_idx + 3U : enemy_idx;
+            if (enemy_slot < s.heroes.size() && s.heroes[enemy_slot].present &&
+                s.heroes[enemy_slot].alive) {
+                DrawLineEx(p, world_to_screen(t, s.heroes[enemy_slot].position),
+                           1.0F, Color{245, 225, 120, 90});
+            }
+        }
+    }
+}
+
+void draw_tether_trails(
+    const ArenaTransform& t,
+    const std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& trails,
+    xushi2::sim::Tick now) {
+    for (const auto& tr : trails) {
+        if (!tr.active) continue;
+        const std::uint32_t age = now - tr.fired_tick;
+        if (age >= kShotFadeTicks) continue;
+        const float alpha = 1.0F - (static_cast<float>(age) /
+                                    static_cast<float>(kShotFadeTicks));
+        Color col = team_color(tr.team);
+        col.a = static_cast<unsigned char>(180.0F * alpha);
+        DrawLineEx(world_to_screen(t, tr.start), world_to_screen(t, tr.end), 4.0F, col);
+    }
+}
+
 void update_shot_tracers(
     std::array<ShotTracer, xushi2::sim::kAgentsPerMatch>& shots,
     const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& prev,
@@ -302,15 +664,82 @@ void update_shot_tracers(
                 c.team,
                 now,
             };
+        } else if (p.alive && c.alive && c.kind == xushi2::common::HeroKind::Mender &&
+                   c.mender_weapon == xushi2::common::MenderWeapon::Sidearm &&
+                   p.weapon.fire_cooldown_ticks == 0 &&
+                   c.weapon.fire_cooldown_ticks == xushi2::common::kMenderSidearmCooldownTicks) {
+            const float ax = std::cos(c.aim_angle);
+            const float ay = std::sin(c.aim_angle);
+            shots[i] = ShotTracer{
+                true,
+                c.position,
+                xushi2::common::Vec2{
+                    c.position.x + ax * xushi2::common::kMenderSidearmRange,
+                    c.position.y + ay * xushi2::common::kMenderSidearmRange,
+                },
+                c.team,
+                now,
+            };
         }
     }
 }
 
-void draw_panel(const xushi2::sim::MatchState& s) {
+void update_tether_trails(
+    std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& trails,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& prev,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& curr,
+    xushi2::sim::Tick now) {
+    for (std::size_t i = 0; i < curr.size(); ++i) {
+        const auto& p = prev[i];
+        const auto& c = curr[i];
+        if (!p.present || !c.present || !p.alive || !c.alive ||
+            c.kind != xushi2::common::HeroKind::Mender) {
+            continue;
+        }
+        const float dx = c.position.x - p.position.x;
+        const float dy = c.position.y - p.position.y;
+        const bool tether_cd_armed =
+            p.cd_ability_2 == 0 &&
+            c.cd_ability_2 == xushi2::common::kMenderTetherCooldownTicks;
+        if (tether_cd_armed && (dx * dx + dy * dy) > 1.0F) {
+            trails[i] = TetherTrail{true, p.position, c.position, c.team, now};
+        }
+    }
+}
+
+void draw_panel(const xushi2::sim::MatchState& s,
+                bool replay_mode,
+                bool paused,
+                float playback_speed,
+                int replay_phase,
+                bool replay_fog,
+                const std::string& replay_fog_mode,
+                const std::string& replay_layout_hash,
+                const std::string& replay_match_type,
+                const std::string& replay_schedule_summary,
+                const std::string& replay_league_summary,
+                const std::string& replay_snapshot_group,
+                const std::string& replay_snapshot_name,
+                const std::string& replay_loss_mask,
+                bool replay_target_slot,
+                bool replay_last_seen,
+                std::size_t replay_cover_count,
+                std::size_t replay_wall_count,
+                LosDebugCounts replay_los_counts,
+                const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& replay_actions,
+                std::size_t replay_idx,
+                std::size_t replay_total) {
     const int x = kPanelX + 24;
     int y = 32;
     DrawText("xushi2 viewer", x, y, 22, RAYWHITE); y += 32;
-    DrawText("(basic vs basic)", x, y, 14, GRAY); y += 28;
+    DrawText(replay_mode ? "replay playback" : "basic vs basic",
+             x, y, 14, GRAY); y += 24;
+    DrawText(TextFormat("state    %s  %.1fx",
+                        paused ? "paused" : "running",
+                        static_cast<double>(playback_speed)),
+             x, y, 16, LIGHTGRAY); y += 22;
+    DrawText("keys     Space pause  Right step  R reset  1/2/3 speed",
+             x, y, 13, GRAY); y += 28;
 
     DrawText(TextFormat("tick     %u", s.tick), x, y, 18, LIGHTGRAY); y += 24;
     const float seconds = static_cast<float>(s.tick) /
@@ -339,6 +768,75 @@ void draw_panel(const xushi2::sim::MatchState& s) {
     DrawText(TextFormat("  unlocked %s", s.objective.unlocked ? "yes" : "no"),
              x, y, 16, LIGHTGRAY); y += 32;
 
+    if (replay_mode) {
+        DrawText("replay", x, y, 16, GRAY); y += 22;
+        if (replay_phase > 0) {
+            DrawText(TextFormat("  phase    %d", replay_phase),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (replay_fog) {
+            const char* mode =
+                replay_fog_mode.empty() ? "diagnostic" : replay_fog_mode.c_str();
+            DrawText(TextFormat("  fog      %s", mode), x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (!replay_layout_hash.empty()) {
+            DrawText(TextFormat("  layout   %s", replay_layout_hash.c_str()),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (!replay_match_type.empty()) {
+            DrawText(TextFormat("  match    %s", replay_match_type.c_str()),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (!replay_snapshot_group.empty()) {
+            DrawText(TextFormat("  league   %s", replay_snapshot_group.c_str()),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (!replay_snapshot_name.empty()) {
+            DrawText(TextFormat("  snapshot %.28s", replay_snapshot_name.c_str()),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (!replay_league_summary.empty()) {
+            DrawText(TextFormat("  weights  %.30s", replay_league_summary.c_str()),
+                     x, y, 13, GRAY); y += 18;
+        }
+        if (!replay_schedule_summary.empty()) {
+            DrawText(TextFormat("  schedule %.30s", replay_schedule_summary.c_str()),
+                     x, y, 13, GRAY); y += 18;
+        }
+        if (!replay_loss_mask.empty()) {
+            DrawText(TextFormat("  lossmask %s", replay_loss_mask.c_str()),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (replay_target_slot) {
+            DrawText("  target   enabled", x, y, 16, LIGHTGRAY); y += 22;
+            DrawText(
+                TextFormat("  tokens   0:%s 1:%s 2:%s",
+                           target_token_label(replay_actions[0].target_slot),
+                           target_token_label(replay_actions[1].target_slot),
+                           target_token_label(replay_actions[2].target_slot)),
+                x, y, 13, GRAY); y += 18;
+        }
+        if (replay_last_seen) {
+            DrawText("  lastseen enabled", x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (replay_cover_count > 0) {
+            DrawText(TextFormat("  cover    %zu", replay_cover_count),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (replay_wall_count > 0) {
+            DrawText(TextFormat("  walls    %zu", replay_wall_count),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        if (replay_los_counts.visible + replay_los_counts.blocked > 0) {
+            DrawText(TextFormat("  los      %zu/%zu",
+                                replay_los_counts.visible,
+                                replay_los_counts.visible + replay_los_counts.blocked),
+                     x, y, 16, LIGHTGRAY); y += 22;
+        }
+        DrawText(TextFormat("  decision %zu/%zu", replay_idx, replay_total),
+                 x, y, 16, LIGHTGRAY); y += 28;
+    }
+
     DrawText("heroes", x, y, 16, GRAY); y += 22;
     for (std::size_t i = 0; i < s.heroes.size(); ++i) {
         const auto& h = s.heroes[i];
@@ -347,9 +845,25 @@ void draw_panel(const xushi2::sim::MatchState& s) {
         const char* status = h.alive ? "alive" : "dead";
         const int hp_show = h.health_centi_hp / 100;
         const int hp_max  = h.max_health_centi_hp / 100;
-        DrawText(TextFormat("  slot %zu  %s  %d/%d", i, status, hp_show, hp_max),
+        DrawText(TextFormat("  slot %zu  %.3s  %s  %d/%d",
+                            i, hero_kind_label(h.kind), status, hp_show, hp_max),
                  x, y, 14, c);
         y += 18;
+        if (h.kind == xushi2::common::HeroKind::Mender) {
+            DrawText(TextFormat("    weapon  %s", mender_weapon_label(h.mender_weapon)),
+                     x, y, 13, LIGHTGRAY);
+            y += 16;
+            if (h.mender_beam_locked_on != 0) {
+                DrawText(TextFormat("    beam    id %u", h.mender_beam_locked_on),
+                         x, y, 13, Color{120, 255, 170, 255});
+                y += 16;
+            }
+        }
+        if (h.ranger_marked_ticks > 0) {
+            DrawText(TextFormat("    marked  %u", h.ranger_marked_ticks),
+                     x, y, 13, Color{255, 214, 92, 255});
+            y += 16;
+        }
     }
 }
 
@@ -383,30 +897,57 @@ int main(int argc, char** argv) {
 
     std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch> actions{};
     std::array<ShotTracer, xushi2::sim::kAgentsPerMatch> shots{};
+    std::array<TetherTrail, xushi2::sim::kAgentsPerMatch> tethers{};
     auto prev_heroes = sim.state().heroes;
     float decision_accum = 0.0F;
+    bool paused = false;
+    float playback_speed = 1.0F;
+
+    const auto reset_playback = [&]() {
+        sim.reset();
+        replay_idx = 0;
+        actions = {};
+        shots = {};
+        tethers = {};
+        prev_heroes = sim.state().heroes;
+        decision_accum = 0.0F;
+    };
+
+    const auto step_once = [&]() {
+        actions = {};
+        if (replay && replay_idx < replay->decisions.size()) {
+            actions = replay->decisions[replay_idx].actions;
+            ++replay_idx;
+        } else if (!replay) {
+            actions[0] = bot_a->decide(sim.state(), 0);
+            actions[3] = bot_b->decide(sim.state(), 3);
+        }
+        // (replay exhausted: no-op actions; sim coasts to round end)
+        sim.step_decision(actions);
+        update_shot_tracers(shots, prev_heroes, sim.state().heroes,
+                            sim.state().tick);
+        update_tether_trails(tethers, prev_heroes, sim.state().heroes,
+                             sim.state().tick);
+        prev_heroes = sim.state().heroes;
+    };
 
     while (!WindowShouldClose()) {
-        decision_accum += GetFrameTime();
-        while (decision_accum >= kDecisionSeconds && !sim.episode_over()) {
-            // TODO: translate keyboard / mouse into actions[0] for a human-
-            // controlled hero. For now, drive the present Phase-1 Ranger slots
-            // with deterministic baseline bots so the placeholder is live.
-            actions = {};
-            if (replay && replay_idx < replay->decisions.size()) {
-                actions[0] = replay->decisions[replay_idx].slot0;
-                actions[3] = replay->decisions[replay_idx].slot3;
-                ++replay_idx;
-            } else if (!replay) {
-                actions[0] = bot_a->decide(sim.state(), 0);
-                actions[3] = bot_b->decide(sim.state(), 3);
+        if (IsKeyPressed(KEY_SPACE)) paused = !paused;
+        if (IsKeyPressed(KEY_R)) reset_playback();
+        if (IsKeyPressed(KEY_ONE)) playback_speed = 0.5F;
+        if (IsKeyPressed(KEY_TWO)) playback_speed = 1.0F;
+        if (IsKeyPressed(KEY_THREE)) playback_speed = 2.0F;
+        if (IsKeyPressed(KEY_RIGHT) && !sim.episode_over()) {
+            step_once();
+            decision_accum = 0.0F;
+        }
+
+        if (!paused) {
+            decision_accum += GetFrameTime() * playback_speed;
+            while (decision_accum >= kDecisionSeconds && !sim.episode_over()) {
+                step_once();
+                decision_accum -= kDecisionSeconds;
             }
-            // (replay exhausted: no-op actions; sim coasts to round end)
-            sim.step_decision(actions);
-            update_shot_tracers(shots, prev_heroes, sim.state().heroes,
-                                sim.state().tick);
-            prev_heroes = sim.state().heroes;
-            decision_accum -= kDecisionSeconds;
         }
 
         BeginDrawing();
@@ -414,19 +955,50 @@ int main(int argc, char** argv) {
 
         const auto& s = sim.state();
         draw_arena(arena);
+        if (replay) {
+            draw_wall_markers(arena, replay->wall_markers);
+            draw_cover_markers(arena, replay->cover_markers);
+        }
+        const LosDebugCounts los_counts =
+            (replay && replay->fog) ? draw_line_of_sight_debug(arena, sim)
+                                    : LosDebugCounts{};
         draw_objective(arena, s.objective, obj_center);
+        draw_tether_trails(arena, tethers, s.tick);
+        draw_mender_beams(arena, s.heroes);
+        if (replay && replay->target_slot) {
+            draw_target_token_debug(arena, s, actions);
+        }
         draw_shot_tracers(arena, shots, s.tick);
         for (const auto& h : s.heroes) {
             draw_hero(arena, h);
         }
-        draw_panel(s);
+        draw_panel(s,
+                   replay.has_value(),
+                   paused,
+                   playback_speed,
+                   replay ? replay->phase : 0,
+                   replay ? replay->fog : false,
+                   replay ? replay->fog_mode : std::string{},
+                   replay ? replay->layout_hash : std::string{},
+                   replay ? replay->match_type : std::string{},
+                   replay ? replay->schedule_summary : std::string{},
+                   replay ? replay->league_summary : std::string{},
+                   replay ? replay->snapshot_group : std::string{},
+                   replay ? replay->snapshot_name : std::string{},
+                   replay ? replay->loss_mask : std::string{},
+                   replay ? replay->target_slot : false,
+                   replay ? replay->last_seen : false,
+                   replay ? replay->cover_markers.size() : 0U,
+                   replay ? replay->wall_markers.size() : 0U,
+                   los_counts,
+                   actions,
+                   replay_idx,
+                   replay ? replay->decisions.size() : 0U);
 
         EndDrawing();
 
         if (sim.episode_over()) {
-            sim.reset();
-            replay_idx = 0;
-            decision_accum = 0.0F;
+            reset_playback();
         }
     }
 

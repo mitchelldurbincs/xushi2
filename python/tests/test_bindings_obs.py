@@ -20,11 +20,17 @@ from xushi2.obs_manifest import (
 )
 
 
-def _fresh_sim(seed: int = 1, team_size: int = 1):
+def _fresh_sim(
+    seed: int = 1,
+    team_size: int = 1,
+    *,
+    fog_of_war_enabled: bool = False,
+    cover_circles: list[_cpp.CoverCircle] | None = None,
+):
     cfg = _cpp.MatchConfig()
     cfg.seed = seed
     cfg.round_length_seconds = 30
-    cfg.fog_of_war_enabled = False
+    cfg.fog_of_war_enabled = fog_of_war_enabled
     cfg.randomize_map = False
     cfg.team_size = team_size
     m = _cpp.Phase1MechanicsConfig()
@@ -33,7 +39,19 @@ def _fresh_sim(seed: int = 1, team_size: int = 1):
     m.revolver_hitbox_radius = 0.75
     m.respawn_ticks = 240
     cfg.mechanics = m
+    if cover_circles is not None:
+        cfg.cover_circles = cover_circles
     return _cpp.Sim(cfg)
+
+
+def _cover_between_default_spawns() -> _cpp.CoverCircle:
+    cover = _cpp.CoverCircle()
+    center = _cpp.Vec2()
+    center.x = 25.0
+    center.y = 25.0
+    cover.center = center
+    cover.radius = 1.0
+    return cover
 
 
 def test_module_dims_match_python_manifest():
@@ -80,6 +98,56 @@ def test_build_actor_obs_accepts_larger_buffer():
     over = np.full(ACTOR_PHASE1_DIM + 10, -99.0, dtype=np.float32)
     _cpp.build_actor_obs(sim, 0, over)
     assert over[ACTOR_PHASE1_DIM] == pytest.approx(-99.0)
+
+
+def test_build_actor_obs_native_fog_hides_los_blocked_alive_enemy():
+    sim = _fresh_sim(
+        fog_of_war_enabled=True,
+        cover_circles=[_cover_between_default_spawns()],
+    )
+    assert _cpp.line_of_sight(sim, 0, 3) is False
+    buf = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+    _cpp.build_actor_obs(sim, 0, buf)
+    assert buf[actor_field_slice("enemy_alive")][0] == pytest.approx(0.0)
+    assert np.allclose(buf[actor_field_slice("enemy_relative_position")], 0.0)
+    assert buf[actor_field_slice("enemy_hp")][0] == pytest.approx(0.0)
+
+
+def test_build_actor_obs_fog_disabled_keeps_los_blocked_enemy_visible():
+    sim = _fresh_sim(
+        fog_of_war_enabled=False,
+        cover_circles=[_cover_between_default_spawns()],
+    )
+    assert _cpp.line_of_sight(sim, 0, 3) is False
+    buf = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+    _cpp.build_actor_obs(sim, 0, buf)
+    assert buf[actor_field_slice("enemy_alive")][0] == pytest.approx(1.0)
+    assert not np.allclose(buf[actor_field_slice("enemy_relative_position")], 0.0)
+    assert buf[actor_field_slice("enemy_hp")][0] == pytest.approx(1.0)
+
+
+def test_observable_enemy_slots_binding_uses_native_fog_mask():
+    sim = _fresh_sim(
+        team_size=3,
+        fog_of_war_enabled=True,
+        cover_circles=[_cover_between_default_spawns()],
+    )
+    mask = _cpp.observable_enemy_slots(sim, 1)
+    assert len(mask) == 6
+    assert mask[4] is False
+    assert mask[1] is False
+
+
+def test_build_actor_obs_3v3_uses_counterpart_enemy_slot():
+    sim = _fresh_sim(team_size=3)
+    buf = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+    _cpp.build_actor_obs(sim, 1, buf)
+    # Slot 1 and its counterpart slot 4 spawn on the same x lane, so the
+    # team-frame relative x is zero. The old first-enemy helper leaked slot 3
+    # here, producing a negative relative x for slot 1.
+    rel = buf[actor_field_slice("enemy_relative_position")]
+    assert rel[0] == pytest.approx(0.0)
+    assert rel[1] > 0.0
 
 
 def test_build_critic_obs_fills_buffer():

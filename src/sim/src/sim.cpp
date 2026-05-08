@@ -7,6 +7,7 @@
 #include <xushi2/common/assert.hpp>
 #include <xushi2/common/limits.hpp>
 
+#include "internal/sim_combat.h"
 #include "internal/sim_hash.h"
 #include "internal/sim_spawn_reset.h"
 #include "internal/sim_tick_pipeline.h"
@@ -42,6 +43,45 @@ void validate_mechanics(const Phase1MechanicsConfig& m) {
     X2_REQUIRE(m.respawn_ticks > 0U, ErrorCode::CorruptState);
 }
 
+void validate_cover(const MatchConfig& config) {
+    X2_REQUIRE(config.num_cover_circles <= common::kMaxWalls,
+               ErrorCode::CapacityExceeded);
+    for (std::uint32_t i = 0; i < config.num_cover_circles; ++i) {
+        const CoverCircle& cover = config.cover_circles[i];
+        X2_REQUIRE(std::isfinite(cover.center.x) && std::isfinite(cover.center.y),
+                   ErrorCode::NonFiniteFloat);
+        X2_REQUIRE(std::isfinite(cover.radius) && cover.radius > 0.0F,
+                   ErrorCode::CorruptState);
+        X2_REQUIRE(cover.center.x - cover.radius >= config.map.min_x &&
+                   cover.center.x + cover.radius <= config.map.max_x &&
+                   cover.center.y - cover.radius >= config.map.min_y &&
+                   cover.center.y + cover.radius <= config.map.max_y,
+                   ErrorCode::CorruptState);
+    }
+    X2_REQUIRE(config.num_wall_segments <= common::kMaxWalls,
+               ErrorCode::CapacityExceeded);
+    for (std::uint32_t i = 0; i < config.num_wall_segments; ++i) {
+        const WallSegment& wall = config.wall_segments[i];
+        X2_REQUIRE(std::isfinite(wall.a.x) && std::isfinite(wall.a.y) &&
+                   std::isfinite(wall.b.x) && std::isfinite(wall.b.y),
+                   ErrorCode::NonFiniteFloat);
+        X2_REQUIRE(std::isfinite(wall.half_width) && wall.half_width > 0.0F,
+                   ErrorCode::CorruptState);
+        const float dx = wall.b.x - wall.a.x;
+        const float dy = wall.b.y - wall.a.y;
+        X2_REQUIRE(dx * dx + dy * dy > 1e-6F, ErrorCode::CorruptState);
+        X2_REQUIRE(wall.a.x - wall.half_width >= config.map.min_x &&
+                   wall.a.x + wall.half_width <= config.map.max_x &&
+                   wall.a.y - wall.half_width >= config.map.min_y &&
+                   wall.a.y + wall.half_width <= config.map.max_y &&
+                   wall.b.x - wall.half_width >= config.map.min_x &&
+                   wall.b.x + wall.half_width <= config.map.max_x &&
+                   wall.b.y - wall.half_width >= config.map.min_y &&
+                   wall.b.y + wall.half_width <= config.map.max_y,
+                   ErrorCode::CorruptState);
+    }
+}
+
 }  // namespace
 
 Sim::Sim(const MatchConfig& config) : config_(config) {
@@ -52,6 +92,7 @@ Sim::Sim(const MatchConfig& config) : config_(config) {
     X2_REQUIRE(config.team_size == 1 || config.team_size == 3,
                ErrorCode::CorruptState);
     validate_mechanics(config.mechanics);
+    validate_cover(config);
     internal::reset_state(state_, config_);
 }
 
@@ -140,6 +181,19 @@ std::uint32_t Sim::team_b_kills() const noexcept {
 
 std::uint64_t Sim::state_hash() const noexcept {
     return internal::compute_state_hash(state_);
+}
+
+bool Sim::line_of_sight(std::uint32_t from_slot,
+                        std::uint32_t to_slot) const noexcept {
+    if (from_slot >= state_.heroes.size() || to_slot >= state_.heroes.size()) {
+        return false;
+    }
+    const HeroState& from = state_.heroes[from_slot];
+    const HeroState& to = state_.heroes[to_slot];
+    if (!from.present || !to.present || !from.alive || !to.alive) {
+        return false;
+    }
+    return !internal::segment_blocked_by_cover(from.position, to.position, config_);
 }
 
 }  // namespace xushi2::sim

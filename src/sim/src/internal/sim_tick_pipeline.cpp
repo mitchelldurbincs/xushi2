@@ -1,5 +1,6 @@
 #include "sim_tick_pipeline.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <xushi2/common/action_canon.hpp>
@@ -28,9 +29,139 @@ static float hero_speed(common::HeroKind kind) {
     X2_UNREACHABLE();
 }
 
+static float cross(common::Vec2 a, common::Vec2 b) {
+    return a.x * b.y - a.y * b.x;
+}
+
+static bool movement_crosses_wall(common::Vec2 from, common::Vec2 to,
+                                  const WallSegment& wall) {
+    if (wall.half_width <= 0.0F || !std::isfinite(wall.half_width)) {
+        return false;
+    }
+    const common::Vec2 move{to.x - from.x, to.y - from.y};
+    const common::Vec2 wall_vec{wall.b.x - wall.a.x, wall.b.y - wall.a.y};
+    if ((move.x * move.x + move.y * move.y) <= 1e-8F ||
+        (wall_vec.x * wall_vec.x + wall_vec.y * wall_vec.y) <= 1e-8F) {
+        return false;
+    }
+    const float denom = cross(move, wall_vec);
+    if (std::fabs(denom) <= 1e-6F) {
+        return false;
+    }
+    const common::Vec2 wall_from{wall.a.x - from.x, wall.a.y - from.y};
+    const float move_t = cross(wall_from, wall_vec) / denom;
+    const float wall_t = cross(wall_from, move) / denom;
+    return move_t >= 0.0F && move_t <= 1.0F && wall_t >= 0.0F && wall_t <= 1.0F;
+}
+
+static common::Vec2 prevent_wall_crossing(common::Vec2 from, common::Vec2 to,
+                                          const MatchConfig& config) {
+    const std::uint32_t num_walls =
+        std::min<std::uint32_t>(config.num_wall_segments, common::kMaxWalls);
+    for (std::uint32_t i = 0; i < num_walls; ++i) {
+        if (movement_crosses_wall(from, to, config.wall_segments[i])) {
+            return from;
+        }
+    }
+    return to;
+}
+
+static common::Vec2 resolve_cover_overlap(common::Vec2 p,
+                                          common::Vec2 fallback_dir,
+                                          const MatchConfig& config) {
+    const std::uint32_t n =
+        std::min<std::uint32_t>(config.num_cover_circles, common::kMaxWalls);
+    for (std::uint32_t i = 0; i < n; ++i) {
+        const CoverCircle& cover = config.cover_circles[i];
+        if (cover.radius <= 0.0F || !std::isfinite(cover.radius)) {
+            continue;
+        }
+        common::Vec2 delta{p.x - cover.center.x, p.y - cover.center.y};
+        float dist_sq = delta.x * delta.x + delta.y * delta.y;
+        if (dist_sq >= cover.radius * cover.radius) {
+            continue;
+        }
+        if (dist_sq <= 1e-6F) {
+            delta = fallback_dir;
+            dist_sq = delta.x * delta.x + delta.y * delta.y;
+            if (dist_sq <= 1e-6F) {
+                delta = common::Vec2{1.0F, 0.0F};
+                dist_sq = 1.0F;
+            }
+        }
+        const float inv_dist = 1.0F / std::sqrt(dist_sq);
+        p = common::Vec2{
+            cover.center.x + delta.x * inv_dist * cover.radius,
+            cover.center.y + delta.y * inv_dist * cover.radius,
+        };
+    }
+    const std::uint32_t num_walls =
+        std::min<std::uint32_t>(config.num_wall_segments, common::kMaxWalls);
+    for (std::uint32_t i = 0; i < num_walls; ++i) {
+        const WallSegment& wall = config.wall_segments[i];
+        if (wall.half_width <= 0.0F || !std::isfinite(wall.half_width)) {
+            continue;
+        }
+        const common::Vec2 ab{wall.b.x - wall.a.x, wall.b.y - wall.a.y};
+        const float len_sq = ab.x * ab.x + ab.y * ab.y;
+        if (len_sq <= 1e-6F) {
+            continue;
+        }
+        const float t = std::clamp(
+            ((p.x - wall.a.x) * ab.x + (p.y - wall.a.y) * ab.y) / len_sq,
+            0.0F,
+            1.0F);
+        const common::Vec2 nearest{wall.a.x + ab.x * t, wall.a.y + ab.y * t};
+        common::Vec2 delta{p.x - nearest.x, p.y - nearest.y};
+        float dist_sq = delta.x * delta.x + delta.y * delta.y;
+        if (dist_sq >= wall.half_width * wall.half_width) {
+            continue;
+        }
+        if (dist_sq <= 1e-6F) {
+            delta = common::Vec2{-ab.y, ab.x};
+            dist_sq = delta.x * delta.x + delta.y * delta.y;
+            if (dist_sq <= 1e-6F) {
+                delta = fallback_dir;
+                dist_sq = delta.x * delta.x + delta.y * delta.y;
+            }
+            if (dist_sq <= 1e-6F) {
+                delta = common::Vec2{1.0F, 0.0F};
+                dist_sq = 1.0F;
+            }
+        }
+        const float inv_dist = 1.0F / std::sqrt(dist_sq);
+        p = common::Vec2{
+            nearest.x + delta.x * inv_dist * wall.half_width,
+            nearest.y + delta.y * inv_dist * wall.half_width,
+        };
+    }
+    p.x = common::clampf(p.x, config.map.min_x, config.map.max_x);
+    p.y = common::clampf(p.y, config.map.min_y, config.map.max_y);
+    return p;
+}
+
+static void stage_abilities_vanguard_barrier(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& h = state.heroes[i];
+        if (!h.present || h.kind != common::HeroKind::Vanguard) {
+            continue;
+        }
+        if (!h.alive || !actions[i].ability_1 || h.cd_ability_1 != 0) {
+            h.vanguard_barrier_active = false;
+            continue;
+        }
+        if (h.vanguard_barrier_hp_centi <= 0) {
+            h.vanguard_barrier_hp_centi = common::kVanguardBarrierHpCenti;
+        }
+        h.vanguard_barrier_active = true;
+    }
+}
+
 // Tick-pipeline step 7: Combat Roll (impulse, first tick of decision).
 static void maybe_combat_roll(HeroState& h, const common::Action& a, bool aim_consumed,
-                              const MapBounds& map) {
+                              const MatchConfig& config) {
     // Impulse semantics: fires only on the first tick of a decision window.
     if (aim_consumed) {
         return;
@@ -52,9 +183,10 @@ static void maybe_combat_roll(HeroState& h, const common::Action& a, bool aim_co
     common::Vec2 next{h.position.x + dir.x * common::kRangerCombatRollDistance,
                       h.position.y + dir.y * common::kRangerCombatRollDistance};
     // Clamp to arena bounds (Phase 1 has no interior walls).
-    next.x = common::clampf(next.x, map.min_x, map.max_x);
-    next.y = common::clampf(next.y, map.min_y, map.max_y);
-    h.position = next;
+    next.x = common::clampf(next.x, config.map.min_x, config.map.max_x);
+    next.y = common::clampf(next.y, config.map.min_y, config.map.max_y);
+    next = prevent_wall_crossing(h.position, next, config);
+    h.position = resolve_cover_overlap(next, dir, config);
     weapon_on_combat_roll(h.weapon);
     h.cd_ability_1 = common::kRangerCombatRollCooldownTicks;
 }
@@ -98,12 +230,16 @@ static void stage_movement_and_bounds(
         }
         const common::Action& a = actions[i];
         common::Vec2 move_vec = common::normalize_move_input(common::Vec2{a.move_x, a.move_y});
-        const float speed = hero_speed(h.kind);
+        float speed = hero_speed(h.kind);
+        if (h.kind == common::HeroKind::Vanguard && h.vanguard_barrier_active) {
+            speed *= 0.7F;
+        }
         h.velocity = common::scale(move_vec, speed);
         common::Vec2 next = common::add(h.position, common::scale(h.velocity, kDt));
         next.x = common::clampf(next.x, config.map.min_x, config.map.max_x);
         next.y = common::clampf(next.y, config.map.min_y, config.map.max_y);
-        h.position = next;
+        next = prevent_wall_crossing(h.position, next, config);
+        h.position = resolve_cover_overlap(next, move_vec, config);
     }
 }
 
@@ -124,8 +260,19 @@ static void stage_cooldowns_and_weapon_tick(MatchState& state) {
         if (h.cd_ability_2 > 0) {
             --h.cd_ability_2;
         }
+        if (h.ranger_marked_ticks > 0) {
+            --h.ranger_marked_ticks;
+            if (h.ranger_marked_ticks == 0) {
+                h.ranger_marked_by = common::Team::Neutral;
+            }
+        }
         if (h.alive && h.kind == common::HeroKind::Ranger) {
             weapon_tick_update(h.weapon);
+        } else if (h.alive &&
+                   (h.kind == common::HeroKind::Vanguard ||
+                    h.kind == common::HeroKind::Mender) &&
+                   h.weapon.fire_cooldown_ticks > 0) {
+            --h.weapon.fire_cooldown_ticks;
         }
     }
 }
@@ -138,13 +285,304 @@ static void stage_abilities_combat_roll(
     MatchState& state,
     const std::array<common::Action, kAgentsPerMatch>& actions,
     const std::array<bool, kAgentsPerMatch>& aim_consumed,
-    const MapBounds& map) {
+    const MatchConfig& config) {
     for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
         HeroState& h = state.heroes[i];
         if (!h.present || h.kind != common::HeroKind::Ranger) {
             continue;
         }
-        maybe_combat_roll(h, actions[i], aim_consumed[i], map);
+        maybe_combat_roll(h, actions[i], aim_consumed[i], config);
+    }
+}
+
+static void stage_abilities_vanguard_guard_step(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions,
+    const std::array<bool, kAgentsPerMatch>& aim_consumed,
+    const MatchConfig& config) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& h = state.heroes[i];
+        if (!h.present || !h.alive || h.kind != common::HeroKind::Vanguard) {
+            continue;
+        }
+        const common::Action& a = actions[i];
+        if (aim_consumed[i] || !a.ability_2 || h.cd_ability_2 != 0) {
+            continue;
+        }
+        common::Vec2 next{
+            h.position.x + std::cos(h.aim_angle) * common::kVanguardGuardStepDistance,
+            h.position.y + std::sin(h.aim_angle) * common::kVanguardGuardStepDistance,
+        };
+        const common::Vec2 dir{std::cos(h.aim_angle), std::sin(h.aim_angle)};
+        next.x = common::clampf(next.x, config.map.min_x, config.map.max_x);
+        next.y = common::clampf(next.y, config.map.min_y, config.map.max_y);
+        next = prevent_wall_crossing(h.position, next, config);
+        h.position = resolve_cover_overlap(next, dir, config);
+        h.cd_ability_2 = common::kVanguardGuardStepCooldownTicks;
+    }
+}
+
+static void stage_abilities_ranger_mark_target(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions,
+    const std::array<bool, kAgentsPerMatch>& aim_consumed,
+    const MatchConfig& config) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& ranger = state.heroes[i];
+        if (!ranger.present || !ranger.alive ||
+            ranger.kind != common::HeroKind::Ranger) {
+            continue;
+        }
+        const common::Action& a = actions[i];
+        if (aim_consumed[i] || !a.ability_2 || a.target_slot != 1 ||
+            ranger.cd_ability_2 != 0) {
+            continue;
+        }
+        float best_dist_sq = common::kRangerRevolverRange * common::kRangerRevolverRange;
+        int best_slot = -1;
+        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
+            const HeroState& target = state.heroes[j];
+            if (!target.present || !target.alive || target.team == ranger.team) {
+                continue;
+            }
+            const common::Vec2 to_target{
+                target.position.x - ranger.position.x,
+                target.position.y - ranger.position.y,
+            };
+            const float dist_sq = to_target.x * to_target.x + to_target.y * to_target.y;
+            if (dist_sq > best_dist_sq ||
+                segment_blocked_by_cover(ranger.position, target.position, config)) {
+                continue;
+            }
+            best_dist_sq = dist_sq;
+            best_slot = static_cast<int>(j);
+        }
+        ranger.cd_ability_2 = common::kRangerMarkTargetCooldownTicks;
+        if (best_slot >= 0) {
+            HeroState& target = state.heroes[static_cast<std::uint32_t>(best_slot)];
+            target.ranger_marked_ticks = common::kRangerMarkTargetDurationTicks;
+            target.ranger_marked_by = ranger.team;
+        }
+    }
+}
+
+static void stage_vanguard_warhammer(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions,
+    const std::array<bool, kAgentsPerMatch>& aim_consumed,
+    DamageBuffer& buf,
+    std::array<bool, kAgentsPerMatch>& has_damage,
+    const MatchConfig& config) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& vanguard = state.heroes[i];
+        if (!vanguard.present || !vanguard.alive ||
+            vanguard.kind != common::HeroKind::Vanguard) {
+            continue;
+        }
+        const common::Action& a = actions[i];
+        if (aim_consumed[i] || !a.primary_fire || vanguard.vanguard_barrier_active ||
+            vanguard.weapon.fire_cooldown_ticks > 0) {
+            continue;
+        }
+        const common::Vec2 facing{std::cos(vanguard.aim_angle), std::sin(vanguard.aim_angle)};
+        float best_dist_sq = common::kVanguardWarhammerRange * common::kVanguardWarhammerRange;
+        int best_slot = -1;
+        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
+            const HeroState& target = state.heroes[j];
+            if (!target.present || !target.alive || target.team == vanguard.team) {
+                continue;
+            }
+            const common::Vec2 to_target{
+                target.position.x - vanguard.position.x,
+                target.position.y - vanguard.position.y,
+            };
+            const float dist_sq = to_target.x * to_target.x + to_target.y * to_target.y;
+            if (dist_sq <= 1e-6F || dist_sq > best_dist_sq) {
+                continue;
+            }
+            const float inv_dist = 1.0F / std::sqrt(dist_sq);
+            if (segment_blocked_by_cover(vanguard.position, target.position, config)) {
+                continue;
+            }
+            const float dot = (to_target.x * facing.x + to_target.y * facing.y) * inv_dist;
+            if (dot < common::kVanguardWarhammerHalfAngleCos) {
+                continue;
+            }
+            best_dist_sq = dist_sq;
+            best_slot = static_cast<int>(j);
+        }
+        vanguard.weapon.fire_cooldown_ticks = common::kVanguardWarhammerCooldownTicks;
+        if (best_slot >= 0) {
+            buf[i].attacker_id = vanguard.id;
+            buf[i].victim_slot = static_cast<std::uint32_t>(best_slot);
+            buf[i].damage_centi_hp =
+                static_cast<std::uint32_t>(common::kVanguardWarhammerDamageCentiHp);
+            has_damage[i] = true;
+        }
+    }
+}
+
+static void stage_abilities_mender_weapon_swap(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions,
+    const std::array<bool, kAgentsPerMatch>& aim_consumed) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& mender = state.heroes[i];
+        if (!mender.present || !mender.alive ||
+            mender.kind != common::HeroKind::Mender) {
+            continue;
+        }
+        const common::Action& a = actions[i];
+        if (aim_consumed[i] || !a.ability_1 || mender.cd_ability_1 != 0) {
+            continue;
+        }
+        mender.mender_weapon =
+            (mender.mender_weapon == common::MenderWeapon::Staff)
+                ? common::MenderWeapon::Sidearm
+                : common::MenderWeapon::Staff;
+        mender.mender_beam_locked_on = 0;
+        mender.cd_ability_1 = common::kMenderWeaponSwapCooldownTicks;
+    }
+}
+
+static int slot_for_entity_id(const MatchState& state, common::EntityId id) {
+    if (id == 0) {
+        return -1;
+    }
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        const HeroState& h = state.heroes[i];
+        if (h.present && h.id == id) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+static int nearest_ally_in_mender_beam_cone(const MatchState& state,
+                                            std::uint32_t mender_slot,
+                                            float range,
+                                            float half_angle_cos,
+                                            const MatchConfig& config) {
+    const HeroState& mender = state.heroes[mender_slot];
+    const common::Vec2 facing{std::cos(mender.aim_angle), std::sin(mender.aim_angle)};
+    float best_dist_sq = range * range;
+    int best_slot = -1;
+    for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
+        if (j == mender_slot) {
+            continue;
+        }
+        const HeroState& ally = state.heroes[j];
+        if (!ally.present || !ally.alive || ally.team != mender.team) {
+            continue;
+        }
+        const common::Vec2 to_ally{
+            ally.position.x - mender.position.x,
+            ally.position.y - mender.position.y,
+        };
+        const float dist_sq = to_ally.x * to_ally.x + to_ally.y * to_ally.y;
+        if (dist_sq <= 1e-6F || dist_sq > best_dist_sq) {
+            continue;
+        }
+        const float inv_dist = 1.0F / std::sqrt(dist_sq);
+        if (segment_blocked_by_cover(mender.position, ally.position, config)) {
+            continue;
+        }
+        const float dot = (to_ally.x * facing.x + to_ally.y * facing.y) * inv_dist;
+        if (dot < half_angle_cos) {
+            continue;
+        }
+        best_dist_sq = dist_sq;
+        best_slot = static_cast<int>(j);
+    }
+    return best_slot;
+}
+
+static void stage_mender_staff_beam(
+    MatchState& state,
+    const MatchConfig& config,
+    const std::array<common::Action, kAgentsPerMatch>& actions) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& mender = state.heroes[i];
+        if (!mender.present || !mender.alive ||
+            mender.kind != common::HeroKind::Mender ||
+            mender.mender_weapon != common::MenderWeapon::Staff ||
+            !actions[i].primary_fire) {
+            mender.mender_beam_locked_on = 0;
+            continue;
+        }
+
+        int target_slot = slot_for_entity_id(state, mender.mender_beam_locked_on);
+        if (target_slot >= 0) {
+            const HeroState& target = state.heroes[static_cast<std::uint32_t>(target_slot)];
+            const float dx = target.position.x - mender.position.x;
+            const float dy = target.position.y - mender.position.y;
+            const float max_dist_sq = common::kMenderBeamRange * common::kMenderBeamRange;
+            if (!target.alive || target.team != mender.team ||
+                (dx * dx + dy * dy) > max_dist_sq ||
+                segment_blocked_by_cover(mender.position, target.position, config)) {
+                target_slot = -1;
+            }
+        }
+        if (target_slot < 0) {
+            target_slot = nearest_ally_in_mender_beam_cone(
+                state, i, common::kMenderBeamRange,
+                common::kMenderBeamHalfAngleCos, config);
+            mender.mender_beam_locked_on =
+                (target_slot >= 0)
+                    ? state.heroes[static_cast<std::uint32_t>(target_slot)].id
+                    : 0;
+        }
+        if (target_slot < 0) {
+            continue;
+        }
+
+        HeroState& target = state.heroes[static_cast<std::uint32_t>(target_slot)];
+        target.health_centi_hp = std::min<std::int32_t>(
+            target.max_health_centi_hp,
+            target.health_centi_hp + common::kMenderBeamHealCentiHpPerTick);
+    }
+}
+
+static void stage_abilities_mender_tether(
+    MatchState& state,
+    const std::array<common::Action, kAgentsPerMatch>& actions,
+    const std::array<bool, kAgentsPerMatch>& aim_consumed,
+    const MatchConfig& config) {
+    for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
+        HeroState& mender = state.heroes[i];
+        if (!mender.present || !mender.alive ||
+            mender.kind != common::HeroKind::Mender) {
+            continue;
+        }
+        const common::Action& a = actions[i];
+        if (aim_consumed[i] || !a.ability_2 || mender.cd_ability_2 != 0) {
+            continue;
+        }
+        const int target_slot = nearest_ally_in_mender_beam_cone(
+            state, i, common::kMenderTetherRange,
+            common::kMenderBeamHalfAngleCos, config);
+        if (target_slot < 0) {
+            continue;
+        }
+        const HeroState& target = state.heroes[static_cast<std::uint32_t>(target_slot)];
+        const common::Vec2 from_target{
+            mender.position.x - target.position.x,
+            mender.position.y - target.position.y,
+        };
+        const float dist_sq = from_target.x * from_target.x + from_target.y * from_target.y;
+        if (dist_sq <= 1e-6F) {
+            continue;
+        }
+        const float inv_dist = 1.0F / std::sqrt(dist_sq);
+        common::Vec2 next{
+            target.position.x + from_target.x * inv_dist * common::kMenderTetherStopDistance,
+            target.position.y + from_target.y * inv_dist * common::kMenderTetherStopDistance,
+        };
+        next.x = common::clampf(next.x, config.map.min_x, config.map.max_x);
+        next.y = common::clampf(next.y, config.map.min_y, config.map.max_y);
+        next = prevent_wall_crossing(mender.position, next, config);
+        mender.position = resolve_cover_overlap(next, from_target, config);
+        mender.cd_ability_2 = common::kMenderTetherCooldownTicks;
     }
 }
 
@@ -156,9 +594,10 @@ static void stage_fire_resolution(
     MatchState& state,
     const std::array<common::Action, kAgentsPerMatch>& actions,
     const Phase1MechanicsConfig& m,
+    const MatchConfig& config,
     DamageBuffer& buf,
     std::array<bool, kAgentsPerMatch>& has_damage) {
-    resolve_revolver_fire(state, actions, m, buf, has_damage);
+    resolve_revolver_fire(state, actions, m, config, buf, has_damage);
 }
 
 // Pre: DamageBuffer populated. Post: victim HP reduced. All damage from
@@ -203,13 +642,21 @@ void apply_one_tick(MatchState& state, const MatchConfig& config,
                     const std::array<common::Action, kAgentsPerMatch>& actions,
                     const std::array<bool, kAgentsPerMatch>& aim_consumed) {
     stage_validate_and_aim(state, actions, aim_consumed);
+    stage_abilities_vanguard_barrier(state, actions);
     stage_movement_and_bounds(state, config, actions);
     stage_cooldowns_and_weapon_tick(state);
-    stage_abilities_combat_roll(state, actions, aim_consumed, config.map);
+    stage_abilities_combat_roll(state, actions, aim_consumed, config);
+    stage_abilities_vanguard_guard_step(state, actions, aim_consumed, config);
+    stage_abilities_ranger_mark_target(state, actions, aim_consumed, config);
+    stage_abilities_mender_weapon_swap(state, actions, aim_consumed);
+    stage_mender_staff_beam(state, config, actions);
+    stage_abilities_mender_tether(state, actions, aim_consumed, config);
     // Steps 8–9 (spatial index, fog) deferred — Phase 7+.
     DamageBuffer buf{};
     std::array<bool, kAgentsPerMatch> has_damage{};
-    stage_fire_resolution(state, actions, config.mechanics, buf, has_damage);
+    stage_fire_resolution(state, actions, config.mechanics, config, buf, has_damage);
+    resolve_mender_sidearm_fire(state, actions, config.mechanics, config, buf, has_damage);
+    stage_vanguard_warhammer(state, actions, aim_consumed, buf, has_damage, config);
     stage_apply_damage(state, buf, has_damage);
     stage_process_deaths(state, buf, has_damage, config);
     stage_respawn(state, config);

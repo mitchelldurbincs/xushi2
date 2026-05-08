@@ -7,6 +7,11 @@ from typing import Callable
 
 import gymnasium as gym
 
+from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+
+PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
+
 
 def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
     from envs.memory_toy import MemoryToyEnv
@@ -46,6 +51,150 @@ def _make_phase4_env(
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+    )
+
+
+def _make_phase5_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+):
+    from envs.phase5_entity_mappo import Phase5EntityMappoEnv
+
+    return Phase5EntityMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+    )
+
+
+def _make_phase6_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+):
+    from envs.phase6_grid_mappo import Phase6GridMappoEnv
+
+    return Phase6GridMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+    )
+
+
+def _make_phase7_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+    fog_mode: str,
+    visible_radius: float,
+):
+    from envs.phase7_fog_mappo import Phase7FogMappoEnv
+
+    return Phase7FogMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+        fog_mode=fog_mode,
+        visible_radius=visible_radius,
+    )
+
+
+def _make_phase8_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+    fog_mode: str,
+    visible_radius: float,
+    map_randomization: dict,
+):
+    from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+
+    return Phase8RandomMapMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+        fog_mode=fog_mode,
+        visible_radius=visible_radius,
+        map_randomization=map_randomization,
+    )
+
+
+def _make_phase9_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+    fog_mode: str,
+    visible_radius: float,
+    map_randomization: dict,
+    snapshot_paths: tuple[str, ...],
+    snapshot_league: dict,
+):
+    from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
+
+    return Phase9SnapshotMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+        fog_mode=fog_mode,
+        visible_radius=visible_radius,
+        map_randomization=map_randomization,
+        snapshot_paths=list(snapshot_paths),
+        snapshot_league=snapshot_league,
+    )
+
+
+def _make_phase10_env(
+    sim_cfg: dict,
+    opponent_bot: str,
+    learner_team: str,
+    reward_cfg: dict,
+    fog_mode: str,
+    visible_radius: float,
+    map_randomization: dict,
+):
+    from envs.phase10_target_slot_mappo import Phase10TargetSlotMappoEnv
+
+    return Phase10TargetSlotMappoEnv(
+        sim_cfg,
+        opponent_bot=opponent_bot,
+        learner_team=learner_team,
+        reward_cfg=reward_cfg,
+        fog_mode=fog_mode,
+        visible_radius=visible_radius,
+        map_randomization=map_randomization,
+    )
+
+
+def _make_phase11_env(
+    sim_cfg: dict,
+    reward_cfg: dict,
+    fog_mode: str,
+    visible_radius: float,
+    map_randomization: dict,
+    self_play_schedule: dict | None,
+    snapshot_league: dict,
+):
+    from envs.phase11_current_selfplay_mappo import Phase11CurrentSelfplayMappoEnv
+
+    return Phase11CurrentSelfplayMappoEnv(
+        sim_cfg,
+        reward_cfg=reward_cfg,
+        fog_mode=fog_mode,
+        visible_radius=visible_radius,
+        map_randomization=map_randomization,
+        self_play_schedule=self_play_schedule,
+        snapshot_league=snapshot_league,
     )
 
 
@@ -96,6 +245,217 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     )
 
 
+def _phase5_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    return (
+        partial(_make_phase5_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase6_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    return (
+        partial(_make_phase6_env, sim_cfg, opponent_bot, learner_team, reward_cfg),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase7_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
+    visible_radius = float(env_cfg.get("visible_radius", 0.6))
+    return (
+        partial(
+            _make_phase7_env,
+            sim_cfg,
+            opponent_bot,
+            learner_team,
+            reward_cfg,
+            fog_mode,
+            visible_radius,
+        ),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+            "fog_mode": fog_mode,
+            "visible_radius": visible_radius,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase8_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "basic"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
+    visible_radius = float(env_cfg.get("visible_radius", 0.65))
+    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    return (
+        partial(
+            _make_phase8_env,
+            sim_cfg,
+            opponent_bot,
+            learner_team,
+            reward_cfg,
+            fog_mode,
+            visible_radius,
+            map_randomization,
+        ),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+            "fog_mode": fog_mode,
+            "visible_radius": visible_radius,
+            "map_randomization": map_randomization,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase9_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "snapshot"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
+    visible_radius = float(env_cfg.get("visible_radius", 0.65))
+    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
+    snapshot_league = dict(env_cfg.get("snapshot_league", {}))
+    self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
+    return (
+        partial(
+            _make_phase9_env,
+            sim_cfg,
+            opponent_bot,
+            learner_team,
+            reward_cfg,
+            fog_mode,
+            visible_radius,
+            map_randomization,
+            snapshot_paths,
+            snapshot_league,
+        ),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+            "fog_mode": fog_mode,
+            "visible_radius": visible_radius,
+            "map_randomization": map_randomization,
+            "snapshot_paths": snapshot_paths,
+            "snapshot_league": snapshot_league,
+            "self_play_schedule": self_play_schedule,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase10_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    opponent_bot = str(env_cfg.get("opponent_bot", "noop"))
+    learner_team = str(env_cfg.get("learner_team", "A"))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
+    visible_radius = float(env_cfg.get("visible_radius", 0.65))
+    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    return (
+        partial(
+            _make_phase10_env,
+            sim_cfg,
+            opponent_bot,
+            learner_team,
+            reward_cfg,
+            fog_mode,
+            visible_radius,
+            map_randomization,
+        ),
+        {
+            "sim": sim_cfg,
+            "opponent_bot": opponent_bot,
+            "learner_team": learner_team,
+            "reward": reward_cfg,
+            "fog_mode": fog_mode,
+            "visible_radius": visible_radius,
+            "map_randomization": map_randomization,
+        },
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
+def _phase11_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+    env_cfg = config.get("env", {})
+    sim_cfg = dict(env_cfg.get("sim", {}))
+    reward_cfg = dict(env_cfg.get("reward", {}))
+    fog_mode = str(env_cfg.get("fog_mode", "team_shared"))
+    visible_radius = float(env_cfg.get("visible_radius", 0.65))
+    map_randomization = dict(env_cfg.get("map_randomization", {}))
+    schedule_present = "self_play_schedule" in env_cfg
+    self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
+    snapshot_league = dict(env_cfg.get("snapshot_league", {}))
+    ckpt_env_cfg = {
+        "sim": sim_cfg,
+        "reward": reward_cfg,
+        "fog_mode": fog_mode,
+        "visible_radius": visible_radius,
+        "map_randomization": map_randomization,
+        "match_type": "current",
+    }
+    if schedule_present:
+        ckpt_env_cfg["self_play_schedule"] = self_play_schedule
+    if snapshot_league:
+        ckpt_env_cfg["snapshot_league"] = snapshot_league
+    return (
+        partial(
+            _make_phase11_env,
+            sim_cfg,
+            reward_cfg,
+            fog_mode,
+            visible_radius,
+            map_randomization,
+            self_play_schedule if schedule_present else None,
+            snapshot_league,
+        ),
+        ckpt_env_cfg,
+        int(env_cfg.get("seed_base", sim_cfg.get("seed", 0))),
+    )
+
+
 def _phase0_seed(config: dict) -> int:
     env_cfg = config.get("env", {})
     sim_cfg = config.get("sim", {})
@@ -136,6 +496,84 @@ PHASE_REGISTRY: dict[int, dict] = {
         "binary_action_dim": 3,
         "training_variants": ("mappo",),
         "env_bundle": _phase4_env_bundle,
+    },
+    5: {
+        "label": "phase5",
+        "obs_dim": ENTITY_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase5_env_bundle,
+    },
+    6: {
+        "label": "phase6",
+        "obs_dim": ENTITY_GRID_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase6_env_bundle,
+    },
+    7: {
+        "label": "phase7",
+        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase7_env_bundle,
+    },
+    8: {
+        "label": "phase8",
+        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase8_env_bundle,
+    },
+    9: {
+        "label": "phase9",
+        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase9_env_bundle,
+    },
+    10: {
+        "label": "phase10",
+        "obs_dim": PHASE10_TARGET_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 3,
+        "action_dim": 7,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "target_action_dim": MULTI_ENEMY_TOKEN_COUNT,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase10_env_bundle,
+    },
+    11: {
+        "label": "phase11",
+        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+        "critic_obs_dim": 135,
+        "n_agents": 6,
+        "action_dim": 6,
+        "continuous_action_dim": 3,
+        "binary_action_dim": 3,
+        "training_variants": ("mappo",),
+        "env_bundle": _phase11_env_bundle,
     },
 }
 

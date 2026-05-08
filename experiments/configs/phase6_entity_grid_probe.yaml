@@ -1,0 +1,61 @@
+phase: 6
+env:
+  seed_base: 0xD1CEDA7A
+  opponent_bot: noop
+  learner_team: A
+  reward:
+    # Diagnostic shaping for the first entity+grid encoder smoke run.
+    distance_shaping_coef: 0.05
+    on_point_shaping_coef: 0.02
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 0xD1CEDA7A
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 7500
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 3
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 32
+  gru_hidden: 32
+  head_hidden: 32
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 2
+  rollout_len: 32
+  num_epochs: 1
+  minibatch_size: 1
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: constant
+  lr_final_ratio: 1.0
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.001
+  value_coef: 0.5
+  max_grad_norm: 0.5
+run:
+  total_updates: 1
+  eval_every: 1
+  eval_episodes: 2
+  checkpoint_every: 1
+  log_every: 1
+  bc_pretrain_steps: 200
+  bc_batch_size: 192
+  bc_learning_rate: 1.0e-3
+  output_dir: runs/phase6_entity_grid_probe

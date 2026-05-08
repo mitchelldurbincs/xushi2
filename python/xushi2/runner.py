@@ -22,6 +22,12 @@ _REQUIRED_MECHANICS_KEYS = frozenset({
     "respawn_ticks",
 })
 
+_HERO_KIND_BY_NAME = {
+    "vanguard": _cpp.HeroKind.Vanguard,
+    "ranger": _cpp.HeroKind.Ranger,
+    "mender": _cpp.HeroKind.Mender,
+}
+
 
 @dataclass(frozen=True)
 class EpisodeResult:
@@ -66,8 +72,52 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
     cfg.round_length_seconds = int(sim_cfg.get("round_length_seconds", 180))
     cfg.fog_of_war_enabled = bool(sim_cfg.get("fog_of_war_enabled", True))
     cfg.randomize_map = bool(sim_cfg.get("randomize_map", False))
+    map_cfg = dict(sim_cfg.get("map", {}))
+    if map_cfg:
+        cfg.map.min_x = float(map_cfg.get("min_x", cfg.map.min_x))
+        cfg.map.min_y = float(map_cfg.get("min_y", cfg.map.min_y))
+        cfg.map.max_x = float(map_cfg.get("max_x", cfg.map.max_x))
+        cfg.map.max_y = float(map_cfg.get("max_y", cfg.map.max_y))
+    if "cover_circles" in sim_cfg:
+        covers = []
+        for raw in sim_cfg["cover_circles"]:
+            cover = _cpp.CoverCircle()
+            center = _cpp.Vec2()
+            center.x = float(raw["x"])
+            center.y = float(raw["y"])
+            cover.center = center
+            cover.radius = float(raw.get("radius", 1.0))
+            covers.append(cover)
+        cfg.cover_circles = covers
+    if "wall_segments" in sim_cfg:
+        walls = []
+        for raw in sim_cfg["wall_segments"]:
+            wall = _cpp.WallSegment()
+            a = _cpp.Vec2()
+            b = _cpp.Vec2()
+            a.x = float(raw["x1"])
+            a.y = float(raw["y1"])
+            b.x = float(raw["x2"])
+            b.y = float(raw["y2"])
+            wall.a = a
+            wall.b = b
+            wall.half_width = float(raw.get("half_width", 0.25))
+            walls.append(wall)
+        cfg.wall_segments = walls
     if "action_repeat" in sim_cfg:
         cfg.action_repeat = int(sim_cfg["action_repeat"])
+    if "hero_kinds" in sim_cfg:
+        raw_kinds = list(sim_cfg["hero_kinds"])
+        if len(raw_kinds) != 6:
+            raise ValueError("sim.hero_kinds must list exactly 6 slot kinds")
+        try:
+            cfg.hero_kinds = [
+                _HERO_KIND_BY_NAME[str(kind).lower()] for kind in raw_kinds
+            ]
+        except KeyError as exc:
+            raise ValueError(
+                "sim.hero_kinds entries must be Vanguard, Ranger, or Mender"
+            ) from exc
     cfg.mechanics = _build_mechanics(sim_cfg["mechanics"])
     return cfg
 

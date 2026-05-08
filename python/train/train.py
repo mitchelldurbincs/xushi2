@@ -86,7 +86,10 @@ def main() -> int:
     assert_determinism = bool(run_cfg.get("assert_determinism", True))
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
 
-    if phase_int == 4:
+    if phase_int == 11:
+        print(f"[xushi2] phase={phase} mappo match_type=current "
+              f"learner_team=both base_seed=0x{base_seed:x}")
+    elif phase_int in (4, 5, 6, 7, 8, 9, 10):
         opponent = str(env_cfg.get("opponent_bot", "?"))
         learner = str(env_cfg.get("learner_team", "A"))
         print(f"[xushi2] phase={phase} mappo opponent={opponent} "
@@ -136,11 +139,11 @@ def main() -> int:
             print(f"[{label}] recurrent_final={recurrent:.3f}")
         return 0
 
-    if phase_int == 4:
+    if phase_int in (4, 5, 6, 7, 8, 9, 10, 11):
         from train.mappo import train_phase4_from_config
 
         result = train_phase4_from_config(config)
-        print(f"[phase4] mappo_final={float(result['mappo']):.3f}")
+        print(f"[phase{phase_int}] mappo_final={float(result['mappo']):.3f}")
         return 0
 
     print(f"[xushi2] unsupported phase/config shape: phase={phase!r}")

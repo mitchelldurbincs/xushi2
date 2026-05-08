@@ -6,7 +6,7 @@
 // The separation contract (docs/observation_spec.md invariant 1):
 // this TU must not call any function that iterates hidden enemy state.
 // Enemy data enters only through `obs_utils::visible_enemy_1v1`, which is
-// the single seam that will gain LoS filtering at Phase 7.
+// the native fog/LoS filtering point.
 
 #include <xushi2/sim/obs.h>
 
@@ -123,7 +123,7 @@ void build_actor_obs_phase1(const Sim& sim,
                     static_cast<float>(common::kRangerCombatRollCooldownTicks)));
 
     // --- enemy_* section: enter ONLY through visible_enemy_1v1. ---
-    const auto enemy = obs_utils::visible_enemy_1v1(s, agent_slot);
+    const auto enemy = obs_utils::visible_enemy_1v1(sim, agent_slot);
     const bool enemy_alive = enemy.present && enemy.alive;
 
     // --- enemy_alive ---

@@ -39,6 +39,17 @@ struct MapBounds {
     float max_y = 50.0F;
 };
 
+struct CoverCircle {
+    Vec2 center{};
+    float radius = 0.0F;
+};
+
+struct WallSegment {
+    Vec2 a{};
+    Vec2 b{};
+    float half_width = 0.0F;
+};
+
 // Phase-1 Ranger weapon sub-state. Narrow update functions in sim.cpp are
 // the only way this advances. See docs/game_design.md §6 "Reload behavior."
 struct RangerWeaponState {
@@ -71,6 +82,8 @@ struct HeroState {
     // Hero-specific state; not all fields apply to all heroes.
     bool vanguard_barrier_active = false;
     std::int32_t vanguard_barrier_hp_centi = 0;
+    Tick ranger_marked_ticks = 0;
+    Team ranger_marked_by = Team::Neutral;
     common::MenderWeapon mender_weapon = common::MenderWeapon::Staff;
     EntityId mender_beam_locked_on = 0;  // 0 = not locked
     // Lifetime combat counters (game-design §13 behavioral metrics use these).
@@ -114,12 +127,22 @@ struct MatchConfig {
     // Sim ticks held per policy decision (see action_spec.md).
     std::uint32_t action_repeat = common::kDefaultActionRepeat;
     MapBounds map{};
+    std::uint32_t num_cover_circles = 0;
+    std::array<CoverCircle, common::kMaxWalls> cover_circles{};
+    std::uint32_t num_wall_segments = 0;
+    std::array<WallSegment, common::kMaxWalls> wall_segments{};
     // Required mechanic values; see Phase1MechanicsConfig docs.
     Phase1MechanicsConfig mechanics{};
     // Phase-4 toggle. team_size==1: single Ranger per team (Phase 1–3 path,
     // slots 0 and 3). team_size==3: full 3v3 (Phase 4+, slots 0–2 + 3–5).
     // Other values are rejected by the Sim ctor.
     std::uint32_t team_size = 1;
+    // Slot-indexed hero composition. Defaults preserve the Phase 1-9 all-Ranger
+    // behavior. Phase 10+ configs can set slots 0..5 explicitly.
+    std::array<HeroKind, kAgentsPerMatch> hero_kinds{
+        HeroKind::Ranger, HeroKind::Ranger, HeroKind::Ranger,
+        HeroKind::Ranger, HeroKind::Ranger, HeroKind::Ranger,
+    };
 };
 
 // Opaque match state. Copyable so snapshots can be taken trivially.
@@ -170,6 +193,9 @@ class Sim {
     // (docs/determinism_rules.md). Manifest of included fields lives in
     // determinism_rules.md §"state_hash() manifest".
     std::uint64_t state_hash() const noexcept;
+
+    bool line_of_sight(std::uint32_t from_slot,
+                       std::uint32_t to_slot) const noexcept;
 
    private:
     MatchConfig config_{};

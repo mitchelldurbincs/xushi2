@@ -188,13 +188,15 @@ Add a 32×32 local spatial grid alongside the entity tokens.
 
 Enable per-agent line-of-sight (game-design §4). From here, the actor's
 visible-enemy slots only fill when that specific agent has LoS, and
-last-seen decay begins.
+last-seen markers begin. The current Phase-7 diagnostic adapter stores the
+latest team-frame enemy position and emits a stale enemy marker with no live
+HP, velocity, aim, ammo, or cooldown state; native time-decay is still a later
+fog-state item.
 
 Enemy presence becomes three separate fields:
 
 - `enemy_visible` — this agent has current LoS
-- `enemy_last_seen_valid` — last-seen ghost is still within the
-  ~1.5-second decay window
+- `enemy_last_seen_valid` — this agent has a stale enemy marker
 - `enemy_alive_public_if_known` — alive/dead status derived from public
   kill feed only (never from hidden enemy state)
 

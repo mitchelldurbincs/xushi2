@@ -69,7 +69,7 @@ impulse fields.
 | Hero    | primary_fire          | ability_1                | ability_2           |
 |---------|------------------------|---------------------------|----------------------|
 | Vanguard| Held (suppressed while Barrier is active) | Held (Barrier) | Impulse (Guard Step) |
-| Ranger  | Held (no-op if empty mag) | Impulse (Combat Roll + reload) | *deferred* (policy still emits a Bernoulli for `ability_2` in Phase 3 to keep the action head shape stable; the sim no-ops it for Ranger) |
+| Ranger  | Held (no-op if empty mag) | Impulse (Combat Roll + reload) | Phase 1–9: deferred/no-op. Phase 10+: Impulse (Mark Target; requires an enemy token target, `target_slot` 1–3) |
 | Mender  | Held (current weapon)  | Impulse (Weapon Swap)     | Impulse (Tether)     |
 
 The viewer converts real human key/mouse rising edges into single
@@ -94,6 +94,7 @@ The sim treats invalid actions as no-ops, not errors. Invalid means:
 - Firing Revolver with an empty magazine and not currently reloading
 - Using Mender Weapon Swap within the 0.5s swap cooldown
 - Using Mender Tether with no valid ally in the aim cone
+- Using Ranger Mark Target with any target token other than an enemy token
 
 The cooldown state (and ammo, weapon state, Barrier state) are part of
 the observation, so the policy can learn to avoid these waste cases.

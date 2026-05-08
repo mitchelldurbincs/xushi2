@@ -59,6 +59,8 @@ static void hash_hero(std::uint64_t& h, const HeroState& hero) {
     hash_weapon(h, hero.weapon);
     hash_u8 (h, hero.vanguard_barrier_active ? 1U : 0U);
     hash_i32(h, hero.vanguard_barrier_hp_centi);
+    hash_u32(h, hero.ranger_marked_ticks);
+    hash_u8 (h, static_cast<std::uint8_t>(hero.ranger_marked_by));
     hash_u8 (h, static_cast<std::uint8_t>(hero.mender_weapon));
     hash_u32(h, hero.mender_beam_locked_on);
     hash_u32(h, hero.kills);
