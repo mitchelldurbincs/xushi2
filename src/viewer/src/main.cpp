@@ -27,6 +27,8 @@
 #include <xushi2/common/limits.hpp>
 #include <xushi2/sim/sim.h>
 
+#include "render_arena.hpp"
+#include "render_debug.hpp"
 #include "panel.hpp"
 
 namespace {
