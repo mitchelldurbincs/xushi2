@@ -2,6 +2,7 @@ add_executable(xushi2_viewer
     src/main.cpp
     src/render_arena.cpp
     src/render_debug.cpp
+    src/panel.cpp
 )
 
 target_link_libraries(xushi2_viewer

@@ -29,6 +29,7 @@
 
 #include "render_arena.hpp"
 #include "render_debug.hpp"
+#include "panel.hpp"
 
 namespace {
 
@@ -43,6 +44,37 @@ constexpr float kDecisionSeconds =
 constexpr int kArenaPx = 720;       // square; matches window height
 constexpr int kArenaMarginPx = 12;  // padding inside the arena viewport
 constexpr int kPanelX = kArenaPx;
+
+// Shot tracers: a brief line from shooter origin along aim direction, fading
+// over kShotFadeTicks (sim ticks). One slot per hero is plenty since the
+// minimum revolver fire cadence (15 ticks) is well above the fade window.
+constexpr std::uint32_t kShotFadeTicks = 12U;  // 0.4s at 30 Hz
+struct ShotTracer {
+    bool active = false;
+    xushi2::common::Vec2 start{};
+    xushi2::common::Vec2 end{};
+    xushi2::common::Team team = xushi2::common::Team::Neutral;
+    xushi2::sim::Tick fired_tick = 0;
+};
+
+struct TetherTrail {
+    bool active = false;
+    xushi2::common::Vec2 start{};
+    xushi2::common::Vec2 end{};
+    xushi2::common::Team team = xushi2::common::Team::Neutral;
+    xushi2::sim::Tick fired_tick = 0;
+};
+
+struct CoverMarker {
+    xushi2::common::Vec2 center{};
+    float radius = 1.0F;
+};
+
+struct WallMarker {
+    xushi2::common::Vec2 a{};
+    xushi2::common::Vec2 b{};
+    float half_width = 0.25F;
+};
 
 xushi2::sim::MatchConfig make_viewer_config() {
     xushi2::sim::MatchConfig config{};
@@ -178,23 +210,6 @@ xushi2::common::HeroKind parse_hero_kind(std::string_view s) {
     if (s == "vanguard") return xushi2::common::HeroKind::Vanguard;
     if (s == "mender") return xushi2::common::HeroKind::Mender;
     return xushi2::common::HeroKind::Ranger;
-}
-
-const char* hero_kind_label(xushi2::common::HeroKind kind) {
-    switch (kind) {
-        case xushi2::common::HeroKind::Vanguard: return "vanguard";
-        case xushi2::common::HeroKind::Ranger:   return "ranger";
-        case xushi2::common::HeroKind::Mender:   return "mender";
-    }
-    return "unknown";
-}
-
-const char* mender_weapon_label(xushi2::common::MenderWeapon weapon) {
-    switch (weapon) {
-        case xushi2::common::MenderWeapon::Staff:   return "staff";
-        case xushi2::common::MenderWeapon::Sidearm: return "sidearm";
-    }
-    return "unknown";
 }
 
 const char* target_token_label(std::uint8_t target_slot) {
@@ -334,162 +349,342 @@ std::optional<Replay> load_replay(const std::string& path) {
     return rep;
 }
 
-void draw_panel(const xushi2::sim::MatchState& s,
-                bool replay_mode,
-                bool paused,
-                float playback_speed,
-                int replay_phase,
-                bool replay_fog,
-                const std::string& replay_fog_mode,
-                const std::string& replay_layout_hash,
-                const std::string& replay_match_type,
-                const std::string& replay_schedule_summary,
-                const std::string& replay_league_summary,
-                const std::string& replay_snapshot_group,
-                const std::string& replay_snapshot_name,
-                const std::string& replay_loss_mask,
-                bool replay_target_slot,
-                bool replay_last_seen,
-                std::size_t replay_cover_count,
-                std::size_t replay_wall_count,
-                LosDebugCounts replay_los_counts,
-                const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& replay_actions,
-                std::size_t replay_idx,
-                std::size_t replay_total) {
-    const int x = kPanelX + 24;
-    int y = 32;
-    DrawText("xushi2 viewer", x, y, 22, RAYWHITE); y += 32;
-    DrawText(replay_mode ? "replay playback" : "basic vs basic",
-             x, y, 14, GRAY); y += 24;
-    DrawText(TextFormat("state    %s  %.1fx",
-                        paused ? "paused" : "running",
-                        static_cast<double>(playback_speed)),
-             x, y, 16, LIGHTGRAY); y += 22;
-    DrawText("keys     Space pause  Right step  R reset  1/2/3 speed",
-             x, y, 13, GRAY); y += 28;
+// World → screen mapping for the square arena viewport. The world is a
+// rectangle [min_x, max_x] × [min_y, max_y] (Phase-1 default 0..50 × 0..50).
+// World +Y points up; screen +Y points down — flip at conversion time.
+struct ArenaTransform {
+    float world_min_x;
+    float world_min_y;
+    float world_w;
+    float world_h;
+    float pixels_per_unit;  // assumes square arena; world_w == world_h
+    float screen_origin_x;  // top-left corner of the arena rect in screen px
+    float screen_origin_y;
+};
 
-    DrawText(TextFormat("tick     %u", s.tick), x, y, 18, LIGHTGRAY); y += 24;
-    const float seconds = static_cast<float>(s.tick) /
-                          static_cast<float>(xushi2::common::kTickHz);
-    DrawText(TextFormat("time     %.1fs", seconds), x, y, 18, LIGHTGRAY); y += 32;
+ArenaTransform make_arena_transform(const xushi2::sim::MapBounds& m) {
+    const float ww = m.max_x - m.min_x;
+    const float wh = m.max_y - m.min_y;
+    const float inner = static_cast<float>(kArenaPx - 2 * kArenaMarginPx);
+    const float scale = inner / std::max(ww, wh);
+    return ArenaTransform{
+        m.min_x, m.min_y, ww, wh, scale,
+        static_cast<float>(kArenaMarginPx),
+        static_cast<float>(kArenaMarginPx),
+    };
+}
 
-    DrawText("score", x, y, 16, GRAY); y += 22;
-    DrawText(TextFormat("  A  %u", s.objective.team_a_score_ticks),
-             x, y, 18, team_color(xushi2::common::Team::A)); y += 22;
-    DrawText(TextFormat("  B  %u", s.objective.team_b_score_ticks),
-             x, y, 18, team_color(xushi2::common::Team::B)); y += 28;
+Vector2 world_to_screen(const ArenaTransform& t, xushi2::common::Vec2 p) {
+    const float sx = t.screen_origin_x + (p.x - t.world_min_x) * t.pixels_per_unit;
+    // Flip Y so world +Y appears upward on screen.
+    const float sy = t.screen_origin_y + (t.world_h - (p.y - t.world_min_y)) * t.pixels_per_unit;
+    return Vector2{sx, sy};
+}
 
-    DrawText("objective", x, y, 16, GRAY); y += 22;
-    const char* owner_label = "neutral";
-    Color owner_col = GRAY;
-    if (s.objective.owner == xushi2::common::Team::A) {
-        owner_label = "team A"; owner_col = team_color(xushi2::common::Team::A);
-    } else if (s.objective.owner == xushi2::common::Team::B) {
-        owner_label = "team B"; owner_col = team_color(xushi2::common::Team::B);
+float world_len_to_screen(const ArenaTransform& t, float u) {
+    return u * t.pixels_per_unit;
+}
+
+Color team_color(xushi2::common::Team team) {
+    switch (team) {
+        case xushi2::common::Team::A: return Color{82, 156, 255, 255};   // blue
+        case xushi2::common::Team::B: return Color{255, 96, 96, 255};    // red
+        default: return GRAY;
     }
-    DrawText(TextFormat("  owner   %s", owner_label), x, y, 16, owner_col); y += 22;
-    DrawText(TextFormat("  cap     %u/%u",
-                        s.objective.cap_progress_ticks,
-                        xushi2::common::kCaptureTicks),
-             x, y, 16, LIGHTGRAY); y += 22;
-    DrawText(TextFormat("  unlocked %s", s.objective.unlocked ? "yes" : "no"),
-             x, y, 16, LIGHTGRAY); y += 32;
+}
 
-    if (replay_mode) {
-        DrawText("replay", x, y, 16, GRAY); y += 22;
-        if (replay_phase > 0) {
-            DrawText(TextFormat("  phase    %d", replay_phase),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_fog) {
-            const char* mode =
-                replay_fog_mode.empty() ? "diagnostic" : replay_fog_mode.c_str();
-            DrawText(TextFormat("  fog      %s", mode), x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_layout_hash.empty()) {
-            DrawText(TextFormat("  layout   %s", replay_layout_hash.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_match_type.empty()) {
-            DrawText(TextFormat("  match    %s", replay_match_type.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_snapshot_group.empty()) {
-            DrawText(TextFormat("  league   %s", replay_snapshot_group.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_snapshot_name.empty()) {
-            DrawText(TextFormat("  snapshot %.28s", replay_snapshot_name.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (!replay_league_summary.empty()) {
-            DrawText(TextFormat("  weights  %.30s", replay_league_summary.c_str()),
-                     x, y, 13, GRAY); y += 18;
-        }
-        if (!replay_schedule_summary.empty()) {
-            DrawText(TextFormat("  schedule %.30s", replay_schedule_summary.c_str()),
-                     x, y, 13, GRAY); y += 18;
-        }
-        if (!replay_loss_mask.empty()) {
-            DrawText(TextFormat("  lossmask %s", replay_loss_mask.c_str()),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_target_slot) {
-            DrawText("  target   enabled", x, y, 16, LIGHTGRAY); y += 22;
-            DrawText(
-                TextFormat("  tokens   0:%s 1:%s 2:%s",
-                           target_token_label(replay_actions[0].target_slot),
-                           target_token_label(replay_actions[1].target_slot),
-                           target_token_label(replay_actions[2].target_slot)),
-                x, y, 13, GRAY); y += 18;
-        }
-        if (replay_last_seen) {
-            DrawText("  lastseen enabled", x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_cover_count > 0) {
-            DrawText(TextFormat("  cover    %zu", replay_cover_count),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_wall_count > 0) {
-            DrawText(TextFormat("  walls    %zu", replay_wall_count),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        if (replay_los_counts.visible + replay_los_counts.blocked > 0) {
-            DrawText(TextFormat("  los      %zu/%zu",
-                                replay_los_counts.visible,
-                                replay_los_counts.visible + replay_los_counts.blocked),
-                     x, y, 16, LIGHTGRAY); y += 22;
-        }
-        DrawText(TextFormat("  decision %zu/%zu", replay_idx, replay_total),
-                 x, y, 16, LIGHTGRAY); y += 28;
+void draw_arena(const ArenaTransform& t) {
+    // Arena background.
+    DrawRectangle(static_cast<int>(t.screen_origin_x),
+                  static_cast<int>(t.screen_origin_y),
+                  static_cast<int>(t.world_w * t.pixels_per_unit),
+                  static_cast<int>(t.world_h * t.pixels_per_unit),
+                  Color{18, 22, 28, 255});
+    // Arena border.
+    DrawRectangleLines(static_cast<int>(t.screen_origin_x),
+                       static_cast<int>(t.screen_origin_y),
+                       static_cast<int>(t.world_w * t.pixels_per_unit),
+                       static_cast<int>(t.world_h * t.pixels_per_unit),
+                       Color{60, 70, 84, 255});
+}
+
+void draw_objective(const ArenaTransform& t, const xushi2::sim::ObjectiveState& obj,
+                    xushi2::common::Vec2 center) {
+    const Vector2 c = world_to_screen(t, center);
+    const float r = world_len_to_screen(t, xushi2::common::kObjectiveRadius);
+    // Filled disc tinted by current owner.
+    Color fill = Color{40, 50, 64, 180};
+    if (obj.owner == xushi2::common::Team::A) fill = Color{40, 70, 120, 200};
+    else if (obj.owner == xushi2::common::Team::B) fill = Color{120, 50, 50, 200};
+    DrawCircleV(c, r, fill);
+    DrawCircleLinesV(c, r, Color{200, 200, 80, 255});
+
+    // Capture-progress arc (cap_progress_ticks / kCaptureTicks of a full ring).
+    if (obj.cap_progress_ticks > 0 && obj.cap_team != xushi2::common::Team::Neutral) {
+        const float frac = static_cast<float>(obj.cap_progress_ticks) /
+                           static_cast<float>(xushi2::common::kCaptureTicks);
+        const float sweep = 360.0F * frac;
+        DrawRing(c, r * 0.85F, r * 0.95F, -90.0F, -90.0F + sweep, 64,
+                 team_color(obj.cap_team));
     }
+}
 
-    DrawText("heroes", x, y, 16, GRAY); y += 22;
-    for (std::size_t i = 0; i < s.heroes.size(); ++i) {
-        const auto& h = s.heroes[i];
-        if (!h.present) continue;
-        const Color c = team_color(h.team);
-        const char* status = h.alive ? "alive" : "dead";
-        const int hp_show = h.health_centi_hp / 100;
-        const int hp_max  = h.max_health_centi_hp / 100;
-        DrawText(TextFormat("  slot %zu  %.3s  %s  %d/%d",
-                            i, hero_kind_label(h.kind), status, hp_show, hp_max),
-                 x, y, 14, c);
-        y += 18;
-        if (h.kind == xushi2::common::HeroKind::Mender) {
-            DrawText(TextFormat("    weapon  %s", mender_weapon_label(h.mender_weapon)),
-                     x, y, 13, LIGHTGRAY);
-            y += 16;
-            if (h.mender_beam_locked_on != 0) {
-                DrawText(TextFormat("    beam    id %u", h.mender_beam_locked_on),
-                         x, y, 13, Color{120, 255, 170, 255});
-                y += 16;
+void draw_cover_markers(const ArenaTransform& t,
+                        const std::vector<CoverMarker>& markers) {
+    for (const auto marker : markers) {
+        const Vector2 c = world_to_screen(t, marker.center);
+        const float r = world_len_to_screen(t, marker.radius);
+        DrawCircleV(c, r, Color{95, 105, 112, 190});
+        DrawCircleLinesV(c, r, Color{190, 200, 210, 220});
+    }
+}
+
+void draw_wall_markers(const ArenaTransform& t,
+                       const std::vector<WallMarker>& markers) {
+    for (const auto marker : markers) {
+        const Vector2 a = world_to_screen(t, marker.a);
+        const Vector2 b = world_to_screen(t, marker.b);
+        const float width =
+            std::max(2.0F, world_len_to_screen(t, marker.half_width * 2.0F));
+        DrawLineEx(a, b, width, Color{90, 98, 106, 220});
+        DrawLineEx(a, b, 1.0F, Color{205, 214, 222, 220});
+    }
+}
+
+LosDebugCounts draw_line_of_sight_debug(const ArenaTransform& t,
+                                        const xushi2::sim::Sim& sim) {
+    LosDebugCounts counts{};
+    const auto& heroes = sim.state().heroes;
+    for (std::size_t a_slot = 0; a_slot < xushi2::common::kTeamSize; ++a_slot) {
+        const auto& a = heroes[a_slot];
+        if (!a.present || !a.alive) continue;
+        for (std::size_t b_slot = xushi2::common::kTeamSize;
+             b_slot < xushi2::sim::kAgentsPerMatch;
+             ++b_slot) {
+            const auto& b = heroes[b_slot];
+            if (!b.present || !b.alive) continue;
+            const bool visible = sim.line_of_sight(
+                static_cast<std::uint32_t>(a_slot),
+                static_cast<std::uint32_t>(b_slot));
+            const Color col = visible ? Color{90, 230, 135, 90}
+                                      : Color{255, 100, 100, 80};
+            DrawLineEx(world_to_screen(t, a.position),
+                       world_to_screen(t, b.position),
+                       visible ? 1.5F : 1.0F,
+                       col);
+            if (visible) {
+                ++counts.visible;
+            } else {
+                ++counts.blocked;
             }
         }
-        if (h.ranger_marked_ticks > 0) {
-            DrawText(TextFormat("    marked  %u", h.ranger_marked_ticks),
-                     x, y, 13, Color{255, 214, 92, 255});
-            y += 16;
+    }
+    return counts;
+}
+
+void draw_hero(const ArenaTransform& t, const xushi2::sim::HeroState& h) {
+    if (!h.present) return;
+    const Vector2 c = world_to_screen(t, h.position);
+    const float body_r = world_len_to_screen(t, 0.6F);
+    const Color color = team_color(h.team);
+
+    if (!h.alive) {
+        // Greyed-out dead marker.
+        DrawCircleV(c, body_r, Color{60, 60, 60, 200});
+        DrawCircleLinesV(c, body_r, Color{120, 120, 120, 255});
+        return;
+    }
+
+    // Body.
+    DrawCircleV(c, body_r, color);
+    DrawCircleLinesV(c, body_r, RAYWHITE);
+    if (h.vanguard_barrier_active && h.vanguard_barrier_hp_centi > 0) {
+        Color barrier_col = color;
+        barrier_col.a = 90;
+        DrawCircleV(c, world_len_to_screen(t, xushi2::common::kVanguardBarrierRadius),
+                    barrier_col);
+        DrawCircleLinesV(c, world_len_to_screen(t, xushi2::common::kVanguardBarrierRadius),
+                         Color{180, 220, 255, 220});
+    }
+    if (h.ranger_marked_ticks > 0) {
+        DrawCircleLinesV(c, body_r + 6.0F, Color{255, 214, 92, 255});
+    }
+
+    // Facing arrow: aim_angle is in radians, 0 = +x. World +Y is up, so on
+    // screen we negate the y-component (matches world_to_screen's flip).
+    const float arrow_world_len = 1.4F;
+    const float ax = h.position.x + std::cos(h.aim_angle) * arrow_world_len;
+    const float ay = h.position.y + std::sin(h.aim_angle) * arrow_world_len;
+    const Vector2 tip = world_to_screen(t, xushi2::common::Vec2{ax, ay});
+    DrawLineEx(c, tip, 2.5F, RAYWHITE);
+
+    // HP bar above the hero.
+    const int bar_w = static_cast<int>(world_len_to_screen(t, 1.6F));
+    const int bar_h = 5;
+    const int bar_x = static_cast<int>(c.x) - bar_w / 2;
+    const int bar_y = static_cast<int>(c.y - body_r) - bar_h - 4;
+    const float hp_frac = h.max_health_centi_hp > 0
+        ? std::max(0.0F, static_cast<float>(h.health_centi_hp) /
+                        static_cast<float>(h.max_health_centi_hp))
+        : 0.0F;
+    DrawRectangle(bar_x, bar_y, bar_w, bar_h, Color{30, 30, 30, 220});
+    DrawRectangle(bar_x, bar_y, static_cast<int>(bar_w * hp_frac), bar_h,
+                  Color{120, 220, 120, 255});
+    DrawRectangleLines(bar_x, bar_y, bar_w, bar_h, Color{80, 80, 80, 200});
+}
+
+void draw_shot_tracers(const ArenaTransform& t,
+                       const std::array<ShotTracer, xushi2::sim::kAgentsPerMatch>& shots,
+                       xushi2::sim::Tick now) {
+    for (const auto& sh : shots) {
+        if (!sh.active) continue;
+        const std::uint32_t age = now - sh.fired_tick;
+        if (age >= kShotFadeTicks) continue;
+        const float alpha = 1.0F - (static_cast<float>(age) /
+                                    static_cast<float>(kShotFadeTicks));
+        Color base = team_color(sh.team);
+        base.a = static_cast<unsigned char>(220.0F * alpha);
+        const Vector2 a = world_to_screen(t, sh.start);
+        const Vector2 b = world_to_screen(t, sh.end);
+        DrawLineEx(a, b, 2.0F, base);
+    }
+}
+
+void draw_mender_beams(
+    const ArenaTransform& t,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& heroes) {
+    for (const auto& h : heroes) {
+        if (!h.present || !h.alive || h.kind != xushi2::common::HeroKind::Mender ||
+            h.mender_beam_locked_on == 0) {
+            continue;
+        }
+        const auto target_it = std::find_if(
+            heroes.begin(), heroes.end(),
+            [&](const xushi2::sim::HeroState& other) {
+                return other.present && other.id == h.mender_beam_locked_on;
+            });
+        if (target_it == heroes.end() || !target_it->alive) {
+            continue;
+        }
+        const Vector2 a = world_to_screen(t, h.position);
+        const Vector2 b = world_to_screen(t, target_it->position);
+        DrawLineEx(a, b, 3.0F, Color{120, 255, 170, 210});
+        DrawCircleV(b, 5.0F, Color{160, 255, 190, 180});
+    }
+}
+
+void draw_target_token_debug(
+    const ArenaTransform& t,
+    const xushi2::sim::MatchState& s,
+    const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& actions) {
+    for (std::uint32_t slot = 0; slot < s.heroes.size(); ++slot) {
+        const auto& h = s.heroes[slot];
+        if (!h.present || !h.alive) {
+            continue;
+        }
+        const auto target = actions[slot].target_slot;
+        if (target == 0 && !actions[slot].ability_2) {
+            continue;
+        }
+        const Vector2 p = world_to_screen(t, h.position);
+        Color col = Color{245, 225, 120, 220};
+        DrawText(TextFormat("t:%s", target_token_label(target)),
+                 static_cast<int>(p.x + 8.0F),
+                 static_cast<int>(p.y - 22.0F),
+                 13,
+                 col);
+        if (target >= 1 && target <= 3) {
+            const std::uint32_t enemy_idx = static_cast<std::uint32_t>(target - 1U);
+            const std::uint32_t enemy_slot = slot < 3U ? enemy_idx + 3U : enemy_idx;
+            if (enemy_slot < s.heroes.size() && s.heroes[enemy_slot].present &&
+                s.heroes[enemy_slot].alive) {
+                DrawLineEx(p, world_to_screen(t, s.heroes[enemy_slot].position),
+                           1.0F, Color{245, 225, 120, 90});
+            }
+        }
+    }
+}
+
+void draw_tether_trails(
+    const ArenaTransform& t,
+    const std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& trails,
+    xushi2::sim::Tick now) {
+    for (const auto& tr : trails) {
+        if (!tr.active) continue;
+        const std::uint32_t age = now - tr.fired_tick;
+        if (age >= kShotFadeTicks) continue;
+        const float alpha = 1.0F - (static_cast<float>(age) /
+                                    static_cast<float>(kShotFadeTicks));
+        Color col = team_color(tr.team);
+        col.a = static_cast<unsigned char>(180.0F * alpha);
+        DrawLineEx(world_to_screen(t, tr.start), world_to_screen(t, tr.end), 4.0F, col);
+    }
+}
+
+void update_shot_tracers(
+    std::array<ShotTracer, xushi2::sim::kAgentsPerMatch>& shots,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& prev,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& curr,
+    xushi2::sim::Tick now) {
+    for (std::size_t i = 0; i < curr.size(); ++i) {
+        const auto& p = prev[i];
+        const auto& c = curr[i];
+        if (!c.present) continue;
+        // A shot fires when magazine decrements (and the hero was alive on
+        // the previous tick — reload jumps magazine 0 → max which is an
+        // increment, so we don't trip on it).
+        if (p.alive && c.alive && c.weapon.magazine + 1U == p.weapon.magazine) {
+            const float ax = std::cos(c.aim_angle);
+            const float ay = std::sin(c.aim_angle);
+            shots[i] = ShotTracer{
+                true,
+                c.position,
+                xushi2::common::Vec2{
+                    c.position.x + ax * xushi2::common::kRangerRevolverRange,
+                    c.position.y + ay * xushi2::common::kRangerRevolverRange,
+                },
+                c.team,
+                now,
+            };
+        } else if (p.alive && c.alive && c.kind == xushi2::common::HeroKind::Mender &&
+                   c.mender_weapon == xushi2::common::MenderWeapon::Sidearm &&
+                   p.weapon.fire_cooldown_ticks == 0 &&
+                   c.weapon.fire_cooldown_ticks == xushi2::common::kMenderSidearmCooldownTicks) {
+            const float ax = std::cos(c.aim_angle);
+            const float ay = std::sin(c.aim_angle);
+            shots[i] = ShotTracer{
+                true,
+                c.position,
+                xushi2::common::Vec2{
+                    c.position.x + ax * xushi2::common::kMenderSidearmRange,
+                    c.position.y + ay * xushi2::common::kMenderSidearmRange,
+                },
+                c.team,
+                now,
+            };
+        }
+    }
+}
+
+void update_tether_trails(
+    std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& trails,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& prev,
+    const std::array<xushi2::sim::HeroState, xushi2::sim::kAgentsPerMatch>& curr,
+    xushi2::sim::Tick now) {
+    for (std::size_t i = 0; i < curr.size(); ++i) {
+        const auto& p = prev[i];
+        const auto& c = curr[i];
+        if (!p.present || !c.present || !p.alive || !c.alive ||
+            c.kind != xushi2::common::HeroKind::Mender) {
+            continue;
+        }
+        const float dx = c.position.x - p.position.x;
+        const float dy = c.position.y - p.position.y;
+        const bool tether_cd_armed =
+            p.cd_ability_2 == 0 &&
+            c.cd_ability_2 == xushi2::common::kMenderTetherCooldownTicks;
+        if (tether_cd_armed && (dx * dx + dy * dy) > 1.0F) {
+            trails[i] = TetherTrail{true, p.position, c.position, c.team, now};
         }
     }
 }
@@ -599,28 +794,31 @@ int main(int argc, char** argv) {
         for (const auto& h : s.heroes) {
             draw_hero(arena, h);
         }
-        draw_panel(s,
-                   replay.has_value(),
-                   paused,
-                   playback_speed,
-                   replay ? replay->phase : 0,
-                   replay ? replay->fog : false,
-                   replay ? replay->fog_mode : std::string{},
-                   replay ? replay->layout_hash : std::string{},
-                   replay ? replay->match_type : std::string{},
-                   replay ? replay->schedule_summary : std::string{},
-                   replay ? replay->league_summary : std::string{},
-                   replay ? replay->snapshot_group : std::string{},
-                   replay ? replay->snapshot_name : std::string{},
-                   replay ? replay->loss_mask : std::string{},
-                   replay ? replay->target_slot : false,
-                   replay ? replay->last_seen : false,
-                   replay ? replay->cover_markers.size() : 0U,
-                   replay ? replay->wall_markers.size() : 0U,
-                   los_counts,
-                   actions,
-                   replay_idx,
-                   replay ? replay->decisions.size() : 0U);
+        const PanelViewModel panel_model{
+            .state = s,
+            .replay_mode = replay.has_value(),
+            .paused = paused,
+            .playback_speed = playback_speed,
+            .replay_phase = replay ? replay->phase : 0,
+            .replay_fog = replay ? replay->fog : false,
+            .replay_fog_mode = replay ? replay->fog_mode : std::string_view{},
+            .replay_layout_hash = replay ? replay->layout_hash : std::string_view{},
+            .replay_match_type = replay ? replay->match_type : std::string_view{},
+            .replay_schedule_summary = replay ? replay->schedule_summary : std::string_view{},
+            .replay_league_summary = replay ? replay->league_summary : std::string_view{},
+            .replay_snapshot_group = replay ? replay->snapshot_group : std::string_view{},
+            .replay_snapshot_name = replay ? replay->snapshot_name : std::string_view{},
+            .replay_loss_mask = replay ? replay->loss_mask : std::string_view{},
+            .replay_target_slot = replay ? replay->target_slot : false,
+            .replay_last_seen = replay ? replay->last_seen : false,
+            .replay_cover_count = replay ? replay->cover_markers.size() : 0U,
+            .replay_wall_count = replay ? replay->wall_markers.size() : 0U,
+            .replay_los_counts = los_counts,
+            .replay_actions = actions,
+            .replay_idx = replay_idx,
+            .replay_total = replay ? replay->decisions.size() : 0U,
+        };
+        draw_panel(panel_model);
 
         EndDrawing();
 
