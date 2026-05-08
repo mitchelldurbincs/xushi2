@@ -15,6 +15,7 @@
 #include <xushi2/bots/bot.h>
 #include <xushi2/bots/runner.h>
 #include <xushi2/sim/obs.h>
+#include <xushi2/sim/obs_utils.h>
 #include <xushi2/sim/sim.h>
 
 namespace py = pybind11;
@@ -37,6 +38,10 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .value("Ranger", xushi2::common::HeroKind::Ranger)
         .value("Mender", xushi2::common::HeroKind::Mender);
 
+    py::enum_<xushi2::common::MenderWeapon>(m, "MenderWeapon")
+        .value("Staff", xushi2::common::MenderWeapon::Staff)
+        .value("Sidearm", xushi2::common::MenderWeapon::Sidearm);
+
     py::class_<xushi2::common::Action>(m, "Action")
         .def(py::init<>())
         .def_readwrite("move_x", &xushi2::common::Action::move_x)
@@ -46,6 +51,11 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_readwrite("ability_1", &xushi2::common::Action::ability_1)
         .def_readwrite("ability_2", &xushi2::common::Action::ability_2)
         .def_readwrite("target_slot", &xushi2::common::Action::target_slot);
+
+    py::class_<xushi2::common::Vec2>(m, "Vec2")
+        .def(py::init<>())
+        .def_readwrite("x", &xushi2::common::Vec2::x)
+        .def_readwrite("y", &xushi2::common::Vec2::y);
 
     py::class_<xushi2::sim::Phase1MechanicsConfig>(m, "Phase1MechanicsConfig")
         .def(py::init<>())
@@ -58,6 +68,24 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_readwrite("respawn_ticks",
                        &xushi2::sim::Phase1MechanicsConfig::respawn_ticks);
 
+    py::class_<xushi2::sim::MapBounds>(m, "MapBounds")
+        .def(py::init<>())
+        .def_readwrite("min_x", &xushi2::sim::MapBounds::min_x)
+        .def_readwrite("min_y", &xushi2::sim::MapBounds::min_y)
+        .def_readwrite("max_x", &xushi2::sim::MapBounds::max_x)
+        .def_readwrite("max_y", &xushi2::sim::MapBounds::max_y);
+
+    py::class_<xushi2::sim::CoverCircle>(m, "CoverCircle")
+        .def(py::init<>())
+        .def_readwrite("center", &xushi2::sim::CoverCircle::center)
+        .def_readwrite("radius", &xushi2::sim::CoverCircle::radius);
+
+    py::class_<xushi2::sim::WallSegment>(m, "WallSegment")
+        .def(py::init<>())
+        .def_readwrite("a", &xushi2::sim::WallSegment::a)
+        .def_readwrite("b", &xushi2::sim::WallSegment::b)
+        .def_readwrite("half_width", &xushi2::sim::WallSegment::half_width);
+
     py::class_<xushi2::sim::MatchConfig>(m, "MatchConfig")
         .def(py::init<>())
         .def_readwrite("seed", &xushi2::sim::MatchConfig::seed)
@@ -67,8 +95,64 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                        &xushi2::sim::MatchConfig::fog_of_war_enabled)
         .def_readwrite("randomize_map", &xushi2::sim::MatchConfig::randomize_map)
         .def_readwrite("action_repeat", &xushi2::sim::MatchConfig::action_repeat)
+        .def_readwrite("map", &xushi2::sim::MatchConfig::map)
+        .def_property(
+            "cover_circles",
+            [](const xushi2::sim::MatchConfig& cfg) {
+                std::vector<xushi2::sim::CoverCircle> out;
+                out.reserve(cfg.num_cover_circles);
+                for (std::uint32_t i = 0; i < cfg.num_cover_circles; ++i) {
+                    out.push_back(cfg.cover_circles[i]);
+                }
+                return out;
+            },
+            [](xushi2::sim::MatchConfig& cfg,
+               const std::vector<xushi2::sim::CoverCircle>& covers) {
+                if (covers.size() > xushi2::common::kMaxWalls) {
+                    throw std::invalid_argument("cover_circles exceeds kMaxWalls");
+                }
+                cfg.num_cover_circles = static_cast<std::uint32_t>(covers.size());
+                for (std::size_t i = 0; i < covers.size(); ++i) {
+                    cfg.cover_circles[i] = covers[i];
+                }
+            })
+        .def_property(
+            "wall_segments",
+            [](const xushi2::sim::MatchConfig& cfg) {
+                std::vector<xushi2::sim::WallSegment> out;
+                out.reserve(cfg.num_wall_segments);
+                for (std::uint32_t i = 0; i < cfg.num_wall_segments; ++i) {
+                    out.push_back(cfg.wall_segments[i]);
+                }
+                return out;
+            },
+            [](xushi2::sim::MatchConfig& cfg,
+               const std::vector<xushi2::sim::WallSegment>& walls) {
+                if (walls.size() > xushi2::common::kMaxWalls) {
+                    throw std::invalid_argument("wall_segments exceeds kMaxWalls");
+                }
+                cfg.num_wall_segments = static_cast<std::uint32_t>(walls.size());
+                for (std::size_t i = 0; i < walls.size(); ++i) {
+                    cfg.wall_segments[i] = walls[i];
+                }
+            })
         .def_readwrite("mechanics", &xushi2::sim::MatchConfig::mechanics)
-        .def_readwrite("team_size", &xushi2::sim::MatchConfig::team_size);
+        .def_readwrite("team_size", &xushi2::sim::MatchConfig::team_size)
+        .def_property(
+            "hero_kinds",
+            [](const xushi2::sim::MatchConfig& cfg) {
+                return std::vector<xushi2::common::HeroKind>(
+                    cfg.hero_kinds.begin(), cfg.hero_kinds.end());
+            },
+            [](xushi2::sim::MatchConfig& cfg,
+               const std::vector<xushi2::common::HeroKind>& kinds) {
+                if (kinds.size() != xushi2::sim::kAgentsPerMatch) {
+                    throw std::invalid_argument("hero_kinds length must be 6");
+                }
+                for (std::size_t i = 0; i < cfg.hero_kinds.size(); ++i) {
+                    cfg.hero_kinds[i] = kinds[i];
+                }
+            });
 
     py::class_<xushi2::sim::Sim>(m, "Sim")
         .def(py::init<const xushi2::sim::MatchConfig&>())
@@ -127,7 +211,48 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_property_readonly("winner", &xushi2::sim::Sim::winner)
         .def_property_readonly("team_a_kills", &xushi2::sim::Sim::team_a_kills)
         .def_property_readonly("team_b_kills", &xushi2::sim::Sim::team_b_kills)
+        .def_property_readonly("kills_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.kills_by_slot();
+                                   return std::vector<std::uint32_t>(a.begin(),
+                                                                     a.end());
+                               })
+        .def_property_readonly("deaths_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.deaths_by_slot();
+                                   return std::vector<std::uint32_t>(a.begin(),
+                                                                     a.end());
+                               })
+        .def_property_readonly("damage_dealt_by_slot",
+                               [](const xushi2::sim::Sim& s) {
+                                   const auto a = s.damage_dealt_by_slot();
+                                   return std::vector<std::uint64_t>(a.begin(),
+                                                                     a.end());
+                               })
         .def_property_readonly("state_hash", &xushi2::sim::Sim::state_hash);
+
+    m.def("line_of_sight",
+          [](const xushi2::sim::Sim& sim, std::uint32_t from_slot,
+             std::uint32_t to_slot) {
+              return sim.line_of_sight(from_slot, to_slot);
+          },
+          py::arg("sim"), py::arg("from_slot"), py::arg("to_slot"),
+          "Return true when cover geometry does not block the segment.");
+
+    m.def("observable_enemy_slots",
+          [](const xushi2::sim::Sim& sim, std::uint32_t viewer_slot) {
+              const auto mask =
+                  xushi2::sim::obs_utils::observable_enemy_slots(sim, viewer_slot);
+              std::vector<bool> out;
+              out.reserve(mask.size());
+              for (bool v : mask) {
+                  out.push_back(v);
+              }
+              return out;
+          },
+          py::arg("sim"), py::arg("viewer_slot"),
+          "Return a six-slot mask of opposite-team heroes observable from "
+          "viewer_slot under native fog/LoS rules.");
 
     // Return the Action a named scripted bot would produce for a given
     // agent slot, given the current sim state. Used by the Gymnasium env

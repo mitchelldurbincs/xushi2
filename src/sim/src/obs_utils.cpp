@@ -21,6 +21,57 @@ common::Vec2 arena_center(const MapBounds& map) noexcept {
                         0.5F * (map.min_y + map.max_y)};
 }
 
+std::uint32_t counterpart_enemy_slot(std::uint32_t viewer_slot) noexcept {
+    if (viewer_slot < 3U) {
+        return viewer_slot + 3U;
+    }
+    if (viewer_slot < 6U) {
+        return viewer_slot - 3U;
+    }
+    return 6U;
+}
+
+bool is_opposite_team(const HeroState& viewer,
+                      const HeroState& candidate) noexcept {
+    return candidate.present &&
+           candidate.team != viewer.team &&
+           candidate.team != common::Team::Neutral;
+}
+
+bool observable_enemy(const Sim& sim,
+                      std::uint32_t viewer_slot,
+                      std::uint32_t enemy_slot) noexcept {
+    const MatchState& s = sim.state();
+    if (viewer_slot >= s.heroes.size() || enemy_slot >= s.heroes.size()) {
+        return false;
+    }
+    const auto& viewer = s.heroes[viewer_slot];
+    const auto& enemy = s.heroes[enemy_slot];
+    if (!viewer.present || viewer.team == common::Team::Neutral) {
+        return false;
+    }
+    if (!is_opposite_team(viewer, enemy)) {
+        return false;
+    }
+    if (!sim.config().fog_of_war_enabled || !enemy.alive) {
+        return true;
+    }
+    return sim.line_of_sight(viewer_slot, enemy_slot);
+}
+
+VisibleEnemySlot make_visible_enemy_slot(const HeroState& h) noexcept {
+    VisibleEnemySlot out{};
+    out.present = true;
+    out.id = h.id;
+    out.alive = h.alive;
+    out.respawn_tick = h.respawn_tick;
+    out.world_position = h.position;
+    out.velocity = h.velocity;
+    out.health_centi_hp = h.health_centi_hp;
+    out.max_health_centi_hp = h.max_health_centi_hp;
+    return out;
+}
+
 }  // namespace
 
 common::Vec2 mirror_position_for_team(common::Vec2 world_pos,
@@ -103,15 +154,58 @@ VisibleEnemySlot visible_enemy_1v1(const MatchState& s,
         if (h.team == viewer_team || h.team == common::Team::Neutral) {
             continue;
         }
-        out.present = true;
-        out.id = h.id;
-        out.alive = h.alive;
-        out.respawn_tick = h.respawn_tick;
-        out.world_position = h.position;
-        out.velocity = h.velocity;
-        out.health_centi_hp = h.health_centi_hp;
-        out.max_health_centi_hp = h.max_health_centi_hp;
+        return make_visible_enemy_slot(h);
+    }
+    return out;
+}
+
+VisibleEnemySlot visible_enemy_1v1(const Sim& sim,
+                                   std::uint32_t viewer_slot) noexcept {
+    const MatchState& s = sim.state();
+    if (viewer_slot >= s.heroes.size()) {
+        return VisibleEnemySlot{};
+    }
+    const auto& viewer = s.heroes[viewer_slot];
+    if (!viewer.present || viewer.team == common::Team::Neutral) {
+        return VisibleEnemySlot{};
+    }
+    if (sim.config().team_size == 3U) {
+        const std::uint32_t enemy_slot = counterpart_enemy_slot(viewer_slot);
+        if (observable_enemy(sim, viewer_slot, enemy_slot)) {
+            return make_visible_enemy_slot(s.heroes[enemy_slot]);
+        }
+        return VisibleEnemySlot{};
+    }
+    const common::Team viewer_team = viewer.team;
+    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
+        const auto& h = s.heroes[i];
+        if (!h.present) {
+            continue;
+        }
+        if (h.team == viewer_team || h.team == common::Team::Neutral) {
+            continue;
+        }
+        if (!observable_enemy(sim, viewer_slot, i)) {
+            continue;
+        }
+        return make_visible_enemy_slot(h);
+    }
+    return VisibleEnemySlot{};
+}
+
+std::array<bool, kAgentsPerMatch>
+observable_enemy_slots(const Sim& sim, std::uint32_t viewer_slot) noexcept {
+    std::array<bool, kAgentsPerMatch> out{};
+    const MatchState& s = sim.state();
+    if (viewer_slot >= s.heroes.size()) {
         return out;
+    }
+    const auto& viewer = s.heroes[viewer_slot];
+    if (!viewer.present || viewer.team == common::Team::Neutral) {
+        return out;
+    }
+    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
+        out[i] = observable_enemy(sim, viewer_slot, i);
     }
     return out;
 }

@@ -312,7 +312,13 @@ Current ammo count and `reload_state` are exposed in the agent's observation.
 
 **Ability 1: Combat Roll.** Dashes 3.0 u in the current **movement-input direction**, or in the aim direction if no movement input is being given. Instantly refills the Revolver magazine to 6 shots. 5-second cooldown. *Edge-triggered* (one roll per `ability_1` rising edge).
 
-**Ability 2:** *Deferred for MVP.* Cassidy-archetype candidates for later phases: Flashbang (short-range AoE with silence or vision-reduction), Magnetic Grenade (sticky damage), Deadeye (ult).
+**Ability 2: Mark Target.** Phase 10 diagnostic targeted ability. On activation
+with the enemy `target_slot`, marks the nearest visible enemy within Revolver
+range for 3 seconds and arms a 6-second cooldown. Cover blocks the mark line of
+sight. The current diagnostic mark is a simulator/viewer status hook; it does
+not yet add damage, reward shaping, or teamwide reveal.
+
+*Deferred Cassidy-style abilities: Flashbang (short-range AoE with silence or vision-reduction), Magnetic Grenade (sticky damage), Deadeye (ult).*
 
 ### Mender — heal-beam support (Mercy archetype)
 

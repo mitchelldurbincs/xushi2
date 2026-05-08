@@ -41,6 +41,12 @@ ppo:
   entropy_coef: 0.01
   value_coef: 0.5
   max_grad_norm: 0.5
+  # OAI Five-style team_spirit ramp (rl_design §5): start with mostly per-agent
+  # individual rewards, ramp linearly to pure team-mean over the first 30% of
+  # training so coordination becomes the dominant signal late.
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
 run:
   total_updates: 250
   eval_every: 25

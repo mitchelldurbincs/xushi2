@@ -39,6 +39,9 @@ ppo:
   entropy_coef: 0.01
   value_coef: 0.5
   max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
 run:
   total_updates: 2
   eval_every: 1

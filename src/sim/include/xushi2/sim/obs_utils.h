@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+#include <array>
+
 #include <xushi2/common/types.h>
 #include <xushi2/sim/sim.h>
 
@@ -69,8 +71,25 @@ struct VisibleEnemySlot {
 // Return the single opposite-team occupied slot, or a zeroed struct with
 // `present = false` if none exists. Intended for 1v1 Ranger at Phase 1;
 // callers for 2v2+ (Phase 4+) must use a different helper.
+//
+// The Sim overload is the native fog-aware actor-observation path: when
+// `MatchConfig::fog_of_war_enabled` is true, alive enemies blocked by cover
+// line-of-sight are hidden. Dead enemies remain present so globally-known
+// respawn timers stay observable.
+VisibleEnemySlot visible_enemy_1v1(const Sim& sim,
+                                   std::uint32_t viewer_slot) noexcept;
+
+// Raw full-state helper for critic/tests that explicitly do not want fog
+// filtering.
 VisibleEnemySlot visible_enemy_1v1(const MatchState& s,
                                    std::uint32_t viewer_slot) noexcept;
+
+// Return a fixed slot mask for all observable opposite-team heroes from one
+// viewer. Alive enemies require LoS when native fog is enabled. Dead enemies
+// remain observable so public respawn timers can be represented without
+// leaking live hidden state.
+std::array<bool, kAgentsPerMatch>
+observable_enemy_slots(const Sim& sim, std::uint32_t viewer_slot) noexcept;
 
 // Geometry helper exposed because both actor and critic need it. Wraps the
 // private `inside_objective` used inside the sim tick pipeline.

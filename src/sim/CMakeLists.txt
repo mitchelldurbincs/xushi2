@@ -8,6 +8,10 @@ add_library(xushi2_sim STATIC
     src/internal/sim_objective.cpp
     src/internal/sim_spawn_reset.cpp
     src/internal/sim_tick_pipeline.cpp
+    src/internal/sim_stage_mender.cpp
+    src/internal/sim_stage_ranger.cpp
+    src/internal/sim_stage_vanguard.cpp
+    src/internal/sim_movement_geometry.cpp
     src/internal/sim_weapon_ranger.cpp
 )
 add_library(xushi2::sim ALIAS xushi2_sim)

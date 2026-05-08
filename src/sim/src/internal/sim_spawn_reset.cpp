@@ -7,7 +7,7 @@
 
 namespace xushi2::sim::internal {
 
-// --- Ranger-specific initializers (full hero, full magazine). ---
+// --- Hero initializers (full hero, full magazine where applicable). ---
 
 void spawn_ranger(HeroState& h, common::Team team, common::EntityId id,
                   common::Vec2 position, float aim_angle) {
@@ -26,8 +26,38 @@ void spawn_ranger(HeroState& h, common::Team team, common::EntityId id,
     h.cd_ability_2 = 0;
     h.weapon = RangerWeaponState{};
     h.weapon.magazine = common::kRangerMaxMagazine;
+    h.vanguard_barrier_active = false;
+    h.vanguard_barrier_hp_centi = 0;
+    h.ranger_marked_ticks = 0;
+    h.ranger_marked_by = common::Team::Neutral;
+    h.mender_weapon = common::MenderWeapon::Staff;
+    h.mender_beam_locked_on = 0;
     h.present = true;
     // kills/deaths persist across respawns — set by reset_state at match start.
+}
+
+static void spawn_hero(HeroState& h, common::HeroKind kind, common::Team team,
+                       common::EntityId id, common::Vec2 position, float aim_angle) {
+    spawn_ranger(h, team, id, position, aim_angle);
+    h.kind = kind;
+    switch (kind) {
+        case common::HeroKind::Vanguard:
+            h.role = common::Role::Tank;
+            h.health_centi_hp = common::kVanguardMaxHpCentiHp;
+            h.max_health_centi_hp = common::kVanguardMaxHpCentiHp;
+            h.weapon = RangerWeaponState{};
+            break;
+        case common::HeroKind::Ranger:
+            h.role = common::Role::Damage;
+            break;
+        case common::HeroKind::Mender:
+            h.role = common::Role::Support;
+            h.health_centi_hp = common::kMenderMaxHpCentiHp;
+            h.max_health_centi_hp = common::kMenderMaxHpCentiHp;
+            h.weapon = RangerWeaponState{};
+            h.mender_weapon = common::MenderWeapon::Staff;
+            break;
+    }
 }
 
 // --- Reset: called from ctor and Sim::reset(). ---
@@ -50,25 +80,25 @@ void reset_state(MatchState& state, const MatchConfig& config) {
 
     if (config.team_size == 1) {
         // Phase-1a: two Rangers, one per team. Slots 1, 2, 4, 5 unoccupied.
-        spawn_ranger(state.heroes[0], common::Team::A, 1,
-                     common::Vec2{cx, team_a_y},
-                     0.5F * common::kPi);
-        spawn_ranger(state.heroes[3], common::Team::B, 2,
-                     common::Vec2{cx, team_b_y},
-                     -0.5F * common::kPi);
+        spawn_hero(state.heroes[0], config.hero_kinds[0], common::Team::A, 1,
+                   common::Vec2{cx, team_a_y},
+                   0.5F * common::kPi);
+        spawn_hero(state.heroes[3], config.hero_kinds[3], common::Team::B, 2,
+                   common::Vec2{cx, team_b_y},
+                   -0.5F * common::kPi);
     } else {
         // Phase 4: 3v3, slots 0–2 (A) and 3–5 (B), x-offset by ±dx.
         const float dx = 0.15F * (config.map.max_x - config.map.min_x);
         const float xs[3] = {cx - dx, cx, cx + dx};
         for (std::uint32_t i = 0; i < 3; ++i) {
-            spawn_ranger(state.heroes[i], common::Team::A,
-                         static_cast<common::EntityId>(i + 1),
-                         common::Vec2{xs[i], team_a_y},
-                         0.5F * common::kPi);
-            spawn_ranger(state.heroes[3 + i], common::Team::B,
-                         static_cast<common::EntityId>(4 + i),
-                         common::Vec2{xs[i], team_b_y},
-                         -0.5F * common::kPi);
+            spawn_hero(state.heroes[i], config.hero_kinds[i], common::Team::A,
+                       static_cast<common::EntityId>(i + 1),
+                       common::Vec2{xs[i], team_a_y},
+                       0.5F * common::kPi);
+            spawn_hero(state.heroes[3 + i], config.hero_kinds[3 + i], common::Team::B,
+                       static_cast<common::EntityId>(4 + i),
+                       common::Vec2{xs[i], team_b_y},
+                       -0.5F * common::kPi);
         }
     }
 }
@@ -114,7 +144,8 @@ void respawn_tick_update(HeroState& h, std::uint32_t slot,
 
     const std::uint32_t preserved_kills = h.kills;
     const std::uint32_t preserved_deaths = h.deaths;
-    spawn_ranger(h, h.team, h.id, spawn_pos, aim_angle);
+    const common::HeroKind preserved_kind = h.kind;
+    spawn_hero(h, preserved_kind, h.team, h.id, spawn_pos, aim_angle);
     h.kills = preserved_kills;
     h.deaths = preserved_deaths;
 }

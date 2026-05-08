@@ -134,7 +134,7 @@ Factorization:
 
 - **Aim is angular delta applied per *policy decision*, not per sim tick.** ±45° per decision cap. During the action-repeat window, aim is held constant — it only advances on the next decision. At action-repeat 3 (policy rate 10 Hz), max turn rate is 450°/sec. At action-repeat 2 (policy rate 15 Hz), it is 675°/sec. Absolute aim direction lives in simulator state and is observable to the agent.
 - **tanh-squashed Gaussian** for all continuous actions. Avoids boundary mode collapse that raw-Gaussian-plus-clamp produces.
-- **`target_slot` is omitted in Phase 1–9.** All Phase 1 heroes use direction-based or aim-cone targeting: Barrier points where Vanguard aims, Combat Roll dashes along movement direction, Mender's Beam auto-locks the nearest ally in the aim cone, Mender's Tether zips to the ally in the aim cone. No ability requires explicit ally-slot selection. At Phase 10 (second heroes), ally-targeted abilities (Warden's Projected Guard, a classic Burst Heal) enable `target_slot` via attention over the entity tokens already encoded for observation, with a valid-target mask (see `observation_spec.md`).
+- **`target_slot` is omitted in Phase 1–9.** All Phase 1 heroes use direction-based or aim-cone targeting: Barrier points where Vanguard aims, Combat Roll dashes along movement direction, Mender's Beam auto-locks the nearest ally in the aim cone, Mender's Tether zips to the ally in the aim cone. At Phase 10, the action head is enabled via attention over the entity tokens already encoded for observation, with a valid-target mask (see `observation_spec.md`). The first shipped use is Ranger Mark Target: `ability_2` with an enemy token target (`target_slot` 1–3).
 - **Invalid actions are masked to no-op** (ability on cooldown, firing while dead). Cooldown state is in the observation so the policy can learn to avoid wasted probability mass on unavailable abilities.
 
 ### Held vs impulse actions
@@ -150,7 +150,7 @@ The `primary_fire`, `ability_1`, and `ability_2` Bernoulli outputs have differen
 | Vanguard | ability_2 | Guard Step | **Impulse** (one dash if 1 at decision start) |
 | Ranger | primary_fire | Revolver | **Held** (fire-rate gated; no-op when magazine empty) |
 | Ranger | ability_1 | Combat Roll | **Impulse** (one dash + instant reload if 1 at decision start) |
-| Ranger | ability_2 | — (deferred) | — |
+| Ranger | ability_2 | Mark Target | **Impulse** (`target_slot` 1–3; marks a visible enemy in range) |
 | Mender | primary_fire | Beam *or* Sidearm | **Held** (whichever weapon is currently equipped) |
 | Mender | ability_1 | Weapon Swap | **Impulse** (one swap STAFF ↔ SIDEARM if 1 at decision start) |
 | Mender | ability_2 | Tether | **Impulse** (one zip to aimed ally if 1 at decision start) |
@@ -237,9 +237,11 @@ Where `r_individual_i` is the existing per-agent reward after terminal + shaping
 
 This is the OpenAI Five credit-assignment lever. It is **not** a substitute for the centralized critic (§3) — the critic reduces variance on the value target, while `team_spirit` shapes what "success" means for each agent's policy gradient. Both are needed.
 
-**Ramp schedule:** start Phase 4 at `team_spirit = 0.3` and ramp linearly to `0.9` over the first ~30% of training, then hold. Early training wants enough individual signal to discover basic kit usage; late training wants enough team signal to discover coordination. Log `team_spirit` in the tensorboard run; treat it as a first-class hyperparameter, not a constant.
+**Ramp schedule:** start Phase 4 at `team_spirit = 0.3` and ramp linearly to `1.0` over the first ~30% of training, then hold (OpenAI Five-style — once team coordination is the dominant signal, individual credit becomes vestigial and adds variance). Early training wants enough individual signal to discover basic kit usage; late training wants every teammate to optimize the same coordinated outcome. Log `team_spirit` in the tensorboard run; treat it as a first-class hyperparameter, not a constant.
 
 **Applies to shaped rewards only.** The ±10 terminal reward is already a team-outcome signal (win/loss is team-defined), so interpolating it against its own mean is a no-op. Implementation applies the mix to the shaped component before the per-episode `[-3.0, +3.0]` clip.
+
+**Per-agent attribution.** Each agent's pre-mix individual reward `r_individual_i` comes from per-slot kill/death attribution (sim exposes `kills_by_slot` / `deaths_by_slot`), with score-tick rewards split among teammates by their per-tick on-point share. Enemy-team mirror events (their kills, their score) are subtracted *uniformly across own slots* — the killer's bonus already credits one team, the victim's penalty already debits the other, so a per-slot enemy-mirror term would double-count. Because the default `kill_bonus == death_penalty`, summing per-agent rewards over a team exactly reproduces the team-scalar reward used pre-Phase 4, so the cumulative `[-3.0, +3.0]` clip operates on the team sum and preserves the existing per-episode magnitude cap. The clip binds first; team_spirit's mixin is invariant under team mean and therefore commutes with it.
 
 ## 6. Training curriculum
 
@@ -284,7 +286,7 @@ Still flat obs, still fixed map.
 
 **Phase 9 — Snapshot self-play league.** Switch opponent sampling to the snapshot pool (§7).
 
-**Phase 10 — Second heroes per role and missing abilities.** Introduce alternative heroes (e.g., Warden alt-tank, Specter flanker DPS, a dedicated utility support) and fill in deferred Phase-1 abilities (Ranger's ability_2 candidate — Flashbang or similar; a Mender alternate with Damage Boost; Vanguard's Charge / Fire Strike). `target_slot` action enabled. Composition-specific strategy learning.
+**Phase 10 — Target slots, second heroes per role, and missing abilities.** Enable the `target_slot` action head and wire the first targeted diagnostic, Ranger Mark Target. Continue introducing alternative heroes (e.g., Warden alt-tank, Specter flanker DPS, a dedicated utility support) and fill in the remaining deferred Phase-1 abilities (a Mender alternate with Damage Boost; Vanguard's Charge / Fire Strike). Composition-specific strategy learning.
 
 ### Why this ordering matters
 

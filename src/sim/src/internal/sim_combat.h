@@ -15,11 +15,28 @@ struct DamageEvent {
 
 using DamageBuffer = std::array<DamageEvent, kAgentsPerMatch>;
 
+float first_cover_hit_t(common::Vec2 origin,
+                        common::Vec2 direction_unit,
+                        float max_t,
+                        const MatchConfig& config);
+
+bool segment_blocked_by_cover(common::Vec2 a,
+                              common::Vec2 b,
+                              const MatchConfig& config);
+
 void resolve_revolver_fire(MatchState& state,
                            const std::array<common::Action, kAgentsPerMatch>& actions,
                            const Phase1MechanicsConfig& m,
+                           const MatchConfig& config,
                            DamageBuffer& buf,
                            std::array<bool, kAgentsPerMatch>& has_damage);
+
+void resolve_mender_sidearm_fire(MatchState& state,
+                                 const std::array<common::Action, kAgentsPerMatch>& actions,
+                                 const Phase1MechanicsConfig& m,
+                                 const MatchConfig& config,
+                                 DamageBuffer& buf,
+                                 std::array<bool, kAgentsPerMatch>& has_damage);
 
 void apply_damage_buffer(MatchState& state,
                          const DamageBuffer& buf,

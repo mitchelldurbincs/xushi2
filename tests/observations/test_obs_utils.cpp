@@ -133,6 +133,37 @@ TEST(ObsUtils, VisibleEnemyAbsentSlotReturnsFalse) {
     EXPECT_FALSE(e.present);
 }
 
+TEST(ObsUtils, SimVisibleEnemyUsesCounterpartSlotIn3v3) {
+    MatchConfig cfg = xushi2::test_support::make_test_config();
+    cfg.team_size = 3;
+    Sim sim(cfg);
+    const auto& state = sim.state();
+    auto e = ou::visible_enemy_1v1(sim, 1);
+    EXPECT_TRUE(e.present);
+    EXPECT_EQ(e.id, state.heroes[4].id);
+    EXPECT_NEAR(e.world_position.x, state.heroes[4].position.x, kEps);
+    EXPECT_NEAR(e.world_position.y, state.heroes[4].position.y, kEps);
+}
+
+TEST(ObsUtils, ObservableEnemySlotsRespectsNativeFogLos) {
+    MatchConfig cfg = xushi2::test_support::make_test_config();
+    cfg.team_size = 3;
+    cfg.fog_of_war_enabled = true;
+    cfg.num_cover_circles = 1;
+    cfg.cover_circles[0].center = Vec2{25.0F, 25.0F};
+    cfg.cover_circles[0].radius = 1.0F;
+    Sim sim(cfg);
+
+    const auto blocked = ou::observable_enemy_slots(sim, 1);
+    EXPECT_FALSE(blocked[4]);
+
+    auto& state = const_cast<xushi2::sim::MatchState&>(sim.state());
+    state.heroes[4].alive = false;
+    state.heroes[4].respawn_tick = state.tick + cfg.mechanics.respawn_ticks;
+    const auto dead_public = ou::observable_enemy_slots(sim, 1);
+    EXPECT_TRUE(dead_public[4]);
+}
+
 TEST(ObsUtils, PositionOnObjectiveDetectsCenter) {
     MapBounds map{};  // center (25, 25)
     EXPECT_TRUE(ou::position_on_objective(Vec2{25.0F, 25.0F}, map));

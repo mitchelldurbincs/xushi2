@@ -23,6 +23,9 @@ class _FakeSim:
         self.team_b_score_ticks = 0
         self.team_a_kills = 0
         self.team_b_kills = 0
+        self.kills_by_slot = [0, 0, 0, 0, 0, 0]
+        self.deaths_by_slot = [0, 0, 0, 0, 0, 0]
+        self.damage_dealt_by_slot = [0, 0, 0, 0, 0, 0]
         self.episode_over = False
         self.winner = _cpp.Team.Neutral
 
@@ -295,6 +298,286 @@ def test_distance_shaping_produces_nonzero_reward_on_real_env():
     # with shaping should be strictly greater than without.
     assert r_on > r_off
     assert r_off == pytest.approx(0.0, abs=1e-9)
+
+
+# --- team_spirit mixin (per-agent path only) ---------------------------
+
+def test_team_spirit_zero_preserves_individual_credit():
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=0.0)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    sim.deaths_by_slot = [0, 0, 0, 1, 0, 0]
+    a, _ = rc.step(sim)
+    # τ=0: pure individual; only the killer gets the kill bonus.
+    assert a[0] == pytest.approx(0.25)
+    assert a[1] == pytest.approx(0.0)
+    assert a[2] == pytest.approx(0.0)
+
+
+def test_team_spirit_one_collapses_to_team_mean():
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=1.0)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    sim.deaths_by_slot = [0, 0, 0, 1, 0, 0]
+    a, _ = rc.step(sim)
+    # τ=1: every slot receives the team mean = 0.25 / 3.
+    expected = 0.25 / 3.0
+    assert a[0] == pytest.approx(expected)
+    assert a[1] == pytest.approx(expected)
+    assert a[2] == pytest.approx(expected)
+    assert a.sum() == pytest.approx(0.25)
+
+
+def test_team_spirit_half_is_exact_interpolation():
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=0.5)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    sim.deaths_by_slot = [0, 0, 0, 1, 0, 0]
+    a, _ = rc.step(sim)
+    # indiv = [0.25, 0, 0]; mean = 0.25/3.
+    # mixed = 0.5 * indiv + 0.5 * mean.
+    mean = 0.25 / 3.0
+    assert a[0] == pytest.approx(0.5 * 0.25 + 0.5 * mean)
+    assert a[1] == pytest.approx(0.5 * mean)
+    assert a[2] == pytest.approx(0.5 * mean)
+    # Sum invariant: team total still 0.25.
+    assert a.sum() == pytest.approx(0.25)
+
+
+def test_team_spirit_does_not_mix_terminal():
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=1.0)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.episode_over = True
+    sim.winner = _cpp.Team.A
+    ta, tb = rc.add_terminal(sim)
+    # Terminal is uniform regardless of team_spirit (it's already a team
+    # outcome by construction).
+    np.testing.assert_array_equal(ta, np.full(3, 10.0, dtype=np.float32))
+    np.testing.assert_array_equal(tb, np.full(3, -10.0, dtype=np.float32))
+
+
+def test_team_spirit_setter_updates_in_place():
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=0.0)
+    sim = _FakeSim()
+    rc.reset(sim)
+    rc.set_team_spirit(1.0)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    a, _ = rc.step(sim)
+    # After setter, behavior is τ=1: uniform team mean.
+    expected = 0.25 / 3.0
+    assert a[0] == pytest.approx(expected)
+    assert a[1] == pytest.approx(expected)
+    assert a[2] == pytest.approx(expected)
+
+
+def test_team_spirit_out_of_range_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(team_spirit=-0.01)
+    with pytest.raises(ValueError):
+        RewardCalculator(team_spirit=1.01)
+    rc = RewardCalculator(per_agent_rewards=True, team_spirit=0.5)
+    with pytest.raises(ValueError):
+        rc.set_team_spirit(2.0)
+
+
+def test_team_spirit_no_op_on_scalar_path():
+    """team_spirit on a scalar-mode calculator is silently a no-op:
+    the kwarg is accepted (so configs don't break) but doesn't change
+    the scalar reward."""
+    rc = RewardCalculator(team_spirit=1.0)  # per_agent_rewards=False
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    a, b = rc.step(sim)
+    # Scalar mode unchanged.
+    assert isinstance(a, float)
+    assert a == pytest.approx(0.25)
+    assert b == pytest.approx(-0.25)
+
+
+# --- damage-dealt shaping (per-agent, opt-in) --------------------------
+
+def test_damage_dealt_default_zero_no_op():
+    """Default damage_dealt_coef=0 produces no damage-related reward."""
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP applied by slot 0
+    a, b = rc.step(sim)
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+
+
+def test_damage_dealt_credits_attacker_slot_per_hp():
+    """coef=0.001 per HP: a 75-HP shot from slot 0 → +0.075 to slot 0."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP × 100 cHP/HP
+    a, b = rc.step(sim)
+    assert a[0] == pytest.approx(0.075)
+    assert a[1] == pytest.approx(0.0)
+    assert a[2] == pytest.approx(0.0)
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+
+
+def test_damage_dealt_diffs_against_prev():
+    """Subsequent shots only credit the *delta* in cumulative damage."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]
+    rc.step(sim)
+    # Second shot: another 75 HP applied — total cumulative now 150 HP.
+    sim.damage_dealt_by_slot = [15000, 0, 0, 0, 0, 0]
+    a, _ = rc.step(sim)
+    # Step reward should reflect just the 75 HP delta, not the 150 total.
+    assert a[0] == pytest.approx(0.075)
+
+
+def test_damage_dealt_independent_per_team():
+    """B's slot 3 dealing damage credits team B; doesn't affect team A."""
+    rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [0, 0, 0, 7500, 0, 0]  # absolute slot 3 = team B local 0
+    a, b = rc.step(sim)
+    # Team A: no damage dealt → no per-damage reward.
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    # Team B: slot 3 (local 0) gets the credit.
+    assert b[0] == pytest.approx(0.075)
+    assert b[1] == pytest.approx(0.0)
+    assert b[2] == pytest.approx(0.0)
+
+
+def test_damage_dealt_negative_coef_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(damage_dealt_coef=-0.01)
+
+
+def test_damage_dealt_no_op_on_scalar_path():
+    """damage_dealt_coef has no effect on the scalar (default) path —
+    that path doesn't read damage_dealt_by_slot."""
+    rc = RewardCalculator(damage_dealt_coef=0.001)  # per_agent_rewards=False
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]
+    a, b = rc.step(sim)
+    assert isinstance(a, float)
+    assert a == pytest.approx(0.0)
+    assert b == pytest.approx(0.0)
+
+
+# --- per-agent rewards (opt-in flag) -----------------------------------
+
+def test_per_agent_default_false_returns_scalars():
+    """Default-false flag preserves today's scalar contract."""
+    rc = RewardCalculator()
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    a, b = rc.step(sim)
+    assert isinstance(a, float)
+    assert isinstance(b, float)
+    assert a == pytest.approx(0.25)
+    assert b == pytest.approx(-0.25)
+
+
+def test_per_agent_kill_credits_only_killer_and_victim():
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_kills = 1
+    sim.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    sim.deaths_by_slot = [0, 0, 0, 1, 0, 0]
+    a, b = rc.step(sim)
+    assert a.shape == (3,)
+    assert b.shape == (3,)
+    # Only the killer (team A slot 0) gets the kill bonus.
+    assert a[0] == pytest.approx(0.25)
+    assert a[1] == pytest.approx(0.0)
+    assert a[2] == pytest.approx(0.0)
+    # Only the victim (team B local slot 0 == absolute slot 3) gets the
+    # death penalty.
+    assert b[0] == pytest.approx(-0.25)
+    assert b[1] == pytest.approx(0.0)
+    assert b[2] == pytest.approx(0.0)
+    # Sum invariants (kill_bonus == death_penalty default).
+    assert a.sum() == pytest.approx(0.25)
+    assert b.sum() == pytest.approx(-0.25)
+    assert a.sum() + b.sum() == pytest.approx(0.0)
+
+
+def test_per_agent_score_split_uniformly_when_no_on_point_data():
+    """FakeSim has no obs path; per-agent score split falls back to uniform
+    1/3 each. Enemy-score subtraction is also uniform 1/3."""
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.team_a_score_ticks = _cpp.TICK_HZ  # 1 second of A scoring
+    a, b = rc.step(sim)
+    np.testing.assert_allclose(a, [0.01 / 3, 0.01 / 3, 0.01 / 3], atol=1e-6)
+    np.testing.assert_allclose(b, [-0.01 / 3, -0.01 / 3, -0.01 / 3], atol=1e-6)
+    assert a.sum() == pytest.approx(0.01)
+    assert b.sum() == pytest.approx(-0.01)
+
+
+def test_per_agent_sum_matches_scalar_path_for_kill_event():
+    """When kill_bonus == death_penalty (default), per-agent team sums
+    equal the scalar-path scalar for the same event."""
+    sim_a = _FakeSim()
+    sim_a.team_a_kills = 1
+    sim_a.kills_by_slot = [1, 0, 0, 0, 0, 0]
+    sim_a.deaths_by_slot = [0, 0, 0, 1, 0, 0]
+
+    rc_scalar = RewardCalculator()
+    rc_scalar.reset(_FakeSim())
+    a_scalar, b_scalar = rc_scalar.step(sim_a)
+
+    rc_vec = RewardCalculator(per_agent_rewards=True)
+    rc_vec.reset(_FakeSim())
+    a_vec, b_vec = rc_vec.step(sim_a)
+
+    assert a_vec.sum() == pytest.approx(a_scalar)
+    assert b_vec.sum() == pytest.approx(b_scalar)
+
+
+def test_per_agent_terminal_returns_uniform_arrays():
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.episode_over = True
+    sim.winner = _cpp.Team.A
+    ta, tb = rc.add_terminal(sim)
+    assert ta.shape == (3,)
+    assert tb.shape == (3,)
+    np.testing.assert_array_equal(ta, np.full(3, 10.0, dtype=np.float32))
+    np.testing.assert_array_equal(tb, np.full(3, -10.0, dtype=np.float32))
+
+
+def test_per_agent_clip_on_team_sum_preserves_today_invariant():
+    """Cumulative team-sum cap is the same ±3 as the scalar path."""
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+
+    total_team_a = 0.0
+    for k in range(1, 21):
+        sim.team_a_kills = k
+        sim.kills_by_slot = [k, 0, 0, 0, 0, 0]
+        a, _ = rc.step(sim)
+        total_team_a += float(a.sum())
+    assert total_team_a == pytest.approx(3.0)
+    assert rc.cumulative_shaped_a == pytest.approx(3.0)
 
 
 def test_on_point_shaping_rewards_phase4_objective_contact():

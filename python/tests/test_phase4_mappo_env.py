@@ -109,9 +109,11 @@ def test_step_returns_correct_shapes_and_finite_values():
     assert reward.shape == (3,)
     assert reward.dtype == np.float32
     assert np.all(np.isfinite(reward))
-    assert reward[0] == reward[1] == reward[2]
     assert isinstance(term, bool)
     assert isinstance(trunc, bool)
+    # Per-team reward summary remains scalar in info for downstream loggers.
+    assert isinstance(info["reward_team_a"], float)
+    assert isinstance(info["reward_team_b"], float)
 
 
 @pytest.mark.parametrize("bad_shape", [(6,), (3,), (3, 5), (4, 6)])
@@ -122,19 +124,20 @@ def test_action_shape_validation_raises(bad_shape):
         env.step(np.zeros(bad_shape, dtype=np.float32))
 
 
-def test_reward_broadcast_is_team_reward_across_full_episode():
+def test_per_agent_reward_sum_stays_finite_across_full_episode():
     env = _make_env(opponent_bot="noop")
     env.reset(seed=42)
     cumulative_per_agent = np.zeros(3, dtype=np.float32)
     for _ in range(2000):
         action = np.zeros((3, 6), dtype=np.float32)
-        _, reward, term, trunc, _ = env.step(action)
-        assert reward[0] == reward[1] == reward[2], "reward not broadcast"
+        _, reward, term, trunc, info = env.step(action)
+        assert reward.shape == (3,)
+        assert reward.dtype == np.float32
+        assert np.all(np.isfinite(reward))
         cumulative_per_agent += reward
         if term or trunc:
             break
-    assert cumulative_per_agent[0] == cumulative_per_agent[1]
-    assert cumulative_per_agent[1] == cumulative_per_agent[2]
+    assert np.all(np.isfinite(cumulative_per_agent))
 
 
 def test_hardcoded_walk_to_objective_scores_against_noop():
