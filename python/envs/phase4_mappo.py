@@ -201,7 +201,9 @@ class Phase4MappoEnv(gym.Env):
             winner_str = "Neutral"
         return {
             "tick": int(s.tick),
-            "state_hash": int(s.state_hash),
+            # Gymnasium vector info collation stores Python ints in a C-long
+            # array; uint64 hashes can overflow there, so expose hex text.
+            "state_hash": f"0x{int(s.state_hash):016x}",
             "team_a_score": float(s.team_a_score),
             "team_b_score": float(s.team_b_score),
             "team_a_kills": int(s.team_a_kills),

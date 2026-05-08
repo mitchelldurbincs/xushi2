@@ -13,7 +13,7 @@ import pytest
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
 
 
 def _make_sim_cfg(round_length: int = 5) -> dict:
@@ -135,6 +135,26 @@ def test_reward_broadcast_is_team_reward_across_full_episode():
             break
     assert cumulative_per_agent[0] == cumulative_per_agent[1]
     assert cumulative_per_agent[1] == cumulative_per_agent[2]
+
+
+def test_hardcoded_walk_to_objective_scores_against_noop():
+    env = Phase4MappoEnv(_make_sim_cfg(round_length=30), opponent_bot="noop")
+    obs, _ = env.reset(seed=0)
+    pos_slice = actor_field_slice("own_position")
+    final_info = {}
+    for _ in range(400):
+        own_pos = obs[:, pos_slice]
+        move = -own_pos.copy()
+        norm = np.linalg.norm(move, axis=1, keepdims=True)
+        move = np.where(norm > 0.02, move / np.maximum(norm, 1e-6), 0.0)
+        action = np.zeros((3, 6), dtype=np.float32)
+        action[:, :2] = move.astype(np.float32)
+        obs, _reward, term, trunc, final_info = env.step(action)
+        if term or trunc:
+            break
+
+    assert float(final_info["team_a_score"]) > 0.0
+    assert float(final_info["team_b_score"]) == 0.0
 
 
 # --- Task 4: build_critic_obs ---

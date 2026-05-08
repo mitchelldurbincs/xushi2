@@ -1,0 +1,57 @@
+phase: 4
+env:
+  seed_base: 0xD1CEDA7A
+  opponent_bot: noop
+  learner_team: A
+  reward:
+    # Deliberately stronger than the canonical diagnostic config. This probe
+    # exists only to verify Phase-4 MAPPO can discover objective approach in
+    # 3v3; anneal back down before treating a run as a gate result.
+    distance_shaping_coef: 0.05
+    on_point_shaping_coef: 0.02
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 0xD1CEDA7A
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 7500
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 8
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 4
+  learning_rate: 3.0e-4
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: constant
+  lr_final_ratio: 1.0
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.001
+  value_coef: 0.5
+  max_grad_norm: 0.5
+run:
+  total_updates: 250
+  eval_every: 25
+  eval_episodes: 10
+  checkpoint_every: 25
+  log_every: 5
+  bc_pretrain_steps: 500
+  bc_batch_size: 1024
+  bc_learning_rate: 1.0e-3
+  output_dir: runs/phase4_mappo_noop_probe

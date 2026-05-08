@@ -8,14 +8,12 @@ warfare and deception under partial observation.
 
 ## Status
 
-**Phase 2 cleared; Phase 3 in progress.** The Phase 2 memory-toy gate is
-green (recurrent final −0.107, feedforward final −0.995, gap 0.889) — see
-[`docs/plans/2026-04-23-phase2-result.md`](docs/plans/2026-04-23-phase2-result.md)
-for the sign-off. The recurrent PPO trainer package, value normalization,
-and cosine LR schedule all landed with that result. Phase 3 — wiring the
-C++ sim into the recurrent PPO trainer via a 1v1 Ranger env — is in
-progress right now. The raylib viewer is still a scaffold — see
-[Current state](#current-state) for a precise breakdown.
+**Phase 4 scaffold is trainable.** Phase 2 cleared; Phase 3 produced a
+warm-start Ranger policy; Phase 4 now has 3v3 Ranger spawning, a 135-float
+centralized critic observation, a 3v3 MAPPO-shaped Gymnasium env, and a
+recurrent MAPPO smoke trainer wired through `phase: 4`. The raylib viewer is
+still a scaffold — see [Current state](#current-state) for a precise
+breakdown.
 
 ## Project layout
 
@@ -96,9 +94,9 @@ What works today:
 - ✅ **Common types** (`src/common/include/xushi2/common/`) — `Team`,
   `Role`, `HeroKind` enums; `Vec2`, `Action`; fixed-capacity constants.
 - ✅ **Observation builders** (`src/sim/src/actor_obs.cpp`,
-  `critic_obs.cpp`, `obs_utils.cpp`) — Phase-1 flat actor + critic obs,
-  zero-copy into caller-provided numpy buffers, structural actor-leak
-  test green.
+  `critic_obs.cpp`, `obs_utils.cpp`) — Phase-1 flat actor obs plus the
+  Phase-4 135-float centralized critic obs, zero-copy into caller-provided
+  numpy buffers, structural actor-leak test green.
 - ✅ **Scripted bots** (`src/bots/src/bot.cpp`) —
   `walk_to_objective`, `hold_and_shoot`, `basic`, `noop`.
 - ✅ **pybind11 module** (`src/python_bindings/module.cpp`) — `Sim`,
@@ -127,7 +125,11 @@ What works today:
   cleared (gap 0.889, see `docs/plans/2026-04-23-phase2-result.md`).
 - ✅ **Phase-3 ranger env + eval** (`python/envs/phase3_ranger.py`,
   `python/eval/eval_phase3.py`) — C++ sim wired into the recurrent PPO
-  trainer for 1v1 Ranger; training in progress.
+  trainer for 1v1 Ranger.
+- ✅ **Phase-4 MAPPO smoke path** (`python/envs/phase4_mappo.py`,
+  `python/train/mappo.py`) — 3v3 Ranger env, centralized critic buffer,
+  phase registry entry, smoke config, checkpointing, and one-update pytest
+  coverage.
 
 What's a scaffold:
 
@@ -138,7 +140,7 @@ What's a scaffold:
 
 What's not there yet:
 
-- ❌ Multi-agent MAPPO (Phase 4+).
+- ❌ Scaled Phase-4 training run / acceptance gate beyond the smoke path.
 - ❌ Batched / vectorized env for parallel rollouts.
 - ❌ Fog of war and LoS (Phase 7+).
 - ❌ Second heroes (Vanguard, Mender — Phase 10+); Phase 1 stays 1v1
@@ -155,6 +157,18 @@ python -m train.train --config experiments/configs/phase2_memory_toy.yaml
 
 # Phase 3 C++ sim + recurrent PPO (smoke):
 python -m train.train --config experiments/configs/phase3_ranger_smoke.yaml
+
+# Phase 4 3v3 recurrent MAPPO (smoke):
+python -m train.train --config experiments/configs/phase4_mappo_smoke.yaml
+
+# Phase 4 3v3 recurrent MAPPO vs noop scripted bot:
+python -m train.train --config experiments/configs/phase4_mappo_noop.yaml
+
+# Phase 4 objective-discovery probe with stronger shaping:
+python -m train.train --config experiments/configs/phase4_mappo_noop_probe.yaml
+
+# Phase 4 3v3 recurrent MAPPO vs basic scripted bot:
+python -m train.train --config experiments/configs/phase4_mappo_basic.yaml
 ```
 
 ## License

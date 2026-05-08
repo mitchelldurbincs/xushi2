@@ -266,7 +266,10 @@ for an eval episode. Scrubbing a recorded replay is ideal; a deterministic
 live/eval playback is acceptable as the first cut. This is a debugging gate,
 not a polished human-play client.
 
-**Phase 4 — Recurrent IPPO or MAPPO, 2v2, flat obs.** Introduce multi-agent training and the centralized critic. Compositions to try: tank + damage, then damage + support. Still flat obs, still fixed map.
+**Phase 4 — Recurrent MAPPO, 3v3 Ranger, flat obs.** Introduce multi-agent
+training and the centralized critic while holding hero diversity constant.
+All six slots run Ranger so the phase isolates the multi-agent / CTDE delta.
+Still flat obs, still fixed map.
 
 **Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
 

@@ -31,6 +31,7 @@ __all__ = [
     "DEATH_PENALTY_DEFAULT",
     "SCORE_PER_SECOND_DEFAULT",
     "DISTANCE_SHAPING_COEF_DEFAULT",
+    "ON_POINT_SHAPING_COEF_DEFAULT",
     "TIME_PENALTY_PER_SECOND_DEFAULT",
 ]
 
@@ -54,6 +55,10 @@ SCORE_PER_SECOND_DEFAULT: float = 0.01
 # symmetrized: team A's per-step term is -coef*(dist_A - dist_B), team B is
 # the negation. Not yet in rl_design.md §5 — probe/training-only augmentation.
 DISTANCE_SHAPING_COEF_DEFAULT: float = 0.0
+# Opt-in per-decision objective-contact shaping. Probe-only curriculum helper:
+# rewards a team by coef * fraction_of_team_slots_on_point, symmetrized against
+# the opposing team. Intended to bridge "walk near point" to "enter/hold point".
+ON_POINT_SHAPING_COEF_DEFAULT: float = 0.0
 # Per-second penalty applied to BOTH teams every tick. Intentionally
 # breaks zero-sum to remove the deny-stalemate basin: with tps=0, a 0/0
 # draw nets ~0 and PPO finds it as stable as scoring; with tps>0, a 30s
@@ -103,12 +108,15 @@ class RewardCalculator:
         death_penalty: float = DEATH_PENALTY_DEFAULT,
         score_per_second: float = SCORE_PER_SECOND_DEFAULT,
         distance_shaping_coef: float = DISTANCE_SHAPING_COEF_DEFAULT,
+        on_point_shaping_coef: float = ON_POINT_SHAPING_COEF_DEFAULT,
         time_penalty_per_second: float = TIME_PENALTY_PER_SECOND_DEFAULT,
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
         if distance_shaping_coef < 0.0:
             raise ValueError("distance_shaping_coef must be >= 0")
+        if on_point_shaping_coef < 0.0:
+            raise ValueError("on_point_shaping_coef must be >= 0")
         self._shaping_clip = float(shaping_clip)
         self._terminal_win = float(terminal_win)
         self._terminal_loss = float(terminal_loss)
@@ -116,19 +124,28 @@ class RewardCalculator:
         self._death_penalty = float(death_penalty)
         self._score_per_second = float(score_per_second)
         self._distance_shaping_coef = float(distance_shaping_coef)
+        self._on_point_shaping_coef = float(on_point_shaping_coef)
         self._time_penalty_per_second = float(time_penalty_per_second)
         self._prev = _EventCounters()
         self._cum_shaped_a = 0.0
         self._cum_shaped_b = 0.0
 
-        # Preallocate per-team obs buffers only when distance shaping is on;
-        # the builders are the only path to hero positions from Python.
-        if self._distance_shaping_coef > 0.0:
+        # Preallocate obs buffers only when obs-derived shaping is on; the
+        # builders are the only path to hero positions / objective contact
+        # from Python.
+        if self._distance_shaping_coef > 0.0 or self._on_point_shaping_coef > 0.0:
             self._pos_slice = actor_field_slice("own_position")
-            self._obs_buf_a = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
-            self._obs_buf_b = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+            self._on_point_slice = actor_field_slice("self_on_point")
+            self._obs_bufs = [
+                np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
+                for _ in range(_cpp.AGENTS_PER_MATCH)
+            ]
+            self._obs_buf_a = self._obs_bufs[_TEAM_A_RANGER_SLOT]
+            self._obs_buf_b = self._obs_bufs[_TEAM_B_RANGER_SLOT]
         else:
             self._pos_slice = None
+            self._on_point_slice = None
+            self._obs_bufs = None
             self._obs_buf_a = None
             self._obs_buf_b = None
 
@@ -178,6 +195,11 @@ class RewardCalculator:
             dist_a = float(np.hypot(pos_a[0], pos_a[1]))
             dist_b = float(np.hypot(pos_b[0], pos_b[1]))
             raw_a += -self._distance_shaping_coef * (dist_a - dist_b)
+
+        if self._on_point_shaping_coef > 0.0:
+            on_a = self._team_on_point_fraction(sim, (0, 1, 2))
+            on_b = self._team_on_point_fraction(sim, (3, 4, 5))
+            raw_a += self._on_point_shaping_coef * (on_a - on_b)
 
         raw_b = -raw_a  # zero-sum on raw shaping by symmetrization
 
@@ -237,3 +259,19 @@ class RewardCalculator:
             new = _clip(old + raw_delta, -self._shaping_clip, self._shaping_clip)
             self._cum_shaped_b = new
         return new - old
+
+    def _team_on_point_fraction(self, sim, slots: tuple[int, int, int]) -> float:
+        assert self._obs_bufs is not None
+        assert self._on_point_slice is not None
+        present = 0
+        on_point = 0.0
+        for slot in slots:
+            try:
+                _cpp.build_actor_obs(sim, slot, self._obs_bufs[slot])
+            except Exception:
+                continue
+            present += 1
+            on_point += float(self._obs_bufs[slot][self._on_point_slice][0])
+        if present == 0:
+            return 0.0
+        return on_point / float(present)

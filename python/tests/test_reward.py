@@ -7,6 +7,7 @@ terminal rewards, and the reset invariant.
 from __future__ import annotations
 
 import pytest
+import numpy as np
 
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.reward import RewardCalculator
@@ -188,6 +189,11 @@ def test_negative_distance_shaping_coef_rejected():
         RewardCalculator(distance_shaping_coef=-0.01)
 
 
+def test_negative_on_point_shaping_coef_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(on_point_shaping_coef=-0.01)
+
+
 def test_default_time_penalty_is_zero_and_does_not_change_rewards():
     """Backwards compatibility: omitting time_penalty_per_second leaves
     every existing reward path unchanged."""
@@ -289,3 +295,46 @@ def test_distance_shaping_produces_nonzero_reward_on_real_env():
     # with shaping should be strictly greater than without.
     assert r_on > r_off
     assert r_off == pytest.approx(0.0, abs=1e-9)
+
+
+def test_on_point_shaping_rewards_phase4_objective_contact():
+    from envs.phase4_mappo import Phase4MappoEnv
+    from xushi2.obs_manifest import actor_field_slice
+
+    sim_cfg = {
+        "seed": 0xD1CEDA7A,
+        "round_length_seconds": 30,
+        "fog_of_war_enabled": False,
+        "randomize_map": False,
+        "action_repeat": 3,
+        "mechanics": {
+            "revolver_damage_centi_hp": 7500,
+            "revolver_fire_cooldown_ticks": 15,
+            "revolver_hitbox_radius": 0.75,
+            "respawn_ticks": 240,
+        },
+    }
+    env = Phase4MappoEnv(
+        sim_cfg,
+        opponent_bot="noop",
+        reward_cfg={"on_point_shaping_coef": 0.02},
+    )
+    obs, _ = env.reset(seed=0)
+    pos_slice = actor_field_slice("own_position")
+    total_reward = 0.0
+    try:
+        for _ in range(220):
+            own_pos = obs[:, pos_slice]
+            move = -own_pos.copy()
+            norm = (move[:, :1] ** 2 + move[:, 1:2] ** 2) ** 0.5
+            move = move / norm.clip(min=1e-6)
+            action = np.zeros((3, 6), dtype=np.float32)
+            action[:, :2] = move.astype(np.float32)
+            obs, reward, term, trunc, _info = env.step(action)
+            total_reward += float(reward[0])
+            if term or trunc:
+                break
+    finally:
+        env.close()
+
+    assert total_reward > 0.0
