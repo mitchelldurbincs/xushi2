@@ -55,10 +55,13 @@ specification. The README is a quick-start only.
 ## Build (C++ side)
 
 Requires CMake ≥ 3.24, a C++20 compiler, and Python 3.10+ for the Python
-module.
+module. See `TESTING.md` for the exact local build commands, dependency list,
+and Python 3.12-specific notes.
+
+Quick start (Release, viewer disabled, Python 3.12):
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=/usr/bin/python3.12 -DXUSHI2_BUILD_VIEWER=OFF
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
@@ -84,6 +87,9 @@ pip install -e .
 The Python package `xushi2` re-exports the `xushi2_cpp` extension module, so
 the C++ module must be built first (via the CMake step above, with
 `XUSHI2_BUILD_PYTHON_MODULE=ON`).
+
+See `TESTING.md` for the full Python test matrix, partial-suite options when
+`torch`/`gymnasium` are absent, and troubleshooting.
 
 ## Current state
 

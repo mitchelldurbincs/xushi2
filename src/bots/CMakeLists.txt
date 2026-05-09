@@ -13,3 +13,6 @@ target_link_libraries(xushi2_bots
         xushi2::common
         xushi2::sim
 )
+
+# Required when linking into the shared Python extension module on Linux.
+set_target_properties(xushi2_bots PROPERTIES POSITION_INDEPENDENT_CODE ON)

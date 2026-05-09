@@ -1,7 +1,9 @@
 # Build outputs
 build/
 build-*/
+build_*/
 cmake-build-*/
+cmake-build_*/
 out/
 install/
 CMakeUserPresets.json
@@ -72,3 +74,4 @@ python/xushi2/Release/
 
 # Notebooks
 .ipynb_checkpoints/
+python/venv_py312/

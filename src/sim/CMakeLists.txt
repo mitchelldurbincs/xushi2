@@ -18,5 +18,8 @@ target_include_directories(xushi2_sim PUBLIC
 
 target_link_libraries(xushi2_sim PUBLIC xushi2::common)
 
+# Required when linking into the shared Python extension module on Linux.
+set_target_properties(xushi2_sim PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # Determinism: sim is float-precise and has no wall-clock / no entropy source
 # other than the seeded PRNG stored in Sim state.
