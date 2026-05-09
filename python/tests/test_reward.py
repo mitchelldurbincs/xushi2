@@ -42,6 +42,28 @@ def test_no_deltas_yields_zero_reward():
     assert b == 0.0
 
 
+def test_reset_captures_nonzero_baseline():
+    """If sim already has score/kills before reset, the first step with
+    unchanged counters returns zero reward; only post-reset deltas are
+    rewarded."""
+    rc = RewardCalculator()
+    sim = _FakeSim()
+    sim.team_a_score_ticks = _cpp.TICK_HZ  # 1 second of scoring
+    sim.team_b_kills = 2
+    rc.reset(sim)
+
+    # Step with unchanged counters → zero reward (baseline was captured).
+    a, b = rc.step(sim)
+    assert a == pytest.approx(0.0, abs=1e-9)
+    assert b == pytest.approx(0.0, abs=1e-9)
+
+    # Now add a delta → reward reflects only the delta, not the baseline.
+    sim.team_a_score_ticks += _cpp.TICK_HZ  # another second
+    a, b = rc.step(sim)
+    assert a == pytest.approx(0.01)
+    assert b == pytest.approx(-0.01)
+
+
 def test_team_a_kill_rewards_a_and_penalizes_b():
     rc, sim = _fresh_calc_and_sim()
     sim.team_a_kills = 1
