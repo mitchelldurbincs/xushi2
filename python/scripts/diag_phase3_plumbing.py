@@ -41,8 +41,9 @@ from __future__ import annotations
 import argparse
 import math
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import yaml
@@ -50,9 +51,8 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO_ROOT / "python"))
 
-from xushi2.env import XushiEnv
-from xushi2.obs_manifest import actor_field_slice
-
+from xushi2.env import XushiEnv  # noqa: E402  (must follow sys.path manipulation above)
+from xushi2.obs_manifest import actor_field_slice  # noqa: E402
 
 _CONFIG_PATH = (
     _REPO_ROOT / "experiments" / "configs" / "phase3" / "probe" / "phase3_ranger_noop_probe.yaml"
@@ -128,11 +128,8 @@ def _homing_action(obs: np.ndarray) -> dict[str, Any]:
     aim = obs_field(obs, "own_aim_unit")  # (sin θ, cos θ)
     enemy_alive = float(obs_field(obs, "enemy_alive")[0]) > 0.5
 
-    if enemy_alive:
-        delta = rel
-    else:
-        # Enemy respawning — head back to the cap instead of drifting.
-        delta = -own_pos
+    # When the enemy is respawning, head back to the cap instead of drifting.
+    delta = rel if enemy_alive else -own_pos
 
     move_x, move_y = _move_toward(delta, _CAP_ARRIVE_THRESHOLD)
 
@@ -225,11 +222,10 @@ def run_scenario(name: str, policy, seed: int, decisions: int) -> None:
     prev_cap_bucket = int(_obs_cap_progress(obs) * 4)  # log crossings of 0.25/0.50/0.75/1.0
     prev_owner = _owner_label(_obs_owner_onehot(obs))
     prev_kills_a = int(info["team_a_kills"])
-    prev_score_a = float(info["team_a_score"])
     first_score_logged = False
     total_reward = 0.0
 
-    for step_idx in range(decisions):
+    for _step_idx in range(decisions):
         action = policy(obs)
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
@@ -274,7 +270,6 @@ def run_scenario(name: str, policy, seed: int, decisions: int) -> None:
         if not first_score_logged and score_a > 0.0:
             print(f"  [tick {tick:4d}] score_a first > 0: {score_a:.2f} (owner={owner})")
             first_score_logged = True
-        prev_score_a = score_a
 
         if terminated or truncated:
             break

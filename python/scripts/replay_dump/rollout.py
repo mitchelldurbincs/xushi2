@@ -6,8 +6,8 @@ import numpy as np
 import torch
 
 from train.mappo import MappoActorCritic, MappoConfig
-from train.ppo_recurrent.orchestration import make_env_fn
 from train.phases import resolve_phase
+from train.ppo_recurrent.orchestration import make_env_fn
 
 from .formatting import action_to_fields, format_decision, format_decision_six
 from .header import header_fields
@@ -149,7 +149,7 @@ def dump_mappo(
                         obs, _reward, term, trunc, info = env.step(action)
                         opponent_actions_raw = info.get("opponent_actions")
                         if opponent_actions_raw is None:
-                            slots = policy_slots[:3] + [zero_slot, zero_slot, zero_slot]
+                            slots = [*policy_slots[:3], zero_slot, zero_slot, zero_slot]
                         else:
                             opponent_actions = np.asarray(opponent_actions_raw, dtype=np.float32)
                             if opponent_actions.shape != (3, 6):

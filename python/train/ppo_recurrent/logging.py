@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Mapping
-
+from collections.abc import Mapping
 
 LogEvent = dict[str, object]
 
@@ -49,8 +48,10 @@ def format_human_event(record: Mapping[str, object]) -> str:
             f"term={int(record['terminated'])}/{int(record['episodes'])} "
             f"trunc={int(record['truncated'])}/{int(record['episodes'])} "
             f"tick={float(record['mean_final_tick']):.1f} "
-            f"score=A{float(record['mean_team_a_score']):.2f}/B{float(record['mean_team_b_score']):.2f} "
-            f"kills=A{float(record['mean_team_a_kills']):.2f}/B{float(record['mean_team_b_kills']):.2f} "
+            f"score=A{float(record['mean_team_a_score']):.2f}"
+            f"/B{float(record['mean_team_b_score']):.2f} "
+            f"kills=A{float(record['mean_team_a_kills']):.2f}"
+            f"/B{float(record['mean_team_b_kills']):.2f} "
             f"lr={float(record['lr']):.3e}"
         )
 

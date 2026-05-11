@@ -46,6 +46,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+# ML/tensor code conventions:
+#   N806 — capitalized locals (N, L, A, H, S, L_max, A_0..A_3) match tensor-shape
+#          and math notation used throughout the trainer/tests.
+#   N812 — `import torch.nn.functional as F` is the universal PyTorch idiom.
+ignore = ["N806", "N812"]
 
 [tool.pytest.ini_options]
 # Run from python/ so it finds python/tests/.

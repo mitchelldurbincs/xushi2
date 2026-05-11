@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 import torch.nn as nn
 
-from train.mappo_model import MappoActorCritic, MappoConfig, _OWN_POSITION_SLICE
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    import gymnasium as gym
+
+from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
 from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
 from xushi2.entity_obs import entity_obs_self_position
@@ -107,16 +114,17 @@ class MappoTrainer:
         self._critic_params: list[torch.nn.Parameter] = []
         self._trunk_params: list[torch.nn.Parameter] = []
         for name, p in self.model.named_parameters():
-            if name.startswith(
-                (
-                    "actor_body",
-                    "actor_mean_head",
-                    "actor_binary_head",
-                    "actor_target_head",
+            if (
+                name.startswith(
+                    (
+                        "actor_body",
+                        "actor_mean_head",
+                        "actor_binary_head",
+                        "actor_target_head",
+                    )
                 )
+                or name == "log_std"
             ):
-                self._actor_params.append(p)
-            elif name == "log_std":
                 self._actor_params.append(p)
             elif name.startswith("critic"):
                 self._critic_params.append(p)

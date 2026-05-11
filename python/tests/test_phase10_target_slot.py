@@ -16,7 +16,6 @@ from xushi2.obs_manifest import CRITIC_DIM
 def _load_config() -> dict:
     with open(
         "../experiments/configs/phase10_target_slot_probe.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         return yaml.safe_load(fh)

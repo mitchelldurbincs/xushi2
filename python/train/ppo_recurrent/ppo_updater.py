@@ -3,8 +3,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
 from train.ppo_recurrent import metrics as metrics_lib
+from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
 
 
 def update_ppo(trainer, rollout) -> dict[str, float]:
@@ -68,7 +68,7 @@ def ppo_minibatch_step(
 
     n_valid = float(valid_mask.sum().item())
     if n_valid <= 0.0:
-        return ({k: 0.0 for k in metrics_lib.init_metrics_sum().keys()}, 0.0)
+        return ({k: 0.0 for k in metrics_lib.init_metrics_sum()}, 0.0)
 
     h = h_init
     new_logprobs, entropies, values = [], [], []

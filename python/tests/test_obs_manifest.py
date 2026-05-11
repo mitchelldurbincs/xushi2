@@ -20,7 +20,7 @@ from xushi2.obs_manifest import (
 
 
 def test_actor_dim_matches_field_widths():
-    assert ACTOR_PHASE1_DIM == sum(width for _, width, _ in ACTOR_PHASE1_FIELDS)
+    assert sum(width for _, width, _ in ACTOR_PHASE1_FIELDS) == ACTOR_PHASE1_DIM
 
 
 def test_actor_dim_matches_spec_value():
@@ -30,7 +30,7 @@ def test_actor_dim_matches_spec_value():
 
 
 def test_critic_dim_matches_field_widths():
-    assert CRITIC_DIM == sum(width for _, width, _ in CRITIC_FIELDS)
+    assert sum(width for _, width, _ in CRITIC_FIELDS) == CRITIC_DIM
 
 
 def test_critic_dim_is_135():

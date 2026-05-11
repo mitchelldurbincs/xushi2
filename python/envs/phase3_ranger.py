@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
-
-import numpy as np
+from typing import Any, ClassVar
 
 import gymnasium as gym
+import numpy as np
 from gymnasium import spaces
 
 from xushi2.env import XushiEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
-
 
 _AIM_DELTA_LIMIT = float(np.pi / 4.0)
 
@@ -25,7 +23,7 @@ class Phase3RangerEnv(gym.Env):
     three coordinates are interpreted as binary actions via ``>= 0.5``.
     """
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     def __init__(
         self,

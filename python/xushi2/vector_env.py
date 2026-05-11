@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import contextlib
 import multiprocessing as mp
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import gymnasium as gym
@@ -364,10 +365,8 @@ class XushiAsyncVectorEnv:
         if self._closed:
             return
         for conn in self._conns:
-            try:
+            with contextlib.suppress(BrokenPipeError, EOFError):
                 conn.send(("close", None))
-            except (BrokenPipeError, EOFError):
-                pass
         for i, conn in enumerate(self._conns):
             try:
                 if self._procs[i].is_alive():

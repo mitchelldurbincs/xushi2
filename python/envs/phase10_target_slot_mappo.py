@@ -8,7 +8,7 @@ five categories match the appended token mask: self, three enemies, objective.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -28,7 +28,7 @@ PHASE10_TARGET_OBS_DIM: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + TARGET_SLOT_MASK
 class Phase10TargetSlotMappoEnv(gym.Env):
     """Phase-8 env stack plus a categorical target-token action column."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = PHASE10_TARGET_OBS_DIM

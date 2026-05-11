@@ -6,19 +6,17 @@ class implements.
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
 import torch
-import torch.nn as nn
 from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 
 from train.models import ActorCritic, build_model
-from train.rollout_buffer import RolloutBuffer
-
-from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent import ppo_updater, rollout_collector
+from train.ppo_recurrent.config import PPOConfig
+from train.rollout_buffer import RolloutBuffer
 
 
 class PPOTrainer:

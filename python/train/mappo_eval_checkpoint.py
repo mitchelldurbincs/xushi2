@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 import gymnasium as gym
 import numpy as np
@@ -12,7 +12,6 @@ import torch
 from train.mappo_bc_pretrain import bc_pretrain_walk_to_objective
 from train.mappo_model import (
     MappoActorCritic,
-    MappoConfig,
     MappoEvalStats,
     _eval_outcome_counts,
     compute_team_spirit,
@@ -24,7 +23,6 @@ from train.wandb_logger import make_logger
 from xushi2.mappo_eval_gate import check_eval_gate
 from xushi2.mappo_matrix_gate import check_matrix_gate
 from xushi2.snapshot_retention import SnapshotRetention
-from xushi2.vector_env import make_xushi_vector_env
 
 
 def evaluate_mappo(
@@ -67,14 +65,14 @@ def evaluate_mappo(
 
             winner = str(info.get("winner", ""))
             learner_team = str(info.get("learner_team", ""))
-            w, l, d = _eval_outcome_counts(
+            won, lost, drew = _eval_outcome_counts(
                 winner=winner,
                 learner_team=learner_team,
                 truncated=bool(trunc),
             )
-            wins += w
-            losses += l
-            draws += d
+            wins += won
+            losses += lost
+            draws += drew
 
             terminated_count += int(bool(term))
             truncated_count += int(bool(trunc))

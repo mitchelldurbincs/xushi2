@@ -7,32 +7,18 @@ team-level critic observation supplied by ``Phase4MappoEnv``.
 
 from __future__ import annotations
 
-import copy
-import json
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Callable
 
-import gymnasium as gym
-import numpy as np
 import torch
 import torch.nn as nn
 
-from train.phases import resolve_phase
-from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
-from train.ppo_recurrent.lr_schedule import lr_for_update
 from xushi2.entity_obs import (
     ENTITY_OBS_DIM,
     ENTITY_TOKEN_COUNT,
     ENTITY_TOKEN_DIM,
-    entity_obs_self_position,
 )
 from xushi2.grid_obs import GRID_CHANNELS, GRID_SIZE
-from xushi2.mappo_eval_gate import check_eval_gate
-from xushi2.mappo_matrix_gate import check_matrix_gate
 from xushi2.obs_manifest import actor_field_slice
-from xushi2.snapshot_retention import SnapshotRetention
-from xushi2.vector_env import make_xushi_vector_env
 
 _LOG2 = 0.6931471805599453
 _OWN_POSITION_SLICE = actor_field_slice("own_position")

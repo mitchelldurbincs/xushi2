@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import torch
@@ -18,8 +18,7 @@ from xushi2.multi_enemy_obs import (
     map_bounds_from_sim_cfg,
     normalize_world_for_team,
 )
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
-from xushi2.obs_manifest import actor_field_slice, critic_field_slice
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
 from xushi2.partial_obs import actor_obs_to_partial_entity_grid_obs
 
 
@@ -46,7 +45,7 @@ class SnapshotPolicy:
 
     def act(
         self,
-        sim: "_cpp.Sim",
+        sim: _cpp.Sim,
         slots: Sequence[int],
         *,
         map_bounds: dict[str, float] | None = None,
@@ -64,7 +63,7 @@ class SnapshotPolicy:
 
     def _convert_obs(
         self,
-        sim: "_cpp.Sim",
+        sim: _cpp.Sim,
         flat: np.ndarray,
         slots: Sequence[int],
         *,
@@ -93,7 +92,7 @@ class SnapshotPolicy:
 
     def _convert_multi_enemy_obs(
         self,
-        sim: "_cpp.Sim",
+        sim: _cpp.Sim,
         flat: np.ndarray,
         slots: Sequence[int],
         *,
@@ -127,7 +126,7 @@ class SnapshotPolicy:
 
     def _visible_enemy_matrix(
         self,
-        sim: "_cpp.Sim",
+        sim: _cpp.Sim,
         flat: np.ndarray,
         critic: np.ndarray,
         slots: Sequence[int],
@@ -252,7 +251,7 @@ class SnapshotLeague:
         cls,
         flat_paths: Sequence[str | Path],
         league_cfg: dict | None,
-    ) -> "SnapshotLeague":
+    ) -> SnapshotLeague:
         if league_cfg:
             groups = {group: tuple(league_cfg.get(group, ())) for group in cls._GROUP_ORDER}
             weights = dict(league_cfg.get("weights", {}))

@@ -25,7 +25,7 @@ stepped with identical action streams produce identical
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -43,7 +43,7 @@ from .obs_manifest import ACTOR_PHASE1_DIM
 from .reward import RewardCalculator
 from .runner import _build_config
 
-__all__ = ["XushiEnv", "VALID_OPPONENT_BOTS"]
+__all__ = ["VALID_OPPONENT_BOTS", "XushiEnv"]
 
 # Must match the bot names exposed by the C++ layer. Matching the set
 # allowed by xushi2.runner so one failure mode (typo) fails the same
@@ -74,7 +74,7 @@ class XushiEnv(gym.Env):
         ``"B"``. Default ``"A"``.
     """
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     def __init__(
         self,

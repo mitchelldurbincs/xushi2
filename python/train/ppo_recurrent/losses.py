@@ -10,8 +10,7 @@ import math
 
 import torch
 import torch.nn.functional as F
-from torch.distributions import Bernoulli
-from torch.distributions import Normal
+from torch.distributions import Bernoulli, Normal
 
 _ATANH_EPS = 1e-6
 _LOG2 = math.log(2.0)

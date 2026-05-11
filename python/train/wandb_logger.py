@@ -15,7 +15,8 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
-from typing import Any, Mapping, Protocol, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Protocol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class _ActiveLogger:
 
         try:
             wandb.log(dict(metrics), step=step)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("wandb.log failed (%s); continuing", exc)
 
     def finish(self) -> None:
@@ -59,7 +60,7 @@ class _ActiveLogger:
 
         try:
             wandb.finish()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             _LOGGER.warning("wandb.finish failed (%s)", exc)
 
 
@@ -124,7 +125,7 @@ def make_logger(
             config=enriched_config,
             reinit="finish_previous",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _LOGGER.warning("wandb.init failed (%s); metrics will not be logged", exc)
         return _NullLogger()
 

@@ -6,8 +6,8 @@ terminal rewards, and the reset invariant.
 
 from __future__ import annotations
 
-import pytest
 import numpy as np
+import pytest
 
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.reward import RewardCalculator
@@ -432,7 +432,7 @@ def test_damage_dealt_credits_attacker_slot_per_hp():
     rc = RewardCalculator(per_agent_rewards=True, damage_dealt_coef=0.001)
     sim = _FakeSim()
     rc.reset(sim)
-    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP × 100 cHP/HP
+    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]  # 75 HP * 100 cHP/HP
     a, b = rc.step(sim)
     assert a[0] == pytest.approx(0.075)
     assert a[1] == pytest.approx(0.0)

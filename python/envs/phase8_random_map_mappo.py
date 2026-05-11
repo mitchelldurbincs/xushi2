@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -25,7 +25,7 @@ __all__ = ["Phase8RandomMapMappoEnv"]
 class Phase8RandomMapMappoEnv(gym.Env):
     """Phase-7 observation stack with deterministic randomized map bounds."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM

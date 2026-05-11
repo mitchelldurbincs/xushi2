@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 
-from train.mappo_model import MappoActorCritic, MappoConfig, _OWN_POSITION_SLICE
+from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
 from xushi2.entity_obs import entity_obs_self_position
 
 

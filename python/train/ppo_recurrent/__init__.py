@@ -35,9 +35,10 @@ from train.ppo_recurrent.orchestration import _run_variant, train_from_config
 from train.ppo_recurrent.trainer import PPOTrainer
 
 __all__ = [
+    "EvaluationStats",
     "PPOConfig",
     "PPOTrainer",
-    "EvaluationStats",
+    "_run_variant",
     "evaluate_policy",
     "evaluate_policy_stats",
     "lr_for_update",

@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from envs.memory_toy import MemoryToyEnv
 
 
@@ -19,7 +20,7 @@ def test_cue_visible_during_window_hidden_after():
     assert abs(np.linalg.norm(obs[:2]) - 1.0) < 1e-5
 
     zero_action = np.array([0.0, 0.0], dtype=np.float32)
-    for t in range(1, 4):  # ticks 1, 2, 3 -- still visible
+    for _t in range(1, 4):  # ticks 1, 2, 3 -- still visible
         obs, _, _, _, _ = env.step(zero_action)
         assert obs[2] == 1.0
 

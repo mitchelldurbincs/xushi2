@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
@@ -55,7 +55,7 @@ class SelfPlaySchedule:
         cls,
         schedule_cfg: dict | None,
         league_cfg: dict | None = None,
-    ) -> "SelfPlaySchedule":
+    ) -> SelfPlaySchedule:
         schedule_cfg = dict(schedule_cfg or {})
         league_cfg = dict(league_cfg or {})
         return cls(

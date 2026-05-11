@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -18,7 +18,7 @@ __all__ = ["Phase6GridMappoEnv"]
 class Phase6GridMappoEnv(gym.Env):
     """3v3 MAPPO env that adds a compact grid branch to Phase-5 tokens."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = ENTITY_GRID_OBS_DIM

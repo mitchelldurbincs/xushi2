@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from envs.phase4_mappo import Phase4MappoEnv, VALID_OPPONENT_BOTS
+from envs.phase4_mappo import VALID_OPPONENT_BOTS, Phase4MappoEnv
 from xushi2.entity_obs import ENTITY_OBS_DIM, actor_obs_to_entity_obs
 from xushi2.obs_manifest import CRITIC_DIM
 
@@ -23,7 +23,7 @@ class Phase5EntityMappoEnv(gym.Env):
     diagnostic focused on the attention-observation delta.
     """
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = ENTITY_OBS_DIM

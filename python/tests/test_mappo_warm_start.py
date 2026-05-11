@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import torch
 
 from train.mappo import train_phase4_from_config

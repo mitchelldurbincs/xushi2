@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable
 
 import torch
 
@@ -13,7 +13,6 @@ from train.models import ActorCritic
 from train.phases import resolve_phase
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy_stats
-from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.logging import (
     format_human_event,
     log_checkpoint,
@@ -21,6 +20,7 @@ from train.ppo_recurrent.logging import (
     log_eval,
     log_update,
 )
+from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.ppo_recurrent.trainer import PPOTrainer
 from train.wandb_logger import make_logger
 

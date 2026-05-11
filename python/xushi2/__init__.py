@@ -35,13 +35,13 @@ AGENTS_PER_MATCH = _cpp.AGENTS_PER_MATCH
 TEAM_SIZE = _cpp.TEAM_SIZE
 
 __all__ = [
-    "Team",
-    "Role",
-    "HeroKind",
-    "Action",
-    "MatchConfig",
-    "Sim",
-    "TICK_HZ",
     "AGENTS_PER_MATCH",
     "TEAM_SIZE",
+    "TICK_HZ",
+    "Action",
+    "HeroKind",
+    "MatchConfig",
+    "Role",
+    "Sim",
+    "Team",
 ]

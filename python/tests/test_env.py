@@ -10,7 +10,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from xushi2 import xushi2_cpp as _cpp
 from xushi2.env import VALID_OPPONENT_BOTS, XushiEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 

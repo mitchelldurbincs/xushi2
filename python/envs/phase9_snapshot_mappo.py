@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -19,12 +19,11 @@ from xushi2.map_randomization import (
     randomized_wall_segments,
     sim_cfg_with_map_bounds,
 )
-from xushi2.obs_manifest import CRITIC_DIM
-from xushi2.obs_manifest import actor_field_slice, critic_field_slice
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
     normalize_world_for_team,
 )
+from xushi2.obs_manifest import CRITIC_DIM, actor_field_slice, critic_field_slice
 from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy
 
 __all__ = ["Phase9SnapshotMappoEnv"]
@@ -33,7 +32,7 @@ __all__ = ["Phase9SnapshotMappoEnv"]
 class Phase9SnapshotMappoEnv(gym.Env):
     """Phase-8 observation stack with a frozen snapshot driving Team B."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM

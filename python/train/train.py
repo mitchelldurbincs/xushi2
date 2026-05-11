@@ -40,7 +40,7 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
     if len(pass_a) != len(pass_b):
         print(f"[xushi2] MISMATCH: episode count {len(pass_a)} vs {len(pass_b)}")
         return 1
-    for ep_idx, (a, b) in enumerate(zip(pass_a, pass_b)):
+    for ep_idx, (a, b) in enumerate(zip(pass_a, pass_b, strict=False)):
         if a.final_tick != b.final_tick:
             print(
                 f"[xushi2] MISMATCH at episode={ep_idx}: "
@@ -53,7 +53,7 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
                 f"decision count {len(a.decision_hashes)} vs {len(b.decision_hashes)}"
             )
             return 1
-        for d_idx, (ha, hb) in enumerate(zip(a.decision_hashes, b.decision_hashes)):
+        for d_idx, (ha, hb) in enumerate(zip(a.decision_hashes, b.decision_hashes, strict=False)):
             if ha != hb:
                 print(
                     f"[xushi2] MISMATCH at episode={ep_idx} decision={d_idx}: "
@@ -134,7 +134,7 @@ def main() -> int:
             total = sum(len(r.decision_hashes) for r in pass_a)
             per_ep = len(pass_a[0].decision_hashes) if pass_a else 0
             print(
-                f"[xushi2] OK: {episodes} episodes × {per_ep} decisions "
+                f"[xushi2] OK: {episodes} episodes x {per_ep} decisions "
                 f"({total} hashes) all identical"
             )
         return rc

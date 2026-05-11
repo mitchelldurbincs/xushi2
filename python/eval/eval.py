@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-
-import numpy as np
+from contextlib import ExitStack
 
 from xushi2.env import VALID_OPPONENT_BOTS, XushiEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
@@ -43,44 +42,41 @@ def _dump_env_trajectory(
     env = XushiEnv(sim_cfg, opponent_bot=opponent_bot, learner_team=learner_team)
     obs, _ = env.reset(seed=seed)
 
-    obs_writer = None
-    reward_writer = None
-    obs_file = None
-    reward_file = None
-    if obs_path is not None:
-        obs_file = open(obs_path, "w", newline="")
-        obs_writer = csv.writer(obs_file)
-        obs_writer.writerow(["tick"] + [f"f{i}" for i in range(ACTOR_PHASE1_DIM)])
-    if reward_path is not None:
-        reward_file = open(reward_path, "w", newline="")
-        reward_writer = csv.writer(reward_file)
-        reward_writer.writerow(["tick", "step_reward_learner", "reward_team_a", "reward_team_b"])
+    with ExitStack() as stack:
+        obs_writer = None
+        reward_writer = None
+        if obs_path is not None:
+            obs_file = stack.enter_context(open(obs_path, "w", newline=""))
+            obs_writer = csv.writer(obs_file)
+            obs_writer.writerow(["tick", *(f"f{i}" for i in range(ACTOR_PHASE1_DIM))])
+        if reward_path is not None:
+            reward_file = stack.enter_context(open(reward_path, "w", newline=""))
+            reward_writer = csv.writer(reward_file)
+            reward_writer.writerow(
+                ["tick", "step_reward_learner", "reward_team_a", "reward_team_b"]
+            )
 
-    try:
-        # Act as a zero-action learner — this is a trajectory-recording
-        # smoke test, not a policy eval.
-        while True:
-            action = _zero_action()
-            obs, reward, terminated, truncated, info = env.step(action)
-            if obs_writer is not None:
-                obs_writer.writerow([info["tick"]] + obs.tolist())
-            if reward_writer is not None:
-                reward_writer.writerow(
-                    [
-                        info["tick"],
-                        reward,
-                        info["reward_team_a"],
-                        info["reward_team_b"],
-                    ]
-                )
-            if terminated or truncated:
-                break
-    finally:
-        if obs_file is not None:
-            obs_file.close()
-        if reward_file is not None:
-            reward_file.close()
-        env.close()
+        try:
+            # Act as a zero-action learner — this is a trajectory-recording
+            # smoke test, not a policy eval.
+            while True:
+                action = _zero_action()
+                obs, reward, terminated, truncated, info = env.step(action)
+                if obs_writer is not None:
+                    obs_writer.writerow([info["tick"], *obs.tolist()])
+                if reward_writer is not None:
+                    reward_writer.writerow(
+                        [
+                            info["tick"],
+                            reward,
+                            info["reward_team_a"],
+                            info["reward_team_b"],
+                        ]
+                    )
+                if terminated or truncated:
+                    break
+        finally:
+            env.close()
 
 
 def main() -> int:

@@ -7,7 +7,7 @@ averaging them into a single zero-sum scalar.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -23,12 +23,11 @@ from xushi2.map_randomization import (
     randomized_wall_segments,
     sim_cfg_with_map_bounds,
 )
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
-from xushi2.obs_manifest import critic_field_slice
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
     normalize_world_for_team,
 )
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
 from xushi2.self_play_schedule import SelfPlayMatch, SelfPlaySchedule
@@ -42,7 +41,7 @@ _AGENTS_PER_MATCH = _cpp.AGENTS_PER_MATCH
 class Phase11CurrentSelfplayMappoEnv(gym.Env):
     """3v3 current policy self-play with six controlled action rows."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = _AGENTS_PER_MATCH
     actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM

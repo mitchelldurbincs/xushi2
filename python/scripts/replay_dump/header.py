@@ -9,8 +9,8 @@ from xushi2.map_randomization import (
     randomized_map_bounds,
     randomized_wall_segments,
 )
-from xushi2.snapshot_policy import SnapshotLeague
 from xushi2.self_play_schedule import SelfPlaySchedule
+from xushi2.snapshot_policy import SnapshotLeague
 
 
 def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:

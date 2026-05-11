@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import numpy as np
+from typing import ClassVar
+
 import gymnasium as gym
+import numpy as np
 from gymnasium import spaces
 
 
@@ -20,7 +22,7 @@ class MemoryToyEnv(gym.Env):
           ``max(-2.0, -||action - target||_2)`` on the terminal step.
     """
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     def __init__(self, episode_length: int = 64, cue_visible_ticks: int = 4):
         super().__init__()

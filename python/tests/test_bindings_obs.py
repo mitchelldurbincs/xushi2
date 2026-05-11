@@ -175,7 +175,8 @@ def test_build_critic_obs_enemy_world_position_is_raw_team_b_spawn():
 def test_build_critic_obs_rejects_wrong_team_perspective():
     sim = _fresh_sim(team_size=3)
     buf = np.zeros(CRITIC_DIM, dtype=np.float32)
-    with pytest.raises(Exception):
+    # pybind11 surfaces this as RuntimeError or ValueError depending on path.
+    with pytest.raises((RuntimeError, ValueError, TypeError)):
         _cpp.build_critic_obs(sim, _cpp.Team.Neutral, buf)
 
 

@@ -71,9 +71,8 @@ is the invariants, not the exact signatures.
 from __future__ import annotations
 
 import copy
-from typing import Callable
+from collections.abc import Callable
 
-import pytest
 import torch
 
 from envs.memory_toy import MemoryToyEnv
@@ -81,9 +80,12 @@ from envs.memory_toy import MemoryToyEnv
 # These tests are expected to fail at import time until Task 6 lands the
 # module. The import is deliberately at module top so pytest surfaces a
 # clean ModuleNotFoundError for every test in this file at collection.
-from train.ppo_recurrent import PPOConfig, PPOTrainer  # noqa: E402
-from train.ppo_recurrent import ppo_updater, rollout_collector  # noqa: E402
-
+from train.ppo_recurrent import (
+    PPOConfig,
+    PPOTrainer,
+    ppo_updater,
+    rollout_collector,
+)
 
 # ---------------------------------------------------------------------------
 # Shared fixtures / helpers

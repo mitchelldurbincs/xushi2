@@ -6,7 +6,6 @@ import pytest
 from train.ppo_recurrent import PPOConfig, PPOTrainer
 from train.ppo_recurrent.orchestration import make_env_fn
 
-
 pytest.importorskip("xushi2.xushi2_cpp")
 
 from envs.phase3_ranger import Phase3RangerEnv

@@ -12,11 +12,10 @@ trailing partial segment).
 
 from __future__ import annotations
 
-import torch
 import pytest
+import torch
 
 from train.rollout_buffer import RolloutBuffer
-
 
 NUM_ENVS = 2
 ROLLOUT_LEN = 8
@@ -303,7 +302,7 @@ def test_gae_respects_done_boundary():
             h_init=h_init,
         )
 
-    advantages, returns = buf.compute_gae(
+    advantages, _returns = buf.compute_gae(
         last_values=torch.zeros(1),
         last_dones=torch.zeros(1),
     )
@@ -319,7 +318,7 @@ def test_gae_respects_done_boundary():
     delta_1 = 0.2 + gamma * (1.0 - 1.0) * 0.3 - 0.4
     A_1 = delta_1 + gamma * lam * (1.0 - 1.0) * A_2
     # A_1 must equal just delta_1 (no bootstrap from A_2 across boundary).
-    assert A_1 == pytest.approx(delta_1)
+    assert pytest.approx(delta_1) == A_1
     # Tick 0: delta_0 = r_0 + gamma*(1-done_0)*v_1 - v_0
     delta_0 = 0.1 + gamma * (1.0 - 0.0) * 0.4 - 0.5
     A_0 = delta_0 + gamma * lam * (1.0 - 0.0) * A_1
@@ -386,14 +385,8 @@ def test_iter_episode_minibatches_groups_by_episode():
     for t in range(8):
         done_vec = torch.tensor([done_schedule[0][t], done_schedule[1][t]])
         # Pick h_init for each env based on which segment tick t belongs to.
-        if t <= 3:
-            h_e0 = h_e0_s0
-        else:
-            h_e0 = h_e0_s1
-        if t <= 5:
-            h_e1 = h_e1_s0
-        else:
-            h_e1 = h_e1_s1
+        h_e0 = h_e0_s0 if t <= 3 else h_e0_s1
+        h_e1 = h_e1_s0 if t <= 5 else h_e1_s1
         h_init = torch.stack([h_e0, h_e1], dim=0)
         _add_one_tick(
             buf,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import gymnasium as gym
 import numpy as np
@@ -16,8 +16,7 @@ from xushi2.multi_enemy_obs import (
     map_bounds_from_sim_cfg,
     normalize_world_for_team,
 )
-from xushi2.obs_manifest import CRITIC_DIM, actor_field_slice
-from xushi2.obs_manifest import critic_field_slice
+from xushi2.obs_manifest import CRITIC_DIM, actor_field_slice, critic_field_slice
 
 __all__ = ["Phase7FogMappoEnv"]
 
@@ -25,7 +24,7 @@ __all__ = ["Phase7FogMappoEnv"]
 class Phase7FogMappoEnv(gym.Env):
     """3v3 MAPPO env with team-shared or per-agent diagnostic fog masking."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
@@ -96,7 +95,6 @@ class Phase7FogMappoEnv(gym.Env):
         critic[1:] = critic[0]
         flat = np.asarray(obs, dtype=np.float32).reshape(3, -1)
         visible = self._enemy_visibility_matrix(flat, critic)
-        own_pos = flat[:, actor_field_slice("own_position")]
         for row in range(3):
             for enemy_idx in range(3):
                 if visible[row, enemy_idx]:

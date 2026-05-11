@@ -14,15 +14,14 @@ from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.map_randomization import map_layout_hash
 from xushi2.obs_manifest import CRITIC_DIM
 from xushi2.runner import _build_config
-from xushi2.snapshot_policy import SnapshotLeague, SnapshotPool, SnapshotPolicy
-from xushi2.snapshot_retention import SnapshotRetention
 from xushi2.self_play_schedule import SelfPlaySchedule
+from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy, SnapshotPool
+from xushi2.snapshot_retention import SnapshotRetention
 
 
 def _write_snapshot(path: Path) -> None:
     with open(
         "../experiments/configs/phase8_random_map_probe.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -205,7 +204,6 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
     )
     with open(
         "../experiments/configs/phase8_random_map_probe.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -225,7 +223,6 @@ def test_phase9_env_uses_snapshot_opponent(tmp_path: Path) -> None:
     _write_snapshot(snapshot_path)
     with open(
         "../experiments/configs/phase9_snapshot_probe.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)

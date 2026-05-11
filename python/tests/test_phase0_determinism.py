@@ -23,7 +23,7 @@ SIM_CFG = {
         "respawn_ticks": 240,
     },
 }
-# round_length 30s × 30 Hz / action_repeat 3 = 300 decisions.
+# round_length 30s x 30 Hz / action_repeat 3 = 300 decisions.
 EXPECTED_DECISIONS = 300
 
 

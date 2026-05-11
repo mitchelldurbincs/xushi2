@@ -17,7 +17,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 _LOG2 = 0.6931471805599453
 
 

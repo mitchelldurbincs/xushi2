@@ -66,7 +66,6 @@ def test_eval_gate_reports_failures() -> None:
 def test_train_config_eval_gate_writes_artifact(tmp_path: Path) -> None:
     with open(
         "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -93,7 +92,6 @@ def test_train_config_eval_gate_writes_artifact(tmp_path: Path) -> None:
 def test_train_config_eval_gate_fails_run(tmp_path: Path) -> None:
     with open(
         "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)

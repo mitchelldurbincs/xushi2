@@ -45,7 +45,7 @@ See ``docs/memory_toy.md`` §"Hidden-state management rules".
 
 from __future__ import annotations
 
-from typing import Iterator
+from collections.abc import Iterator
 
 import torch
 
@@ -71,8 +71,8 @@ class RolloutBuffer:
         self.gae_lambda = float(gae_lambda)
         self.device = torch.device(device)
 
-        N, L, O, A, H = num_envs, rollout_len, obs_dim, action_dim, gru_hidden
-        self.obs = torch.zeros(N, L, O, device=self.device)
+        N, L, A, H = num_envs, rollout_len, action_dim, gru_hidden
+        self.obs = torch.zeros(N, L, obs_dim, device=self.device)
         self.action = torch.zeros(N, L, A, device=self.device)
         self.logprob = torch.zeros(N, L, device=self.device)
         self.reward = torch.zeros(N, L, device=self.device)

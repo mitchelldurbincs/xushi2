@@ -10,11 +10,10 @@ rationale.
 
 from __future__ import annotations
 
-from typing import Any
-
-import numpy as np
+from typing import Any, ClassVar
 
 import gymnasium as gym
+import numpy as np
 from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
@@ -23,7 +22,7 @@ from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
 
-__all__ = ["Phase4MappoEnv", "VALID_OPPONENT_BOTS"]
+__all__ = ["VALID_OPPONENT_BOTS", "Phase4MappoEnv"]
 
 VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
     {
@@ -42,7 +41,7 @@ _AIM_DELTA_LIMIT = float(np.pi / 4.0)
 class Phase4MappoEnv(gym.Env):
     """3v3 MAPPO env: per-agent obs/action, team-broadcast reward."""
 
-    metadata = {"render_modes": []}
+    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
     n_agents: int = 3
     actor_obs_dim: int = ACTOR_PHASE1_DIM
@@ -128,7 +127,7 @@ class Phase4MappoEnv(gym.Env):
             raise ValueError(f"action shape must be (3, >=6), got {action.shape}")
 
         actions = [_cpp.Action() for _ in range(_AGENTS_PER_MATCH)]
-        for slot, a in zip(self._own_slots, action):
+        for slot, a in zip(self._own_slots, action, strict=False):
             actions[slot] = self._action_to_cpp(a)
         opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._opponent_policy is not None:
@@ -146,7 +145,7 @@ class Phase4MappoEnv(gym.Env):
                     f"got {enemy_actions.shape}"
                 )
             enemy_actions = enemy_actions[:, :6]
-            for enemy_slot, enemy_action in zip(self._enemy_slots, enemy_actions):
+            for enemy_slot, enemy_action in zip(self._enemy_slots, enemy_actions, strict=False):
                 actions[enemy_slot] = self._action_to_cpp(enemy_action)
             opponent_actions[:] = enemy_actions
         else:
@@ -185,7 +184,7 @@ class Phase4MappoEnv(gym.Env):
         return self._actor_obs_buf.copy(), reward, terminated, truncated, info
 
     @staticmethod
-    def _action_to_cpp(a: np.ndarray) -> "_cpp.Action":
+    def _action_to_cpp(a: np.ndarray) -> _cpp.Action:
         a = np.asarray(a, dtype=np.float32).reshape(-1)
         if a.shape[0] < 6:
             raise ValueError(f"action must have at least 6 fields, got {a.shape}")
@@ -217,7 +216,9 @@ class Phase4MappoEnv(gym.Env):
         if self._sim is None:
             raise RuntimeError("reset() must be called before enemy_line_of_sight_mask()")
         mask = np.zeros(3, dtype=bool)
-        for i, (own_slot, enemy_slot) in enumerate(zip(self._own_slots, self._enemy_slots)):
+        for i, (own_slot, enemy_slot) in enumerate(
+            zip(self._own_slots, self._enemy_slots, strict=False)
+        ):
             if team_shared:
                 mask[i] = any(
                     bool(_cpp.observable_enemy_slots(self._sim, ally_slot)[enemy_slot])

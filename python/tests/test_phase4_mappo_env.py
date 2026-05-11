@@ -129,7 +129,7 @@ def test_per_agent_reward_sum_stays_finite_across_full_episode():
     cumulative_per_agent = np.zeros(3, dtype=np.float32)
     for _ in range(2000):
         action = np.zeros((3, 6), dtype=np.float32)
-        _, reward, term, trunc, info = env.step(action)
+        _, reward, term, trunc, _info = env.step(action)
         assert reward.shape == (3,)
         assert reward.dtype == np.float32
         assert np.all(np.isfinite(reward))

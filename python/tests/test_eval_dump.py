@@ -15,7 +15,6 @@ import pytest
 from eval import eval as eval_mod
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 
-
 _BASE_MECH_ARGS: list[str] = [
     "--revolver-damage-centi-hp",
     "7500",
@@ -29,7 +28,7 @@ _BASE_MECH_ARGS: list[str] = [
 
 
 def _run_eval(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.argv", ["xushi2-eval"] + argv)
+    monkeypatch.setattr("sys.argv", ["xushi2-eval", *argv])
     exit_code = eval_mod.main()
     assert exit_code == 0
 
@@ -39,8 +38,8 @@ def test_dump_obs_writes_csv_with_expected_columns(
 ) -> None:
     out_csv = tmp_path / "obs.csv"
     _run_eval(
-        _BASE_MECH_ARGS
-        + [
+        [
+            *_BASE_MECH_ARGS,
             "--dump-obs",
             str(out_csv),
             "--opponent-bot",
@@ -69,8 +68,8 @@ def test_dump_reward_writes_csv_with_expected_columns(
 ) -> None:
     out_csv = tmp_path / "reward.csv"
     _run_eval(
-        _BASE_MECH_ARGS
-        + [
+        [
+            *_BASE_MECH_ARGS,
             "--dump-reward",
             str(out_csv),
             "--opponent-bot",
@@ -97,9 +96,9 @@ def test_dump_obs_without_opponent_bot_errors(
     out_csv = tmp_path / "obs.csv"
     monkeypatch.setattr(
         "sys.argv",
-        ["xushi2-eval"]
-        + _BASE_MECH_ARGS
-        + [
+        [
+            "xushi2-eval",
+            *_BASE_MECH_ARGS,
             "--dump-obs",
             str(out_csv),
             "--round-length-seconds",

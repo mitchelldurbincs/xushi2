@@ -11,7 +11,6 @@ from train.mappo import compute_team_spirit
 from xushi2.obs_manifest import CRITIC_DIM
 from xushi2.vector_env import XushiAsyncVectorEnv, XushiVectorEnv
 
-
 # --- compute_team_spirit ramp ------------------------------------------
 
 
@@ -98,7 +97,7 @@ def test_xushi_async_vector_env_set_team_spirit_round_trips():
         # follow-up action; the ack itself proves the worker dispatched the
         # command. A subsequent step must still succeed.
         actions = np.zeros((2, 3, 6), dtype=env.single_action_space.dtype)
-        obs, reward, term, trunc, _critic, _infos = env.step(actions)
+        _obs, reward, _term, _trunc, _critic, _infos = env.step(actions)
         assert reward.shape == (2, 3)
     finally:
         env.close()

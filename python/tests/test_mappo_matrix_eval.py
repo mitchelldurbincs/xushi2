@@ -8,16 +8,18 @@ from pathlib import Path
 import torch
 import yaml
 
-from train.mappo import MappoActorCritic, make_mappo_config
-from train.mappo import _eval_outcome_counts
-from train.mappo import train_phase4_from_config
+from train.mappo import (
+    MappoActorCritic,
+    _eval_outcome_counts,
+    make_mappo_config,
+    train_phase4_from_config,
+)
 from train.phases import resolve_phase
 
 
 def _write_phase8_checkpoint(path: Path) -> None:
     with open(
         "../experiments/configs/phase8_random_map_probe.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -93,7 +95,6 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 ) -> None:
     with open(
         "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -122,7 +123,6 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:
     with open(
         "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
-        "r",
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
