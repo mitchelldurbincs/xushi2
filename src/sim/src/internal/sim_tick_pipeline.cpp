@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <xushi2/common/action_canon.hpp>
 #include <xushi2/common/assert.hpp>
 #include <xushi2/common/math.hpp>
 

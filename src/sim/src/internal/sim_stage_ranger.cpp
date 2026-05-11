@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include <xushi2/common/math.hpp>
+
 #include "sim_combat.h"
 #include "sim_movement_geometry.h"
 #include "sim_weapon_ranger.h"
