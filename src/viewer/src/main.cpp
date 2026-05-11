@@ -14,6 +14,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <charconv>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
@@ -142,6 +145,24 @@ std::optional<std::string> parse_kv_string(const std::string& s, const char* key
     return s.substr(start, end - start);
 }
 
+
+bool parse_float_token(std::string_view token, float& out) {
+#if defined(__cpp_lib_to_chars) && (__cpp_lib_to_chars >= 201611L)
+    const char* begin = token.data();
+    const char* end = token.data() + token.size();
+    const auto parsed = std::from_chars(begin, end, out);
+    return parsed.ec == std::errc{} && parsed.ptr == end;
+#else
+    std::string tmp(token);
+    char* parse_end = nullptr;
+    errno = 0;
+    const float value = std::strtof(tmp.c_str(), &parse_end);
+    if (parse_end != tmp.c_str() + tmp.size() || errno == ERANGE) return false;
+    out = value;
+    return true;
+#endif
+}
+
 std::vector<CoverMarker> parse_cover_markers(std::string_view s) {
     std::vector<CoverMarker> markers;
     std::size_t start = 0;
@@ -153,21 +174,25 @@ std::vector<CoverMarker> parse_cover_markers(std::string_view s) {
         const std::string_view token = s.substr(start, len);
         const auto colon = token.find(':');
         if (colon != std::string_view::npos) {
-            try {
-                const float x = std::stof(std::string(token.substr(0, colon)));
-                const auto radius_sep = token.find(':', colon + 1);
-                const float y = std::stof(std::string(
+            const auto radius_sep = token.find(':', colon + 1);
+            float x = 0.0F;
+            float y = 0.0F;
+            float radius = 1.0F;
+            const bool parsed_xy =
+                parse_float_token(token.substr(0, colon), x) &&
+                parse_float_token(
                     token.substr(
                         colon + 1,
                         radius_sep == std::string_view::npos
                             ? std::string_view::npos
-                            : radius_sep - colon - 1)));
-                const float radius =
-                    radius_sep == std::string_view::npos
-                        ? 1.0F
-                        : std::stof(std::string(token.substr(radius_sep + 1)));
+                            : radius_sep - colon - 1),
+                    y);
+            const bool parsed_radius =
+                radius_sep == std::string_view::npos ||
+                parse_float_token(token.substr(radius_sep + 1), radius);
+            if (parsed_xy && parsed_radius) {
                 markers.push_back(CoverMarker{xushi2::common::Vec2{x, y}, radius});
-            } catch (...) {
+            } else {
                 TraceLog(LOG_WARNING, "replay: skipping malformed cover marker");
             }
         }
@@ -185,18 +210,28 @@ std::vector<WallMarker> parse_wall_markers(std::string_view s) {
         const std::size_t len = (comma == std::string_view::npos)
             ? std::string_view::npos
             : comma - start;
-        const std::string text(s.substr(start, len));
-        float x1 = 0.0F;
-        float y1 = 0.0F;
-        float x2 = 0.0F;
-        float y2 = 0.0F;
-        float half_width = 0.25F;
-        if (std::sscanf(text.c_str(), "%f:%f:%f:%f:%f",
-                        &x1, &y1, &x2, &y2, &half_width) == 5) {
+        const std::string_view token = s.substr(start, len);
+        std::array<float, 5> values{0.0F, 0.0F, 0.0F, 0.0F, 0.25F};
+        std::size_t value_index = 0;
+        std::size_t token_start = 0;
+        bool malformed = false;
+        while (token_start <= token.size() && value_index < values.size()) {
+            const std::size_t sep = token.find(':', token_start);
+            const std::size_t part_len =
+                (sep == std::string_view::npos) ? std::string_view::npos : sep - token_start;
+            if (!parse_float_token(token.substr(token_start, part_len), values[value_index])) {
+                malformed = true;
+                break;
+            }
+            ++value_index;
+            if (sep == std::string_view::npos) break;
+            token_start = sep + 1;
+        }
+        if (!malformed && value_index == values.size() && token.find(':', token_start) == std::string_view::npos) {
             markers.push_back(WallMarker{
-                xushi2::common::Vec2{x1, y1},
-                xushi2::common::Vec2{x2, y2},
-                half_width,
+                xushi2::common::Vec2{values[0], values[1]},
+                xushi2::common::Vec2{values[2], values[3]},
+                values[4],
             });
         } else {
             TraceLog(LOG_WARNING, "replay: skipping malformed wall marker");
