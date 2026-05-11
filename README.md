@@ -2,14 +2,11 @@
 
 Deterministic 2D 3v3 control-point shooter simulator for multi-agent RL, with replay tooling and a lightweight viewer.
 
-## Status (May 8, 2026)
+## Project overview
 
-- Core C++ sim, Python bindings, replay format, and deterministic test coverage are in place.
-- Phase ladder is implemented through **Phase 11 probes** (current self-play + mixed current/snapshot/anchor league).
-- MAPPO stack supports centralized critic, entity/grid observations, fog modes, randomized maps, snapshot opponents, target-slot action probing, and sync/async vector env backends.
-- Current work is focused on **scaling/acceptance runs** (many phases are probe-complete but not yet fully gated at scale).
+Xushi2 combines a deterministic C++ simulation core with Python training/evaluation tooling for recurrent PPO/MAPPO experiments across a phased environment ladder.
 
-## Repo map
+## Quickstart
 
 - `src/sim/` — deterministic simulation core
 - `src/python_bindings/` — `xushi2_cpp` pybind module
@@ -75,15 +72,6 @@ ruff format .
 ruff check .
 ```
 
-## Key docs
+## Documentation
 
-- `docs/game_design.md`
-- `docs/rl_design.md`
-- `docs/observation_spec.md`
-- `docs/action_spec.md`
-- `docs/replay_format.md`
-- `docs/determinism_rules.md`
-
-## License
-
-TBD.
+See the structured docs index: [`docs/README.md`](docs/README.md).
