@@ -5,7 +5,7 @@
 
 ## Final numbers
 
-From `python -m train.train --config experiments/configs/phase3_ranger_objective_curriculum_warmstart_v3.yaml`:
+From `python -m train.train --config experiments/configs/phase3/legacy/phase3_ranger_objective_curriculum_warmstart_v3.yaml`:
 
 ```
 [phase3] recurrent_final=+9.688

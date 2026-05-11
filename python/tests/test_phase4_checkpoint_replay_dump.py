@@ -13,7 +13,7 @@ from train.phases import resolve_phase
 
 def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4_mappo_objective_probe.yaml",
+        "../experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:
@@ -491,7 +491,7 @@ def test_dump_replay_supports_phase11_current_selfplay_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase11_current_selfplay_probe.yaml",
+        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:
@@ -571,7 +571,7 @@ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     )
 
     with open(
-        "../experiments/configs/phase11_mixed_league_probe.yaml",
+        "../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:

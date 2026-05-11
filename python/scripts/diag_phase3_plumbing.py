@@ -54,7 +54,7 @@ from xushi2.env import XushiEnv
 from xushi2.obs_manifest import actor_field_slice
 
 
-_CONFIG_PATH = _REPO_ROOT / "experiments" / "configs" / "phase3_ranger_noop_probe.yaml"
+_CONFIG_PATH = _REPO_ROOT / "experiments" / "configs" / "phase3" / "probe" / "phase3_ranger_noop_probe.yaml"
 _CAP_ARRIVE_THRESHOLD = 0.05  # normalized distance — well inside 0.12 radius
 
 
