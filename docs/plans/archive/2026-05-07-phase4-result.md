@@ -35,10 +35,10 @@ multi-agent actor observations or the separate centralized critic buffer.
 - Added `python/xushi2/vector_env.py` and routed MAPPO rollout collection
   through the sync vector wrapper.
 - Added `phase: 4` registry and training entrypoint support.
-- Added `experiments/configs/phase4_mappo_smoke.yaml`.
-- Added `experiments/configs/phase4_mappo_objective_probe.yaml` for a compact
+- Added `experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml`.
+- Added `experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml` for a compact
   BC-warm-start plus one-update MAPPO objective-path run.
-- Added `experiments/configs/phase4_mappo_basic.yaml` for the first real
+- Added `experiments/configs/phase4/baseline/phase4_mappo_basic.yaml` for the first real
   scripted-opponent diagnostic run.
 - Fixed `ckpt_final` selection so a BC pretrain eval can remain the best
   checkpoint if the first PPO/MAPPO update regresses.
@@ -65,9 +65,9 @@ Verification:
 - `python/.venv/bin/python -m pytest tests -q` -> 199 passed after the
   Phase-5/6/7/8/9 probe additions.
 - `ctest --test-dir build --output-on-failure` -> 94 passed.
-- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase4_mappo_smoke.yaml`
+- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml`
   -> two MAPPO smoke updates completed and wrote checkpoints.
-- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase4_mappo_objective_probe.yaml`
+- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml`
   -> BC eval won 2/2 vs `noop` with mean reward +13.000 and mean score
   1.40/0.00; one conservative-LR MAPPO update then completed and post-update
   eval also won 2/2 with mean reward +13.000 and mean score 1.47/0.00.

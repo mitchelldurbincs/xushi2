@@ -21,11 +21,11 @@
 **Why:** Cheapest possible intervention. Same `phase4_mappo_basic.yaml` config but with the shaping coefs that `phase4_mappo_objective_probe.yaml` (a known-working config) uses: `distance_shaping_coef: 0.05, on_point_shaping_coef: 0.02`.
 
 **Files:**
-- Create: `experiments/configs/phase4_mappo_basic_v2.yaml`
+- Create: `experiments/configs/phase4/legacy/phase4_mappo_basic_v2.yaml`
 
 **Step 1: Read the baseline config**
 
-Read `experiments/configs/phase4_mappo_basic.yaml`. Note these will be the differences:
+Read `experiments/configs/phase4/baseline/phase4_mappo_basic.yaml`. Note these will be the differences:
 - `env.reward.distance_shaping_coef: 0.005` → `0.05`
 - `env.reward.on_point_shaping_coef: <absent>` → `0.02`
 - `run.output_dir: runs/phase4_mappo_basic` → `runs/phase4_mappo_basic_v2`
@@ -34,14 +34,14 @@ Everything else (model, ppo, team_spirit ramp, opponent=basic, sim) stays identi
 
 **Step 2: Write the new config**
 
-Create `experiments/configs/phase4_mappo_basic_v2.yaml` with the exact contents of `phase4_mappo_basic.yaml`, modified per Step 1.
+Create `experiments/configs/phase4/legacy/phase4_mappo_basic_v2.yaml` with the exact contents of `phase4_mappo_basic.yaml`, modified per Step 1.
 
 **Step 3: Verify the config parses**
 
 Run from `python/`:
 
 ```
-py -3.13 -c "import yaml; print(yaml.safe_load(open('../experiments/configs/phase4_mappo_basic_v2.yaml'))['env']['reward'])"
+py -3.13 -c "import yaml; print(yaml.safe_load(open('../experiments/configs/phase4/legacy/phase4_mappo_basic_v2.yaml'))['env']['reward'])"
 ```
 
 Expected output: `{'distance_shaping_coef': 0.05, 'on_point_shaping_coef': 0.02}`.
@@ -57,7 +57,7 @@ Expected output: `{'distance_shaping_coef': 0.05, 'on_point_shaping_coef': 0.02}
 Run from `python/`:
 
 ```
-py -3.13 -m train.train --config ../experiments/configs/phase4_mappo_basic_v2.yaml
+py -3.13 -m train.train --config ../experiments/configs/phase4/legacy/phase4_mappo_basic_v2.yaml
 ```
 
 This is a long-running task (~30 minutes on the user's machine for 250 updates). Do not run in background — we want to see the eval lines stream live so we can hit the decision gate at update 100.
@@ -133,7 +133,7 @@ Add to the end of this plan:
 
 ## Result
 
-Rung 1 succeeded. New Phase 4 baseline: `experiments/configs/phase4_mappo_basic_v2.yaml`.
+Rung 1 succeeded. New Phase 4 baseline: `experiments/configs/phase4/legacy/phase4_mappo_basic_v2.yaml`.
 Final eval: wins=N/10, mean_reward=X, score=A/B. See `runs/phase4_mappo_basic_v2/mappo/ckpt_final.pt`.
 ```
 
@@ -146,7 +146,7 @@ Final eval: wins=N/10, mean_reward=X, score=A/B. See `runs/phase4_mappo_basic_v2
 **Why:** Rung 1 alone didn't break the impasse. The likely missing ingredient is a non-random initialization that's already cap-pointed. BC pretrain (200 steps imitating a "walk to objective" expert) gives PPO a starting policy that has at least *some* baseline cap-seeking behavior, so the shaping signal has something to grade.
 
 **Files:**
-- Create: `experiments/configs/phase4_mappo_basic_v3.yaml`
+- Create: `experiments/configs/phase4/legacy/phase4_mappo_basic_v3.yaml`
 
 **Step 1: Write the new config**
 
@@ -170,7 +170,7 @@ The `bc_*` keys are read by `python/train/mappo.py:1404-1412` (already wired). N
 **Step 2: Verify the config parses**
 
 ```
-py -3.13 -c "import yaml; cfg=yaml.safe_load(open('../experiments/configs/phase4_mappo_basic_v3.yaml')); print('bc_steps=', cfg['run'].get('bc_pretrain_steps')); print('shaping=', cfg['env']['reward'])"
+py -3.13 -c "import yaml; cfg=yaml.safe_load(open('../experiments/configs/phase4/legacy/phase4_mappo_basic_v3.yaml')); print('bc_steps=', cfg['run'].get('bc_pretrain_steps')); print('shaping=', cfg['env']['reward'])"
 ```
 
 Expected: `bc_steps= 200` and `shaping= {'distance_shaping_coef': 0.05, 'on_point_shaping_coef': 0.02}`.
@@ -184,7 +184,7 @@ Same procedure as Task 2.
 **Step 1: Start training**
 
 ```
-py -3.13 -m train.train --config ../experiments/configs/phase4_mappo_basic_v3.yaml
+py -3.13 -m train.train --config ../experiments/configs/phase4/legacy/phase4_mappo_basic_v3.yaml
 ```
 
 **Step 2: Watch for the BC pretrain log**
@@ -222,7 +222,7 @@ build\bin\Release\xushi2_viewer.exe --replay replays\phase4_basic_v3_final.repla
 
 ## Result
 
-Rung 2 succeeded. New Phase 4 baseline: `experiments/configs/phase4_mappo_basic_v3.yaml`.
+Rung 2 succeeded. New Phase 4 baseline: `experiments/configs/phase4/legacy/phase4_mappo_basic_v3.yaml`.
 BC pretrain was the necessary ingredient. Final eval: wins=N/10, mean_reward=X, score=A/B.
 ```
 
@@ -418,7 +418,7 @@ Watch for evals where `wins > 0` and `score > 0`. If by update 100 we're still a
 ## Task 10: Rung 3b — warm-start from noop checkpoint into basic-opponent run
 
 **Files:**
-- Create: `experiments/configs/phase4_mappo_basic_v4.yaml`
+- Create: `experiments/configs/phase4/legacy/phase4_mappo_basic_v4.yaml`
 
 **Step 1: Write the config**
 
@@ -434,7 +434,7 @@ Keep `opponent_bot: basic`. The warm-start gives us a non-random policy that alr
 **Step 2: Run training**
 
 ```
-py -3.13 -m train.train --config ../experiments/configs/phase4_mappo_basic_v4.yaml
+py -3.13 -m train.train --config ../experiments/configs/phase4/legacy/phase4_mappo_basic_v4.yaml
 ```
 
 Expect to see `warm-start: loaded ...` in the log within the first few lines.
@@ -473,7 +473,7 @@ build\bin\Release\xushi2_viewer.exe --replay replays\phase4_basic_v4_final.repla
 
 Rung 3 succeeded. New Phase 4 baseline: two-stage warm-start from
 `runs/phase4_mappo_basic_noop_pretrain/mappo/ckpt_final.pt` into
-`experiments/configs/phase4_mappo_basic_v4.yaml`.
+`experiments/configs/phase4/legacy/phase4_mappo_basic_v4.yaml`.
 Final eval: wins=N/10, mean_reward=X, score=A/B.
 ```
 

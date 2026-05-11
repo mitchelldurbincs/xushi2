@@ -5,7 +5,7 @@
 
 ## Final numbers
 
-From `py -3.13 -m train.train --config ../experiments/configs/phase3_ranger_noop_probe.yaml` (interrupted at update 275/500 — converged well before the stop point):
+From `py -3.13 -m train.train --config ../experiments/configs/phase3/probe/phase3_ranger_noop_probe.yaml` (interrupted at update 275/500 — converged well before the stop point):
 
 ```
 [phase3/recurrent] eval@ 25=+1.650  win=0/20  score=A0.00/B0.00  draw=20/20
@@ -51,7 +51,7 @@ Before these fixes, evals were stuck at `draw=20/20, score=A0.00/B0.00, eval_rew
 3. **Zero-shaping-density around the objective** — `rl_design.md` §5 shaping is event-triggered (score ticks, kills, deaths). Agent at random init never triggers any event, so there's no gradient toward the cap. **Fix:** added optional `distance_shaping_coef` (default 0.0, probe uses 0.01) in `python/xushi2/reward.py`. Per-decision symmetrized `-coef × (dist_A − dist_B)` gives a dense gradient toward the cap without breaking the zero-sum invariant.
 
 Files changed:
-- `experiments/configs/phase3_ranger_noop_probe.yaml` — probe YAML with `kill_bonus: 0.0`, `distance_shaping_coef: 0.01`, `score_per_second: 0.1`.
+- `experiments/configs/phase3/probe/phase3_ranger_noop_probe.yaml` — probe YAML with `kill_bonus: 0.0`, `distance_shaping_coef: 0.01`, `score_per_second: 0.1`.
 - `python/xushi2/reward.py` — new `distance_shaping_coef` kwarg on `RewardCalculator`, preallocated obs buffers behind the feature flag, added to `raw_a` before `raw_b = -raw_a` symmetrization.
 - `python/tests/test_reward.py` — three new tests (validation, default-zero behavior, end-to-end smoke test through `XushiEnv`).
 - `python/scripts/diag_phase3_plumbing.py` — plumbing diagnostic used to prove the issue was *not* a wiring bug before touching reward.
@@ -83,7 +83,7 @@ Real root cause was the exploration–reward mismatch described above.
 
 ## Next step
 
-The real Phase 3 gate is `experiments/configs/phase3_ranger_recurrent.yaml` — the `basic`-opponent run. Considerations for that run:
+The real Phase 3 gate is `experiments/configs/phase3/baseline/phase3_ranger_recurrent.yaml` — the `basic`-opponent run. Considerations for that run:
 
 1. **Re-enable `kill_bonus`** (default 0.25). Against `basic`, combat is genuine, not a distractor; a learner that can shoot back is a prerequisite for contesting the cap.
 2. **Keep `distance_shaping_coef: 0.01` or reduce to 0.005.** Basic walks to cap on its own, so contesting is denser; the shaping may no longer need to be the dominant signal. But reducing to zero likely reintroduces the exploration problem.

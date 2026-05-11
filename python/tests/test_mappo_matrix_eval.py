@@ -92,7 +92,7 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase4_mappo_smoke.yaml",
+        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
         "r",
         encoding="utf-8",
     ) as fh:
@@ -121,7 +121,7 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4_mappo_smoke.yaml",
+        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
         "r",
         encoding="utf-8",
     ) as fh:

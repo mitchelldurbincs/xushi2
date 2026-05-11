@@ -814,8 +814,8 @@ Expected: all pass.
 **Why:** Update the actual training config so `team_spirit` is enabled for any future Phase 4 run. Also functions as the integration smoke for the whole stack.
 
 **Files:**
-- Modify: `experiments/configs/phase4_mappo_basic.yaml` — add the 3 team_spirit fields under `ppo:`.
-- Modify: `experiments/configs/phase4_mappo_smoke.yaml` — same, with τ=1.0 (collapses to team mean → exercises the path without changing the smoke's expected behavior since smoke is 2 updates).
+- Modify: `experiments/configs/phase4/baseline/phase4_mappo_basic.yaml` — add the 3 team_spirit fields under `ppo:`.
+- Modify: `experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml` — same, with τ=1.0 (collapses to team mean → exercises the path without changing the smoke's expected behavior since smoke is 2 updates).
 
 **Step 1: Update `phase4_mappo_basic.yaml`**
 
@@ -832,7 +832,7 @@ team_spirit_ramp_fraction: 0.3
 **Step 2: Run a 2-update smoke to verify nothing crashes**
 
 ```
-cd python && python -m train.train --config ../experiments/configs/phase4_mappo_smoke.yaml
+cd python && python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 ```
 
 Expected: smoke completes, `metrics["team_spirit"]` is in the logged output, run dir contains `ckpt_final.pt`.

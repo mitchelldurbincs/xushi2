@@ -18,7 +18,7 @@ What changed:
   randomized bounds, cover circles, wall segments, layout hashes, partial
   entity-grid observations, and native line-of-sight masking.
 - Added Phase-11 registry/entrypoint support and
-  `experiments/configs/phase11_current_selfplay_probe.yaml`, a one-update
+  `experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml`, a one-update
   current-vs-current smoke config.
 - Extended `run.matrix_eval` so Phase-11 can emit a current-vs-current
   self-play row after training. The compact Phase-11 config writes
@@ -28,7 +28,7 @@ What changed:
   snapshot/anchor matches drive Team B from a frozen checkpoint or anchor bot
   and return a dynamic `loss_mask=1,1,1,0,0,0` so PPO only trains Team A for
   those steps.
-- Added `experiments/configs/phase11_mixed_league_probe.yaml`, which samples
+- Added `experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml`, which samples
   compact `current` / `snapshot` / `anchor` matches and writes Phase-11 matrix
   rows for selfplay, a noop bot anchor, and a frozen Phase-8 snapshot.
 - Extended `python/scripts/dump_replay.py` so Phase-11 checkpoints dump all six
@@ -46,12 +46,12 @@ Verification:
   -> 7 passed.
 - `python/.venv/bin/python -m pytest tests/test_phase4_checkpoint_replay_dump.py::test_dump_replay_supports_phase11_current_selfplay_checkpoint tests/test_phase4_checkpoint_replay_dump.py::test_dump_replay_supports_phase11_mixed_snapshot_checkpoint tests/test_phase11_current_selfplay.py tests/test_mappo_loss_mask.py tests/test_phase_registry.py::test_phase11_mixed_league_probe_config_is_compact -q`
   -> 16 passed.
-- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase11_current_selfplay_probe.yaml`
+- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml`
   -> one MAPPO update completed, eval drew 1/1 with mean reward +0.000, wrote
   `python/runs/phase11_current_selfplay_probe/mappo/ckpt_final.pt`, and wrote
   `python/runs/phase11_current_selfplay_probe/mappo/matrix_eval.json` with a
   current-selfplay draw row.
-- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase11_mixed_league_probe.yaml`
+- `python/.venv/bin/python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml`
   -> one MAPPO update completed, eval drew 1/1, wrote
   `python/runs/phase11_mixed_league_probe/mappo/ckpt_final.pt`, and wrote
   `python/runs/phase11_mixed_league_probe/mappo/matrix_eval.json` with

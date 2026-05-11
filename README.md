@@ -41,16 +41,16 @@ pip install -e .
 
 ```bash
 # Phase 4 MAPPO smoke
-python -m train.train --config ../experiments/configs/phase4_mappo_smoke.yaml
+python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
 # Phase 4 async vector-env smoke
-python -m train.train --config ../experiments/configs/phase4_mappo_async_smoke.yaml
+python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_async_smoke.yaml
 
 # Phase 11 current self-play probe
-python -m train.train --config ../experiments/configs/phase11_current_selfplay_probe.yaml
+python -m train.train --config ../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml
 
 # Phase 11 mixed league probe
-python -m train.train --config ../experiments/configs/phase11_mixed_league_probe.yaml
+python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
 ```
 
 ## Key docs

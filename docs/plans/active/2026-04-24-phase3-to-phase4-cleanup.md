@@ -66,7 +66,7 @@ The README still says "Phase 1b." Phase 2 cleared and Phase 3 is running. Specs 
 python -m train.train --config experiments/configs/phase2_memory_toy.yaml
 
 # Phase 3 C++ sim + recurrent PPO (smoke):
-python -m train.train --config experiments/configs/phase3_ranger_smoke.yaml
+python -m train.train --config experiments/configs/phase3/smoke/phase3_ranger_smoke.yaml
 ```
 
 Keep the pointer to `docs/rl_design.md` §6.
