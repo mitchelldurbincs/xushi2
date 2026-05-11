@@ -43,18 +43,24 @@ endif()
 
 include(FetchContent)
 
+set(FETCHCONTENT_TRY_FIND_PACKAGE_MODE ALWAYS)
+
 # --- raylib (viewer only) ---
 if(XUSHI2_BUILD_VIEWER)
-    set(RAYLIB_VERSION 5.0)
-    FetchContent_Declare(
-        raylib
-        GIT_REPOSITORY https://github.com/raysan5/raylib.git
-        GIT_TAG        ${RAYLIB_VERSION}
-        GIT_SHALLOW    TRUE
-    )
-    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(raylib)
+    find_package(raylib 5.0 QUIET)
+    if(NOT raylib_FOUND)
+        set(RAYLIB_VERSION 5.0)
+        FetchContent_Declare(
+            raylib
+            GIT_REPOSITORY https://github.com/raysan5/raylib.git
+            GIT_TAG        ${RAYLIB_VERSION}
+            GIT_SHALLOW    TRUE
+            FIND_PACKAGE_ARGS 5.0
+        )
+        set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(BUILD_GAMES    OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(raylib)
+    endif()
 endif()
 
 # --- pybind11 (Python module only) ---
@@ -70,14 +76,18 @@ endif()
 
 # --- GoogleTest (tests only) ---
 if(XUSHI2_BUILD_TESTS)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        v1.14.0
-        GIT_SHALLOW    TRUE
-    )
-    set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-    FetchContent_MakeAvailable(googletest)
+    find_package(GTest QUIET)
+    if(NOT GTest_FOUND)
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG        v1.14.0
+            GIT_SHALLOW    TRUE
+            FIND_PACKAGE_ARGS NAMES GTest
+        )
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+    endif()
     enable_testing()
 endif()
 
