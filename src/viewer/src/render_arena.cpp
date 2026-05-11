@@ -3,17 +3,17 @@
 #include <algorithm>
 #include <cmath>
 
+#include "viewer_layout.hpp"
+
 ArenaTransform make_arena_transform(const xushi2::sim::MapBounds& m) {
-    constexpr int kArenaPx = 720;
-    constexpr int kArenaMarginPx = 12;
     const float ww = m.max_x - m.min_x;
     const float wh = m.max_y - m.min_y;
-    const float inner = static_cast<float>(kArenaPx - 2 * kArenaMarginPx);
+    const float inner = static_cast<float>(viewer_layout::kArenaPx - 2 * viewer_layout::kArenaMarginPx);
     const float scale = inner / std::max(ww, wh);
     return ArenaTransform{
         m.min_x, m.min_y, ww, wh, scale,
-        static_cast<float>(kArenaMarginPx),
-        static_cast<float>(kArenaMarginPx),
+        static_cast<float>(viewer_layout::kArenaMarginPx),
+        static_cast<float>(viewer_layout::kArenaMarginPx),
     };
 }
 
