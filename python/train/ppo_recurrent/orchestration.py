@@ -22,6 +22,7 @@ from train.ppo_recurrent.logging import (
     log_update,
 )
 from train.ppo_recurrent.trainer import PPOTrainer
+from train.wandb_logger import make_logger
 
 _CKPT_SCHEMA_VERSION = 1
 
@@ -275,6 +276,21 @@ def _run_variant(
 
     variant_name = "recurrent" if use_recurrence else "feedforward"
 
+    wandb_logger = make_logger(
+        config=config,
+        run_name=f"{phase_label}_{variant_name}_seed{variant_seed}",
+        run_config={
+            "phase": phase_label,
+            "variant": variant_name,
+            "seed": variant_seed,
+            "total_updates": total_updates,
+            "eval_every": eval_every,
+            "eval_episodes": eval_episodes,
+            "ppo": asdict(ppo_cfg) if hasattr(ppo_cfg, "__dataclass_fields__") else dict(ppo_cfg.__dict__),
+        },
+        tags=[phase_label, variant_name, "ppo_recurrent"],
+    )
+
     init_ckpt = run_cfg.get("init_from_checkpoint")
     if init_ckpt:
         _load_init_checkpoint(trainer.model, init_ckpt, ckpt_cfg["model"])
@@ -318,6 +334,10 @@ def _run_variant(
                     metrics=metrics,
                 )
                 print(format_human_event(update_record), flush=True)
+                wandb_logger.log(
+                    {f"train/{k}": float(v) for k, v in metrics.items()},
+                    step=update_idx,
+                )
 
             if update_idx % eval_every == 0 or update_idx == total_updates:
                 eval_stats = evaluate_policy_stats(
@@ -336,6 +356,27 @@ def _run_variant(
                     eval_stats=eval_stats,
                 )
                 print(format_human_event(eval_record), flush=True)
+                _eval_scalar_keys = (
+                    "mean_reward",
+                    "wins",
+                    "losses",
+                    "draws",
+                    "terminated",
+                    "truncated",
+                    "episodes",
+                    "mean_final_tick",
+                    "mean_team_a_score",
+                    "mean_team_b_score",
+                    "mean_team_a_kills",
+                    "mean_team_b_kills",
+                )
+                wandb_logger.log(
+                    {
+                        f"eval/{k}": float(getattr(eval_stats, k))
+                        for k in _eval_scalar_keys
+                    },
+                    step=update_idx,
+                )
                 if last_eval > (best_eval + early_stop_min_delta):
                     best_eval = last_eval
                     best_update = update_idx
@@ -385,6 +426,7 @@ def _run_variant(
         envs = getattr(trainer, "envs", None)
         if envs is not None:
             envs.close()
+        wandb_logger.finish()
 
     # ckpt_final.pt holds the best-eval snapshot (per the note above).
     # If no eval ever ran (total_updates < eval_every and not aligned to

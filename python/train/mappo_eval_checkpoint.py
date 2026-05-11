@@ -14,6 +14,7 @@ from train.mappo_model import MappoActorCritic, MappoConfig, MappoEvalStats, com
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
 from train.ppo_recurrent.lr_schedule import lr_for_update
+from train.wandb_logger import make_logger
 from xushi2.mappo_eval_gate import check_eval_gate
 from xushi2.mappo_matrix_gate import check_matrix_gate
 from xushi2.snapshot_retention import SnapshotRetention
@@ -417,6 +418,23 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
 
     trainer = MappoTrainer(env_fn, cfg, seed=seed_base)
 
+    wandb_logger = make_logger(
+        config=config,
+        run_name=f"{phase_label}_mappo_seed{seed_base}",
+        run_config={
+            "phase": int(phase),
+            "phase_label": phase_label,
+            "variant": "mappo",
+            "seed": int(seed_base),
+            "total_updates": total_updates,
+            "eval_every": eval_every,
+            "eval_episodes": eval_episodes,
+            "mappo": dict(cfg.__dict__),
+            "env": dict(ckpt_env_cfg),
+        },
+        tags=[f"phase{int(phase)}", phase_label, "mappo"],
+    )
+
     # Warm-start: optionally load a previously-trained checkpoint into the
     # newly-constructed trainer's model. Used by the Phase 4 cap-training
     # escalation (docs/plans/2026-05-08-phase4-cap-training-escalation.md)
@@ -467,6 +485,10 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 f"{eval_stats.mean_team_b_score:.2f}",
                 flush=True,
             )
+            wandb_logger.log(
+                {f"bc_eval/{k}": float(v) for k, v in _eval_stats_dict(eval_stats).items()},
+                step=0,
+            )
         for update_idx in range(1, total_updates + 1):
             lr = lr_for_update(
                 update_idx,
@@ -487,6 +509,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             trainer.set_team_spirit(tau)
             metrics = trainer.update(trainer.collect_rollout())
             metrics["team_spirit"] = tau
+            wandb_logger.log(
+                {f"train/{k}": float(v) for k, v in metrics.items()},
+                step=update_idx,
+            )
+            wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
             if update_idx % int(run_cfg.get("log_every", 1)) == 0:
                 print(
                     f"[{phase_label}/mappo] update={update_idx}/{total_updates} "
@@ -530,6 +557,10 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"{eval_stats.mean_team_b_kills:.1f}",
                     flush=True,
                 )
+                wandb_logger.log(
+                    {f"eval/{k}": float(v) for k, v in _eval_stats_dict(eval_stats).items()},
+                    step=update_idx,
+                )
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())
@@ -568,6 +599,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     )
     finally:
         trainer.close()
+        wandb_logger.finish()
     final_state = best_state if best_state is not None else trainer.model.state_dict()
     torch.save(
         {
