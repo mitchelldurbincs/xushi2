@@ -169,7 +169,7 @@ def test_phase11_current_selfplay_builds_per_agent_team_critic_obs() -> None:
 
 def test_phase11_config_enables_six_agent_value_per_agent_mappo() -> None:
     with open(
-        "../experiments/configs/phase11_current_selfplay_probe.yaml",
+        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:
@@ -187,7 +187,7 @@ def test_phase11_config_enables_six_agent_value_per_agent_mappo() -> None:
 
 def test_phase11_current_selfplay_train_runs_one_update(tmp_path) -> None:
     with open(
-        "../experiments/configs/phase11_current_selfplay_probe.yaml",
+        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:
@@ -203,7 +203,7 @@ def test_phase11_current_selfplay_train_runs_one_update(tmp_path) -> None:
 
 def test_phase11_anchor_league_train_runs_one_update(tmp_path) -> None:
     with open(
-        "../experiments/configs/phase11_current_selfplay_probe.yaml",
+        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
         "r",
         encoding="utf-8",
     ) as fh:

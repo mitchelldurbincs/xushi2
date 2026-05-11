@@ -362,7 +362,7 @@ Latest-vs-latest only produces cyclic strategies and catastrophic forgetting. Ol
 
 Conservative by intent. MAPPO-paper findings that drove these: keep PPO clip well under 0.2, limit epochs on hard problems, normalize values, avoid aggressive minibatching on on-policy data.
 
-The table above targets the Phase 4+ MAPPO configuration at scaled training; Phase 3 runs single-agent recurrent PPO with the same hyperparameter profile minus the centralized critic. Several parameters have phase-specific overrides for the short-horizon Phase 1–3 ladder (see `experiments/configs/phase3_ranger_recurrent.yaml`):
+The table above targets the Phase 4+ MAPPO configuration at scaled training; Phase 3 runs single-agent recurrent PPO with the same hyperparameter profile minus the centralized critic. Several parameters have phase-specific overrides for the short-horizon Phase 1–3 ladder (see `experiments/configs/phase3/baseline/phase3_ranger_recurrent.yaml`):
 
 - **γ = 0.99 for Phase 1–3** short-horizon episodes (30 s rounds ≈ 100 decisions; 0.99 gives effective horizon ≈ 100). Ramp to γ = 0.997 at Phase 4+ when round length grows.
 - **RNN hidden size = 64 for Phase 1–3** flat-obs runs (31-dim obs, shorter memory horizon). Scale up toward 256 with observation complexity at Phase 5+ and to 512 if underfitting.

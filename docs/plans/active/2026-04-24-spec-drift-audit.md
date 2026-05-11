@@ -6,7 +6,7 @@
 **Scope of "code":**
 - Reward: `python/xushi2/reward.py`
 - PPO trainer: `python/train/ppo_recurrent/{trainer,losses,config,orchestration,lr_schedule}.py`, `python/train/rollout_buffer.py`
-- Phase-3 run config: `experiments/configs/phase3_ranger_recurrent.yaml`
+- Phase-3 run config: `experiments/configs/phase3/baseline/phase3_ranger_recurrent.yaml`
 - Observations: `src/sim/src/actor_obs.cpp`, `src/sim/src/critic_obs.cpp`, `src/sim/src/obs_utils.cpp`, `python/xushi2/obs_manifest.py`, `src/sim/include/xushi2/sim/obs.h`
 - Actions: `src/common/include/xushi2/common/types.h`, `src/common/include/xushi2/common/action_canon.hpp`, `python/xushi2/env.py`
 

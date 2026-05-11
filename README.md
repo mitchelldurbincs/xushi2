@@ -8,7 +8,30 @@ Xushi2 combines a deterministic C++ simulation core with Python training/evaluat
 
 ## Quickstart
 
-### Build + test (C++)
+- `src/sim/` — deterministic simulation core
+- `src/python_bindings/` — `xushi2_cpp` pybind module
+- `src/viewer/` — replay/debug viewer
+- `python/xushi2/` — env wrappers, obs/reward adapters, vector envs
+- `python/train/` — recurrent PPO/MAPPO training stack
+- `python/envs/` — phase-specific envs (Phase 3/4/5/6/7/8/9/10/11)
+- `experiments/configs/` — training configs
+- `docs/` — specs, design docs, plans/results
+
+## Recommended commands (Makefile)
+
+```bash
+make build-cpp
+make test-cpp
+make py-install
+make train-smoke
+make format
+make lint
+make clean
+```
+
+## Advanced: underlying raw commands
+
+### C++ build + test
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -29,10 +52,24 @@ pip install -e .
 
 ```bash
 # Phase 4 MAPPO smoke
-python -m train.train --config ../experiments/configs/phase4_mappo_smoke.yaml
+python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
+
+# Phase 4 async vector-env smoke
+python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_async_smoke.yaml
 
 # Phase 11 current self-play probe
-python -m train.train --config ../experiments/configs/phase11_current_selfplay_probe.yaml
+python -m train.train --config ../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml
+
+# Phase 11 mixed league probe
+python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
+```
+
+### Python quality tools
+
+```bash
+cd python
+ruff format .
+ruff check .
 ```
 
 ## Documentation
