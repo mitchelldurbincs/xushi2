@@ -12,7 +12,9 @@
       "Bash(echo \"launched PID $!\")",
       "Bash(Select-String -Pattern \"_make_phase|partial|gymnasium|_phase_task_spec|_load_init_checkpoint|_save_checkpoint\" -SimpleMatch)",
       "Bash(Get-ChildItem -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "Bash(cmake --build build --target test_golden_replay --config Release)",
+      "Bash(XUSHI2_DUMP_GOLDEN=1 ./build/tests/Release/test_golden_replay.exe)"
     ]
   }
 }
