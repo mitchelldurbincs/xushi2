@@ -33,6 +33,12 @@ option(XUSHI2_BUILD_PYTHON_MODULE "Build the pybind11 Python module"   ON)
 option(XUSHI2_BUILD_TESTS         "Build unit / integration tests"     ON)
 option(XUSHI2_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors"  OFF)
 
+# Static libs (xushi2_sim, xushi2_bots) are linked into the pybind11 shared
+# module, so they must be position-independent on ELF platforms.
+if(XUSHI2_BUILD_PYTHON_MODULE)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 if(XUSHI2_WARNINGS_AS_ERRORS)
     if(MSVC)
         add_compile_options(/WX)
