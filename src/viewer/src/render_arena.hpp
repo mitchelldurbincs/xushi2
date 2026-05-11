@@ -2,8 +2,7 @@
 
 #include <raylib.h>
 
-#include <xushi2/common/types.hpp>
-#include <xushi2/common/vec2.hpp>
+#include <xushi2/common/types.h>
 #include <xushi2/sim/sim.h>
 
 #include "render_types.hpp"
