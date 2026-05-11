@@ -5,6 +5,7 @@ from typing import Callable
 import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn as nn
 
 from train.mappo_model import MappoActorCritic, MappoConfig, _OWN_POSITION_SLICE
 from xushi2.entity_obs import entity_obs_self_position

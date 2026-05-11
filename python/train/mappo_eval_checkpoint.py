@@ -10,7 +10,13 @@ import numpy as np
 import torch
 
 from train.mappo_bc_pretrain import bc_pretrain_walk_to_objective
-from train.mappo_model import MappoActorCritic, MappoConfig, MappoEvalStats, compute_team_spirit
+from train.mappo_model import (
+    MappoActorCritic,
+    MappoConfig,
+    MappoEvalStats,
+    _eval_outcome_counts,
+    compute_team_spirit,
+)
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
 from train.ppo_recurrent.lr_schedule import lr_for_update
