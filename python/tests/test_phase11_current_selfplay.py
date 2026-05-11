@@ -104,9 +104,7 @@ def test_phase11_anchor_match_masks_team_b_and_uses_bot_actions() -> None:
         assert info["anchor_bot"] == "noop"
         assert info["loss_mask"].tolist() == [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
 
-        _obs, _reward, _term, _trunc, step_info = env.step(
-            np.ones((6, 6), dtype=np.float32)
-        )
+        _obs, _reward, _term, _trunc, step_info = env.step(np.ones((6, 6), dtype=np.float32))
         assert step_info["opponent_actions"].shape == (3, 6)
         assert np.allclose(step_info["opponent_actions"], 0.0)
     finally:
@@ -127,9 +125,7 @@ def test_phase11_snapshot_match_masks_team_b_and_loads_snapshot(
         sim_cfg,
         reward_cfg={"distance_shaping_coef": 0.01},
         map_randomization={"span_jitter": 2.0, "min_span": 45.0, "max_span": 55.0},
-        self_play_schedule={
-            "weights": {"current": 0.0, "snapshot": 1.0, "anchor": 0.0}
-        },
+        self_play_schedule={"weights": {"current": 0.0, "snapshot": 1.0, "anchor": 0.0}},
         snapshot_league={
             "latest": [str(snapshot_path)],
             "weights": {"latest": 1.0},
@@ -142,9 +138,7 @@ def test_phase11_snapshot_match_masks_team_b_and_loads_snapshot(
         assert info["snapshot_group"] == "latest"
         assert info["loss_mask"].tolist() == [1.0, 1.0, 1.0, 0.0, 0.0, 0.0]
 
-        _obs, _reward, _term, _trunc, step_info = env.step(
-            np.zeros((6, 6), dtype=np.float32)
-        )
+        _obs, _reward, _term, _trunc, step_info = env.step(np.zeros((6, 6), dtype=np.float32))
         assert step_info["opponent_actions"].shape == (3, 6)
     finally:
         env.close()

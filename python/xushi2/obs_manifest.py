@@ -42,58 +42,52 @@ __all__ = [
 # Order here IS the on-tensor order — do not reorder without updating the
 # C++ obs builder in the same commit.
 ACTOR_PHASE1_FIELDS: tuple[tuple[str, int, str], ...] = (
-    ("own_hp",                  1, "own HP / max, in [0, 1]"),
-    ("own_velocity",            2, "own velocity in team-frame, [-1, 1]"),
-    ("own_aim_unit",            2, "own aim direction as (sin, cos)"),
-    ("own_position",            2, "own position in team-frame, normalized to map extent"),
-    ("own_ammo",                1, "own revolver magazine / 6"),
-    ("own_reloading",           1, "1 if currently reloading else 0"),
-    ("own_combat_roll_cd",      1, "ability_1 cooldown ticks / max, in [0, 1]"),
-    ("enemy_alive",             1, "1 if enemy is alive (no fog at Phase 1) else 0"),
-    ("enemy_respawn_timer",     1, "enemy respawn ticks remaining / max, 0 when alive"),
+    ("own_hp", 1, "own HP / max, in [0, 1]"),
+    ("own_velocity", 2, "own velocity in team-frame, [-1, 1]"),
+    ("own_aim_unit", 2, "own aim direction as (sin, cos)"),
+    ("own_position", 2, "own position in team-frame, normalized to map extent"),
+    ("own_ammo", 1, "own revolver magazine / 6"),
+    ("own_reloading", 1, "1 if currently reloading else 0"),
+    ("own_combat_roll_cd", 1, "ability_1 cooldown ticks / max, in [0, 1]"),
+    ("enemy_alive", 1, "1 if enemy is alive (no fog at Phase 1) else 0"),
+    ("enemy_respawn_timer", 1, "enemy respawn ticks remaining / max, 0 when alive"),
     ("enemy_relative_position", 2, "enemy minus own position in team-frame"),
-    ("enemy_hp",                1, "enemy HP / max; 0 if dead"),
-    ("enemy_velocity",          2, "enemy velocity in team-frame; (0,0) if dead"),
-    ("objective_owner_onehot",  3, "objective owner: {Neutral, Us, Them}"),
-    ("cap_team_onehot",         3, "team currently accruing capture progress: {None, Us, Them}"),
-    ("cap_progress",            1, "capture progress in [0, 1]"),
-    ("contested",               1, "1 if both teams present on point"),
-    ("objective_unlocked",      1, "1 if past the 15s unlock window"),
-    ("own_score",               1, "own score ticks / win threshold"),
-    ("enemy_score",             1, "enemy score ticks / win threshold"),
-    ("self_on_point",           1, "1 if viewer is inside the objective circle"),
-    ("enemy_on_point",          1, "1 if enemy is inside the objective circle (public, no fog at Phase 1)"),
-    ("round_timer",             1, "sim ticks elapsed / round length ticks"),
+    ("enemy_hp", 1, "enemy HP / max; 0 if dead"),
+    ("enemy_velocity", 2, "enemy velocity in team-frame; (0,0) if dead"),
+    ("objective_owner_onehot", 3, "objective owner: {Neutral, Us, Them}"),
+    ("cap_team_onehot", 3, "team currently accruing capture progress: {None, Us, Them}"),
+    ("cap_progress", 1, "capture progress in [0, 1]"),
+    ("contested", 1, "1 if both teams present on point"),
+    ("objective_unlocked", 1, "1 if past the 15s unlock window"),
+    ("own_score", 1, "own score ticks / win threshold"),
+    ("enemy_score", 1, "enemy score ticks / win threshold"),
+    ("self_on_point", 1, "1 if viewer is inside the objective circle"),
+    ("enemy_on_point", 1, "1 if enemy is inside the objective circle (public, no fog at Phase 1)"),
+    ("round_timer", 1, "sim ticks elapsed / round length ticks"),
 )
 
 ACTOR_PHASE1_DIM: int = sum(width for _, width, _ in ACTOR_PHASE1_FIELDS)
 
 
 def _slot_prefixed_actor_fields(slot: int) -> tuple[tuple[str, int, str], ...]:
-    return tuple(
-        (f"slot{slot}/{name}", width, desc)
-        for name, width, desc in ACTOR_PHASE1_FIELDS
-    )
+    return tuple((f"slot{slot}/{name}", width, desc) for name, width, desc in ACTOR_PHASE1_FIELDS)
 
 
 _ENEMY_WORLD_BLOCK: tuple[tuple[str, int, str], ...] = (
-    ("world_position",   2, "world-frame position (no mirror)"),
-    ("world_velocity",   2, "world-frame velocity (no mirror)"),
-    ("world_aim_unit",   2, "world-frame aim as (sin, cos) of aim_angle"),
-    ("hp_normalized",    1, "health_centi_hp / max_health_centi_hp"),
-    ("alive_flag",       1, "1 if alive else 0"),
-    ("respawn_timer",    1, "(respawn_tick - now) / max, 0 when alive"),
-    ("ammo",             1, "weapon.magazine / kRangerMaxMagazine"),
-    ("reloading",        1, "1 if reloading else 0"),
-    ("combat_roll_cd",   1, "cd_ability_1 / max"),
+    ("world_position", 2, "world-frame position (no mirror)"),
+    ("world_velocity", 2, "world-frame velocity (no mirror)"),
+    ("world_aim_unit", 2, "world-frame aim as (sin, cos) of aim_angle"),
+    ("hp_normalized", 1, "health_centi_hp / max_health_centi_hp"),
+    ("alive_flag", 1, "1 if alive else 0"),
+    ("respawn_timer", 1, "(respawn_tick - now) / max, 0 when alive"),
+    ("ammo", 1, "weapon.magazine / kRangerMaxMagazine"),
+    ("reloading", 1, "1 if reloading else 0"),
+    ("combat_roll_cd", 1, "cd_ability_1 / max"),
 )
 
 
 def _enemy_block_for(enemy: int) -> tuple[tuple[str, int, str], ...]:
-    return tuple(
-        (f"enemy{enemy}/{name}", width, desc)
-        for name, width, desc in _ENEMY_WORLD_BLOCK
-    )
+    return tuple((f"enemy{enemy}/{name}", width, desc) for name, width, desc in _ENEMY_WORLD_BLOCK)
 
 
 # Phase-4 critic obs layout. Mirrors C++ `kCriticObsDim` in obs.h.
@@ -107,9 +101,9 @@ CRITIC_FIELDS: tuple[tuple[str, int, str], ...] = (
     ("cap_progress_ticks", 1, "raw capture progress tick counter"),
     ("team_a_score_ticks", 1, "raw Team A score tick counter"),
     ("team_b_score_ticks", 1, "raw Team B score tick counter"),
-    ("tick_raw",           1, "raw match tick counter"),
-    ("seed_hi",            1, "top 32 bits of seed, normalized [-1, 1]"),
-    ("seed_lo",            1, "bottom 32 bits of seed, normalized [-1, 1]"),
+    ("tick_raw", 1, "raw match tick counter"),
+    ("seed_hi", 1, "top 32 bits of seed, normalized [-1, 1]"),
+    ("seed_lo", 1, "bottom 32 bits of seed, normalized [-1, 1]"),
 )
 
 CRITIC_DIM: int = sum(width for _, width, _ in CRITIC_FIELDS)
@@ -137,9 +131,7 @@ def actor_field_slice(name: str) -> slice:
     try:
         return _ACTOR_SLICES[name]
     except KeyError as exc:
-        raise KeyError(
-            f"unknown actor obs field {name!r}; known: {sorted(_ACTOR_SLICES)}"
-        ) from exc
+        raise KeyError(f"unknown actor obs field {name!r}; known: {sorted(_ACTOR_SLICES)}") from exc
 
 
 def critic_field_slice(name: str) -> slice:

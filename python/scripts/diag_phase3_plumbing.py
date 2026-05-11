@@ -54,7 +54,9 @@ from xushi2.env import XushiEnv
 from xushi2.obs_manifest import actor_field_slice
 
 
-_CONFIG_PATH = _REPO_ROOT / "experiments" / "configs" / "phase3" / "probe" / "phase3_ranger_noop_probe.yaml"
+_CONFIG_PATH = (
+    _REPO_ROOT / "experiments" / "configs" / "phase3" / "probe" / "phase3_ranger_noop_probe.yaml"
+)
 _CAP_ARRIVE_THRESHOLD = 0.05  # normalized distance — well inside 0.12 radius
 
 
@@ -165,9 +167,9 @@ def _still_action(_obs: np.ndarray) -> dict[str, Any]:
 
 SCENARIOS: dict[str, Callable[[np.ndarray], dict[str, Any]]] = {
     "sit_on_cap": _sit_on_cap_action,
-    "homing":     _homing_action,
-    "forward":    _forward_action,
-    "still":      _still_action,
+    "homing": _homing_action,
+    "forward": _forward_action,
+    "still": _still_action,
 }
 
 
@@ -256,7 +258,7 @@ def run_scenario(name: str, policy, seed: int, decisions: int) -> None:
         cap_bucket = int(cap * 4)
         if cap_bucket != prev_cap_bucket:
             print(
-                f"  [tick {tick:4d}] cap_progress crossed {prev_cap_bucket*0.25:.2f} "
+                f"  [tick {tick:4d}] cap_progress crossed {prev_cap_bucket * 0.25:.2f} "
                 f"-> now {cap:.2f}  (on_pt={on_pt}, unlocked={unlocked})"
             )
             prev_cap_bucket = cap_bucket
@@ -270,10 +272,7 @@ def run_scenario(name: str, policy, seed: int, decisions: int) -> None:
             prev_kills_a = kills_a
 
         if not first_score_logged and score_a > 0.0:
-            print(
-                f"  [tick {tick:4d}] score_a first > 0: {score_a:.2f} "
-                f"(owner={owner})"
-            )
+            print(f"  [tick {tick:4d}] score_a first > 0: {score_a:.2f} (owner={owner})")
             first_score_logged = True
         prev_score_a = score_a
 
@@ -321,9 +320,7 @@ def main() -> None:
     decisions = int(seconds * 30 / 3) + 20  # +20 safety margin past truncation
 
     seed = 0xD1CEDA7A
-    scenarios = (
-        {args.only: SCENARIOS[args.only]} if args.only else SCENARIOS
-    )
+    scenarios = {args.only: SCENARIOS[args.only]} if args.only else SCENARIOS
     for name, policy in scenarios.items():
         run_scenario(name, policy, seed=seed, decisions=decisions)
 

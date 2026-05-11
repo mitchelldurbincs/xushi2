@@ -14,6 +14,7 @@ from xushi2.vector_env import XushiAsyncVectorEnv, XushiVectorEnv
 
 # --- compute_team_spirit ramp ------------------------------------------
 
+
 def test_team_spirit_at_start_is_initial():
     assert compute_team_spirit(
         update=1, total=1000, initial=0.3, final=1.0, ramp_fraction=0.3
@@ -56,6 +57,7 @@ def test_team_spirit_default_off_returns_zero_throughout():
 
 # --- vector wrapper propagation ----------------------------------------
 
+
 def _phase4_env_fn():
     return Phase4MappoEnv(
         sim_cfg={
@@ -76,9 +78,7 @@ def _phase4_env_fn():
 
 
 def test_xushi_vector_env_set_team_spirit_propagates_sync():
-    env = XushiVectorEnv(
-        [_phase4_env_fn, _phase4_env_fn], critic_obs_dim=CRITIC_DIM
-    )
+    env = XushiVectorEnv([_phase4_env_fn, _phase4_env_fn], critic_obs_dim=CRITIC_DIM)
     try:
         env.reset(seed=0)
         env.set_team_spirit(0.7)
@@ -89,9 +89,7 @@ def test_xushi_vector_env_set_team_spirit_propagates_sync():
 
 
 def test_xushi_async_vector_env_set_team_spirit_round_trips():
-    env = XushiAsyncVectorEnv(
-        [_phase4_env_fn, _phase4_env_fn], critic_obs_dim=CRITIC_DIM
-    )
+    env = XushiAsyncVectorEnv([_phase4_env_fn, _phase4_env_fn], critic_obs_dim=CRITIC_DIM)
     try:
         env.reset(seed=0)
         # Async setter must complete (acks from each worker) without raising.
@@ -99,9 +97,7 @@ def test_xushi_async_vector_env_set_team_spirit_round_trips():
         # No way to inspect worker state directly without round-tripping a
         # follow-up action; the ack itself proves the worker dispatched the
         # command. A subsequent step must still succeed.
-        actions = np.zeros(
-            (2, 3, 6), dtype=env.single_action_space.dtype
-        )
+        actions = np.zeros((2, 3, 6), dtype=env.single_action_space.dtype)
         obs, reward, term, trunc, _critic, _infos = env.step(actions)
         assert reward.shape == (2, 3)
     finally:

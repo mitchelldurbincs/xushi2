@@ -48,9 +48,9 @@ __all__ = ["XushiEnv", "VALID_OPPONENT_BOTS"]
 # Must match the bot names exposed by the C++ layer. Matching the set
 # allowed by xushi2.runner so one failure mode (typo) fails the same
 # way in both entry points.
-VALID_OPPONENT_BOTS: frozenset[str] = frozenset({
-    "walk_to_objective", "hold_and_shoot", "basic", "noop"
-})
+VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
+    {"walk_to_objective", "hold_and_shoot", "basic", "noop"}
+)
 
 _TEAM_A_RANGER_SLOT = 0
 _TEAM_B_RANGER_SLOT = 3
@@ -88,8 +88,7 @@ class XushiEnv(gym.Env):
 
         if opponent_bot not in VALID_OPPONENT_BOTS:
             raise ValueError(
-                f"unknown opponent_bot {opponent_bot!r}; "
-                f"valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
             )
         if learner_team not in ("A", "B"):
             raise ValueError(f"learner_team must be 'A' or 'B', got {learner_team!r}")
@@ -98,12 +97,8 @@ class XushiEnv(gym.Env):
         self._opponent_bot = opponent_bot
         self._learner_team_str = learner_team
         self._learner_team = _cpp.Team.A if learner_team == "A" else _cpp.Team.B
-        self._learner_slot = (
-            _TEAM_A_RANGER_SLOT if learner_team == "A" else _TEAM_B_RANGER_SLOT
-        )
-        self._opponent_slot = (
-            _TEAM_B_RANGER_SLOT if learner_team == "A" else _TEAM_A_RANGER_SLOT
-        )
+        self._learner_slot = _TEAM_A_RANGER_SLOT if learner_team == "A" else _TEAM_B_RANGER_SLOT
+        self._opponent_slot = _TEAM_B_RANGER_SLOT if learner_team == "A" else _TEAM_A_RANGER_SLOT
 
         self._sim: _cpp.Sim | None = None
         self._reward_cfg = dict(reward_cfg or {})
@@ -112,18 +107,21 @@ class XushiEnv(gym.Env):
         # Observation buffer, reused across steps — zero-copy into C++.
         self._obs_buf = np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
 
-        self.action_space = spaces.Dict({
-            "move_x":       spaces.Box(-1.0, 1.0, shape=(), dtype=np.float32),
-            "move_y":       spaces.Box(-1.0, 1.0, shape=(), dtype=np.float32),
-            "aim_delta":    spaces.Box(
-                -np.pi / 4.0, np.pi / 4.0, shape=(), dtype=np.float32),
-            "primary_fire": spaces.Discrete(2),
-            "ability_1":    spaces.Discrete(2),
-            "ability_2":    spaces.Discrete(2),
-        })
+        self.action_space = spaces.Dict(
+            {
+                "move_x": spaces.Box(-1.0, 1.0, shape=(), dtype=np.float32),
+                "move_y": spaces.Box(-1.0, 1.0, shape=(), dtype=np.float32),
+                "aim_delta": spaces.Box(-np.pi / 4.0, np.pi / 4.0, shape=(), dtype=np.float32),
+                "primary_fire": spaces.Discrete(2),
+                "ability_1": spaces.Discrete(2),
+                "ability_2": spaces.Discrete(2),
+            }
+        )
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf,
-            shape=(ACTOR_PHASE1_DIM,), dtype=np.float32,
+            low=-np.inf,
+            high=np.inf,
+            shape=(ACTOR_PHASE1_DIM,),
+            dtype=np.float32,
         )
 
     # --- Gymnasium API ---
@@ -166,12 +164,8 @@ class XushiEnv(gym.Env):
         r_a, r_b = self._reward_calc.step(self._sim)
         step_reward = r_a if self._learner_team_str == "A" else r_b
 
-        terminated = bool(self._sim.episode_over) and (
-            self._sim.winner != _cpp.Team.Neutral
-        )
-        truncated = bool(self._sim.episode_over) and (
-            self._sim.winner == _cpp.Team.Neutral
-        )
+        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
+        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
 
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
@@ -195,8 +189,11 @@ class XushiEnv(gym.Env):
         }
 
         return (
-            self._obs_buf.copy(), float(step_reward),
-            bool(terminated), bool(truncated), info,
+            self._obs_buf.copy(),
+            float(step_reward),
+            bool(terminated),
+            bool(truncated),
+            info,
         )
 
     def close(self) -> None:
@@ -206,12 +203,12 @@ class XushiEnv(gym.Env):
 
     def _action_from_dict(self, a: dict[str, Any]) -> _cpp.Action:
         act = _cpp.Action()
-        act.move_x       = float(a["move_x"])
-        act.move_y       = float(a["move_y"])
-        act.aim_delta    = float(a["aim_delta"])
+        act.move_x = float(a["move_x"])
+        act.move_y = float(a["move_y"])
+        act.aim_delta = float(a["aim_delta"])
         act.primary_fire = bool(a["primary_fire"])
-        act.ability_1    = bool(a["ability_1"])
-        act.ability_2    = bool(a["ability_2"])
+        act.ability_1 = bool(a["ability_1"])
+        act.ability_2 = bool(a["ability_2"])
         # target_slot stays 0 — not used pre-Phase 10.
         return act
 
@@ -224,12 +221,12 @@ class XushiEnv(gym.Env):
         else:
             winner_str = "Neutral"
         return {
-            "tick":         int(self._sim.tick),
-            "state_hash":   int(self._sim.state_hash),
+            "tick": int(self._sim.tick),
+            "state_hash": int(self._sim.state_hash),
             "team_a_score": float(self._sim.team_a_score),
             "team_b_score": float(self._sim.team_b_score),
             "team_a_kills": int(self._sim.team_a_kills),
             "team_b_kills": int(self._sim.team_b_kills),
-            "winner":       winner_str,
+            "winner": winner_str,
             "learner_team": self._learner_team_str,
         }

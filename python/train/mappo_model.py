@@ -154,8 +154,7 @@ class MappoActorCritic(nn.Module):
         elif cfg.obs_encoder == "entity_attention":
             if cfg.obs_dim != ENTITY_OBS_DIM:
                 raise ValueError(
-                    f"entity_attention obs_dim must be {ENTITY_OBS_DIM}, "
-                    f"got {cfg.obs_dim}"
+                    f"entity_attention obs_dim must be {ENTITY_OBS_DIM}, got {cfg.obs_dim}"
                 )
             if (
                 cfg.entity_token_count != ENTITY_TOKEN_COUNT
@@ -185,13 +184,11 @@ class MappoActorCritic(nn.Module):
             )
             if cfg.obs_dim != expected_obs_dim:
                 raise ValueError(
-                    f"entity_attention_grid obs_dim must be {expected_obs_dim}, "
-                    f"got {cfg.obs_dim}"
+                    f"entity_attention_grid obs_dim must be {expected_obs_dim}, got {cfg.obs_dim}"
                 )
             if cfg.entity_token_count <= 0 or cfg.entity_token_dim != ENTITY_TOKEN_DIM:
                 raise ValueError(
-                    "entity_attention_grid token shape must match "
-                    f"(positive, {ENTITY_TOKEN_DIM})"
+                    f"entity_attention_grid token shape must match (positive, {ENTITY_TOKEN_DIM})"
                 )
             if cfg.grid_channels != GRID_CHANNELS or cfg.grid_size != GRID_SIZE:
                 raise ValueError(
@@ -230,13 +227,9 @@ class MappoActorCritic(nn.Module):
         self.actor_mean_head = nn.Linear(cfg.head_hidden, cfg.continuous_action_dim)
         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
         self.actor_target_head = (
-            nn.Linear(cfg.head_hidden, cfg.target_action_dim)
-            if cfg.target_action_dim > 0
-            else None
+            nn.Linear(cfg.head_hidden, cfg.target_action_dim) if cfg.target_action_dim > 0 else None
         )
-        self.log_std = nn.Parameter(
-            torch.ones(cfg.continuous_action_dim) * cfg.action_log_std_init
-        )
+        self.log_std = nn.Parameter(torch.ones(cfg.continuous_action_dim) * cfg.action_log_std_init)
         self.critic = nn.Sequential(
             nn.Linear(cfg.critic_obs_dim, cfg.head_hidden),
             nn.ReLU(),
@@ -247,9 +240,7 @@ class MappoActorCritic(nn.Module):
 
     def init_hidden(self, batch_size: int) -> torch.Tensor:
         p = next(self.parameters())
-        return torch.zeros(
-            batch_size, self.cfg.gru_hidden, device=p.device, dtype=p.dtype
-        )
+        return torch.zeros(batch_size, self.cfg.gru_hidden, device=p.device, dtype=p.dtype)
 
     def policy_outputs(
         self, obs: torch.Tensor, h: torch.Tensor
@@ -266,9 +257,7 @@ class MappoActorCritic(nn.Module):
         mean = self.actor_mean_head(features)
         logits = self.actor_binary_head(features)
         target_logits = (
-            self.actor_target_head(features)
-            if self.actor_target_head is not None
-            else None
+            self.actor_target_head(features) if self.actor_target_head is not None else None
         )
         return mean, self.log_std, logits, target_logits, h_next
 
@@ -362,5 +351,3 @@ class MappoActorCritic(nn.Module):
             pieces.append(target_logits.argmax(dim=-1).to(obs.dtype).unsqueeze(-1))
         action = torch.cat(pieces, dim=-1)
         return action, h_next
-
-

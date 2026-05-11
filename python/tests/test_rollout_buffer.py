@@ -72,8 +72,14 @@ def test_buffer_fills_and_retrieves_in_order():
         value = torch.tensor([float(e * 10 + t) * 0.02 for e in range(NUM_ENVS)])
         done = _zeros_done()
         buf.add(
-            tick=t, obs=obs, action=action, logprob=logprob,
-            reward=reward, value=value, done=done, h_init=h_init,
+            tick=t,
+            obs=obs,
+            action=action,
+            logprob=logprob,
+            reward=reward,
+            value=value,
+            done=done,
+            h_init=h_init,
         )
 
     for t in range(ROLLOUT_LEN):
@@ -103,8 +109,13 @@ def test_h_init_persists_within_segment():
     zeros_1d = torch.zeros(NUM_ENVS)
     for t in range(5):
         buf.add(
-            tick=t, obs=zeros_obs, action=zeros_act, logprob=zeros_1d,
-            reward=zeros_1d, value=zeros_1d, done=_zeros_done(),
+            tick=t,
+            obs=zeros_obs,
+            action=zeros_act,
+            logprob=zeros_1d,
+            reward=zeros_1d,
+            value=zeros_1d,
+            done=_zeros_done(),
             h_init=h_segment,
         )
 
@@ -129,8 +140,13 @@ def test_h_init_resets_to_zeros_after_done():
     # Ticks 0..2 — in segment with h_pre, done=False.
     for t in range(3):
         buf.add(
-            tick=t, obs=zeros_obs, action=zeros_act, logprob=zeros_1d,
-            reward=zeros_1d, value=zeros_1d, done=_zeros_done(),
+            tick=t,
+            obs=zeros_obs,
+            action=zeros_act,
+            logprob=zeros_1d,
+            reward=zeros_1d,
+            value=zeros_1d,
+            done=_zeros_done(),
             h_init=h_pre,
         )
 
@@ -139,8 +155,13 @@ def test_h_init_resets_to_zeros_after_done():
     # segment).
     done_t3 = torch.tensor([1.0, 0.0])
     buf.add(
-        tick=3, obs=zeros_obs, action=zeros_act, logprob=zeros_1d,
-        reward=zeros_1d, value=zeros_1d, done=done_t3,
+        tick=3,
+        obs=zeros_obs,
+        action=zeros_act,
+        logprob=zeros_1d,
+        reward=zeros_1d,
+        value=zeros_1d,
+        done=done_t3,
         h_init=h_pre,
     )
     torch.testing.assert_close(buf.h_init[0, 3], h_pre[0])
@@ -157,13 +178,19 @@ def test_h_init_resets_to_zeros_after_done():
         dtype=torch.float32,
     )
     buf.add(
-        tick=4, obs=zeros_obs, action=zeros_act, logprob=zeros_1d,
-        reward=zeros_1d, value=zeros_1d, done=_zeros_done(),
+        tick=4,
+        obs=zeros_obs,
+        action=zeros_act,
+        logprob=zeros_1d,
+        reward=zeros_1d,
+        value=zeros_1d,
+        done=_zeros_done(),
         h_init=h_caller_at_4,
     )
 
     torch.testing.assert_close(
-        buf.h_init[0, 4], torch.zeros(GRU_HIDDEN),
+        buf.h_init[0, 4],
+        torch.zeros(GRU_HIDDEN),
     )
     # Env 1 was never reset; its h_init at tick 4 is whatever the caller
     # passed in (the previous segment's h).
@@ -191,8 +218,13 @@ def test_gae_matches_hand_computed_values():
     returns = advantages + values
     """
     buf = RolloutBuffer(
-        num_envs=1, rollout_len=4, obs_dim=1, action_dim=1,
-        gru_hidden=1, gamma=0.99, gae_lambda=0.95,
+        num_envs=1,
+        rollout_len=4,
+        obs_dim=1,
+        action_dim=1,
+        gru_hidden=1,
+        gamma=0.99,
+        gae_lambda=0.95,
     )
 
     rewards = [1.0, 0.0, 0.0, 1.0]
@@ -203,14 +235,19 @@ def test_gae_matches_hand_computed_values():
     h_init = torch.zeros(1, 1)
     for t in range(4):
         buf.add(
-            tick=t, obs=zeros_obs, action=zeros_act, logprob=z,
+            tick=t,
+            obs=zeros_obs,
+            action=zeros_act,
+            logprob=z,
             reward=torch.tensor([rewards[t]]),
             value=torch.tensor([values[t]]),
-            done=torch.zeros(1), h_init=h_init,
+            done=torch.zeros(1),
+            h_init=h_init,
         )
 
     advantages, returns = buf.compute_gae(
-        last_values=torch.zeros(1), last_dones=torch.zeros(1),
+        last_values=torch.zeros(1),
+        last_dones=torch.zeros(1),
     )
 
     gamma, lam = 0.99, 0.95
@@ -238,8 +275,13 @@ def test_gae_respects_done_boundary():
     computed as if starting fresh from tick 2.
     """
     buf = RolloutBuffer(
-        num_envs=1, rollout_len=4, obs_dim=1, action_dim=1,
-        gru_hidden=1, gamma=0.99, gae_lambda=0.95,
+        num_envs=1,
+        rollout_len=4,
+        obs_dim=1,
+        action_dim=1,
+        gru_hidden=1,
+        gamma=0.99,
+        gae_lambda=0.95,
     )
 
     rewards = [0.1, 0.2, 0.3, 0.4]
@@ -251,7 +293,10 @@ def test_gae_respects_done_boundary():
     h_init = torch.zeros(1, 1)
     for t in range(4):
         buf.add(
-            tick=t, obs=zeros_obs, action=zeros_act, logprob=z,
+            tick=t,
+            obs=zeros_obs,
+            action=zeros_act,
+            logprob=z,
             reward=torch.tensor([rewards[t]]),
             value=torch.tensor([values[t]]),
             done=torch.tensor([dones[t]]),
@@ -259,7 +304,8 @@ def test_gae_respects_done_boundary():
         )
 
     advantages, returns = buf.compute_gae(
-        last_values=torch.zeros(1), last_dones=torch.zeros(1),
+        last_values=torch.zeros(1),
+        last_dones=torch.zeros(1),
     )
 
     gamma, lam = 0.99, 0.95
@@ -280,7 +326,10 @@ def test_gae_respects_done_boundary():
 
     expected_adv = torch.tensor([[A_0, A_1, A_2, A_3]], dtype=torch.float32)
     torch.testing.assert_close(
-        advantages, expected_adv, atol=1e-6, rtol=1e-5,
+        advantages,
+        expected_adv,
+        atol=1e-6,
+        rtol=1e-5,
     )
 
     # Explicit: advantage at tick 1 is just delta_1 (no leak from tick 2).
@@ -289,15 +338,20 @@ def test_gae_respects_done_boundary():
     # (Validated above by constructing A_2 without any reference to tick 1.)
 
 
-def _add_one_tick(buf, t, env_count, obs_dim, action_dim, gru_hidden,
-                  done_vec, h_init):
+def _add_one_tick(buf, t, env_count, obs_dim, action_dim, gru_hidden, done_vec, h_init):
     """Helper: fill tick `t` with deterministic placeholder data."""
     zeros_obs = torch.zeros(env_count, obs_dim)
     zeros_act = torch.zeros(env_count, action_dim)
     z = torch.zeros(env_count)
     buf.add(
-        tick=t, obs=zeros_obs, action=zeros_act, logprob=z,
-        reward=z, value=z, done=done_vec, h_init=h_init,
+        tick=t,
+        obs=zeros_obs,
+        action=zeros_act,
+        logprob=z,
+        reward=z,
+        value=z,
+        done=done_vec,
+        h_init=h_init,
     )
 
 
@@ -308,8 +362,13 @@ def test_iter_episode_minibatches_groups_by_episode():
     Total: 4 segments.
     """
     buf = RolloutBuffer(
-        num_envs=2, rollout_len=8, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
-        gru_hidden=GRU_HIDDEN, gamma=GAMMA, gae_lambda=GAE_LAMBDA,
+        num_envs=2,
+        rollout_len=8,
+        obs_dim=OBS_DIM,
+        action_dim=ACTION_DIM,
+        gru_hidden=GRU_HIDDEN,
+        gamma=GAMMA,
+        gae_lambda=GAE_LAMBDA,
     )
     # Unique h per segment so we can check h_init later.
     # Env 0 segments: h_e0_s0 (ticks 0..3), h_e0_s1 (ticks 4..7)
@@ -337,8 +396,14 @@ def test_iter_episode_minibatches_groups_by_episode():
             h_e1 = h_e1_s1
         h_init = torch.stack([h_e0, h_e1], dim=0)
         _add_one_tick(
-            buf, t, env_count=2, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
-            gru_hidden=GRU_HIDDEN, done_vec=done_vec, h_init=h_init,
+            buf,
+            t,
+            env_count=2,
+            obs_dim=OBS_DIM,
+            action_dim=ACTION_DIM,
+            gru_hidden=GRU_HIDDEN,
+            done_vec=done_vec,
+            h_init=h_init,
         )
         # Note: we do NOT call mark_reset here because this test passes
         # each segment's distinctive h_init directly. In real trainer
@@ -348,7 +413,8 @@ def test_iter_episode_minibatches_groups_by_episode():
 
     # First compute GAE (needed for advantages/returns in minibatches).
     buf.compute_gae(
-        last_values=torch.zeros(2), last_dones=torch.zeros(2),
+        last_values=torch.zeros(2),
+        last_dones=torch.zeros(2),
     )
 
     gen = torch.Generator().manual_seed(0)
@@ -397,8 +463,13 @@ def test_iter_episode_minibatches_valid_mask_padding():
     """Batch with mixed-length segments must right-pad shorter segments
     and mask pad positions with 0."""
     buf = RolloutBuffer(
-        num_envs=1, rollout_len=6, obs_dim=OBS_DIM, action_dim=ACTION_DIM,
-        gru_hidden=GRU_HIDDEN, gamma=GAMMA, gae_lambda=GAE_LAMBDA,
+        num_envs=1,
+        rollout_len=6,
+        obs_dim=OBS_DIM,
+        action_dim=ACTION_DIM,
+        gru_hidden=GRU_HIDDEN,
+        gamma=GAMMA,
+        gae_lambda=GAE_LAMBDA,
     )
     # dones=[0,1,0,0,0,0]: segments [0..1] (len 2), [2..5] (len 4).
     h_seg0 = torch.zeros(1, GRU_HIDDEN)
@@ -412,8 +483,12 @@ def test_iter_episode_minibatches_valid_mask_padding():
         _zeros_act = torch.zeros(1, ACTION_DIM)
         z = torch.zeros(1)
         buf.add(
-            tick=t, obs=obs, action=_zeros_act, logprob=z,
-            reward=z, value=z,
+            tick=t,
+            obs=obs,
+            action=_zeros_act,
+            logprob=z,
+            reward=z,
+            value=z,
             done=torch.tensor([done_schedule[t]]),
             h_init=h_init,
         )
@@ -421,7 +496,8 @@ def test_iter_episode_minibatches_valid_mask_padding():
             buf.mark_reset(env_idx=0)
 
     buf.compute_gae(
-        last_values=torch.zeros(1), last_dones=torch.zeros(1),
+        last_values=torch.zeros(1),
+        last_dones=torch.zeros(1),
     )
 
     gen = torch.Generator().manual_seed(42)

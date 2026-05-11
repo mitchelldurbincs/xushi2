@@ -11,6 +11,7 @@ from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
 
+
 class MappoRollout:
     def __init__(self, cfg: MappoConfig) -> None:
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
@@ -34,9 +35,9 @@ class MappoRollout:
         self.h_init = torch.zeros(N, A, L, cfg.gru_hidden)
         self.last_done = torch.zeros(N)
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
-        self.agent_loss_mask = torch.as_tensor(
-            raw_mask, dtype=torch.float32
-        ).view(1, A, 1).expand(N, A, L).clone()
+        self.agent_loss_mask = (
+            torch.as_tensor(raw_mask, dtype=torch.float32).view(1, A, 1).expand(N, A, L).clone()
+        )
 
     def compute_gae(self, cfg: MappoConfig) -> None:
         if cfg.value_per_agent:
@@ -53,10 +54,7 @@ class MappoRollout:
                     + cfg.gamma * next_value * next_nonterminal
                     - self.value[:, :, t]
                 )
-                last_gae = (
-                    delta
-                    + cfg.gamma * cfg.gae_lambda * next_nonterminal * last_gae
-                )
+                last_gae = delta + cfg.gamma * cfg.gae_lambda * next_nonterminal * last_gae
                 self.advantages[:, :, t] = last_gae
             self.returns = self.advantages + self.value
             return
@@ -71,20 +69,14 @@ class MappoRollout:
             else:
                 next_value = self.value[:, t + 1]
                 next_nonterminal = 1.0 - self.done[:, t]
-            delta = (
-                reward[:, t]
-                + cfg.gamma * next_value * next_nonterminal
-                - self.value[:, t]
-            )
+            delta = reward[:, t] + cfg.gamma * next_value * next_nonterminal - self.value[:, t]
             last_gae = delta + cfg.gamma * cfg.gae_lambda * next_nonterminal * last_gae
             self.advantages[:, t] = last_gae
         self.returns = self.advantages + self.value
 
 
 class MappoTrainer:
-    def __init__(
-        self, env_fn: Callable[[], gym.Env], cfg: MappoConfig, seed: int
-    ) -> None:
+    def __init__(self, env_fn: Callable[[], gym.Env], cfg: MappoConfig, seed: int) -> None:
         self.cfg = cfg
         self.seed = int(seed)
         if cfg.torch_num_threads > 0:
@@ -94,9 +86,7 @@ class MappoTrainer:
         self.vec_env = make_xushi_vector_env(
             [env_fn for _ in range(cfg.num_envs)],
             critic_obs_dim=(
-                cfg.critic_obs_dim * cfg.n_agents
-                if cfg.value_per_agent
-                else cfg.critic_obs_dim
+                cfg.critic_obs_dim * cfg.n_agents if cfg.value_per_agent else cfg.critic_obs_dim
             ),
             seed_base=self.seed,
             backend=cfg.vector_env,
@@ -155,14 +145,12 @@ class MappoTrainer:
         for p in params:
             if p.grad is not None:
                 total_sq += float(p.grad.detach().pow(2).sum().item())
-        return float(total_sq ** 0.5)
+        return float(total_sq**0.5)
 
     def _critic_obs(self) -> torch.Tensor:
         critic_obs = torch.as_tensor(self.vec_env.critic_obs(), dtype=torch.float32)
         if self.cfg.value_per_agent:
-            return critic_obs.view(
-                self.cfg.num_envs, self.cfg.n_agents, self.cfg.critic_obs_dim
-            )
+            return critic_obs.view(self.cfg.num_envs, self.cfg.n_agents, self.cfg.critic_obs_dim)
         return critic_obs
 
     def collect_rollout(self) -> MappoRollout:
@@ -242,9 +230,7 @@ class MappoTrainer:
                 continue
             mask = torch.as_tensor(raw, dtype=torch.float32).reshape(-1)
             if mask.numel() != cfg.n_agents:
-                raise ValueError(
-                    f"env loss_mask length must be {cfg.n_agents}, got {mask.numel()}"
-                )
+                raise ValueError(f"env loss_mask length must be {cfg.n_agents}, got {mask.numel()}")
             mask = torch.clamp(mask, min=0.0) * static
             if float(mask.sum().item()) <= 0.0:
                 raise ValueError("env loss_mask must leave at least one active agent")
@@ -259,17 +245,19 @@ class MappoTrainer:
             if cfg.value_per_agent:
                 valid_agent = rollout.agent_loss_mask.expand_as(rollout.returns)
                 ret_mean_t = _masked_mean(rollout.returns, valid_agent)
-                ret_std_t = _masked_mean(
-                    (rollout.returns - ret_mean_t) ** 2,
-                    valid_agent,
-                ).sqrt().clamp(min=1e-6)
+                ret_std_t = (
+                    _masked_mean(
+                        (rollout.returns - ret_mean_t) ** 2,
+                        valid_agent,
+                    )
+                    .sqrt()
+                    .clamp(min=1e-6)
+                )
                 ret_mean = float(ret_mean_t.item())
                 ret_std = float(ret_std_t.item())
             else:
                 ret_mean = float(rollout.returns.mean().item())
-                ret_std = float(
-                    rollout.returns.std(unbiased=False).clamp(min=1e-6).item()
-                )
+                ret_std = float(rollout.returns.std(unbiased=False).clamp(min=1e-6).item())
         else:
             ret_mean, ret_std = 0.0, 1.0
 
@@ -315,7 +303,9 @@ class MappoTrainer:
                 _masked_mean(
                     (reward - _masked_mean(reward, agent_mask)) ** 2,
                     agent_mask,
-                ).sqrt().item()
+                )
+                .sqrt()
+                .item()
             ),
             "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
             "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
@@ -331,12 +321,11 @@ class MappoTrainer:
             ),
             "action_cont_std": float(
                 _masked_mean(
-                    (
-                        cont
-                        - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))
-                    ) ** 2,
+                    (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
                     agent_mask.unsqueeze(-1).expand_as(cont),
-                ).sqrt().item()
+                )
+                .sqrt()
+                .item()
             ),
             "mean_distance_to_objective": float(
                 _masked_mean(distance_to_objective, agent_mask).item()
@@ -369,9 +358,7 @@ class MappoTrainer:
     ) -> tuple[torch.Tensor, torch.Tensor]:
         cfg = self.cfg
         base_end = cfg.continuous_action_dim + cfg.binary_action_dim
-        logp, ent = action_logprob_and_entropy(
-            mean, log_std, binary_logits, action[:, :base_end]
-        )
+        logp, ent = action_logprob_and_entropy(mean, log_std, binary_logits, action[:, :base_end])
         if cfg.target_action_dim > 0:
             if target_logits is None:
                 raise RuntimeError("target_action_dim requires target logits")
@@ -408,16 +395,18 @@ class MappoTrainer:
         entropy = torch.stack(entropies, dim=2)
         valid_agent = rollout.agent_loss_mask.expand(N, A, L)
         if cfg.value_per_agent:
-            value = self.model.value(
-                rollout.critic_obs.permute(0, 2, 1, 3).reshape(
-                    N * L * A, cfg.critic_obs_dim
+            value = (
+                self.model.value(
+                    rollout.critic_obs.permute(0, 2, 1, 3).reshape(N * L * A, cfg.critic_obs_dim)
                 )
-            ).view(N, L, A).permute(0, 2, 1)
+                .view(N, L, A)
+                .permute(0, 2, 1)
+            )
             advantage = rollout.advantages
         else:
-            value = self.model.value(
-                rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)
-            ).view(N, L)
+            value = self.model.value(rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)).view(
+                N, L
+            )
             advantage = rollout.advantages[:, None, :].expand(N, A, L)
         adv_mean = _masked_mean(advantage, valid_agent)
         adv_var = _masked_mean((advantage - adv_mean) ** 2, valid_agent)
@@ -443,13 +432,9 @@ class MappoTrainer:
         )
         vl_unclipped = (value_n - return_n) ** 2
         vl_clipped = (value_clipped_n - return_n) ** 2
-        value_loss = _masked_mean(
-            0.5 * torch.max(vl_unclipped, vl_clipped), value_mask
-        )
+        value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), value_mask)
         entropy_mean = _masked_mean(entropy, valid_agent)
-        total_loss = (
-            policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_mean
-        )
+        total_loss = policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_mean
 
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -481,9 +466,7 @@ class MappoTrainer:
 def make_mappo_config(config: dict) -> MappoConfig:
     phase, phase_spec = resolve_phase(config)
     if phase not in (4, 5, 6, 7, 8, 9, 10, 11):
-        raise ValueError(
-            f"MAPPO trainer only supports phases 4-11, got phase={phase!r}"
-        )
+        raise ValueError(f"MAPPO trainer only supports phases 4-11, got phase={phase!r}")
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
     obs_encoder = str(model_cfg.get("obs_encoder", "flat"))
@@ -492,8 +475,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
     agent_loss_mask = tuple(float(v) for v in raw_agent_loss_mask)
     if len(agent_loss_mask) != n_agents:
         raise ValueError(
-            f"ppo.agent_loss_mask length must be {n_agents}, "
-            f"got {len(agent_loss_mask)}"
+            f"ppo.agent_loss_mask length must be {n_agents}, got {len(agent_loss_mask)}"
         )
     if any(v < 0.0 for v in agent_loss_mask):
         raise ValueError("ppo.agent_loss_mask values must be non-negative")
@@ -539,9 +521,5 @@ def make_mappo_config(config: dict) -> MappoConfig:
         grid_size=int(model_cfg.get("grid_size", 0)),
         team_spirit_initial=float(ppo_cfg.get("team_spirit_initial", 0.0)),
         team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
-        team_spirit_ramp_fraction=float(
-            ppo_cfg.get("team_spirit_ramp_fraction", 0.3)
-        ),
+        team_spirit_ramp_fraction=float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3)),
     )
-
-

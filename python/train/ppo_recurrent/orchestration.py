@@ -52,8 +52,6 @@ def _phase_task_spec(config: dict) -> dict:
     return {k: phase_spec[k] for k in required}
 
 
-
-
 def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
@@ -87,6 +85,7 @@ def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
         vector_env=str(ppo_cfg.get("vector_env", "sync")),
         torch_num_threads=int(ppo_cfg.get("torch_num_threads", 0)),
     )
+
 
 def _save_checkpoint(model: ActorCritic, path: Path, ckpt_config: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -238,8 +237,7 @@ def _validate_checkpoint_topology(
             )
             chunks.append(f"mismatched topology fields: {mismatch_desc}")
         raise ValueError(
-            f"warm-start checkpoint incompatible ({'; '.join(chunks)}) "
-            f"(path={ckpt_path})"
+            f"warm-start checkpoint incompatible ({'; '.join(chunks)}) (path={ckpt_path})"
         )
 
 
@@ -286,7 +284,9 @@ def _run_variant(
             "total_updates": total_updates,
             "eval_every": eval_every,
             "eval_episodes": eval_episodes,
-            "ppo": asdict(ppo_cfg) if hasattr(ppo_cfg, "__dataclass_fields__") else dict(ppo_cfg.__dict__),
+            "ppo": asdict(ppo_cfg)
+            if hasattr(ppo_cfg, "__dataclass_fields__")
+            else dict(ppo_cfg.__dict__),
         },
         tags=[phase_label, variant_name, "ppo_recurrent"],
     )
@@ -371,10 +371,7 @@ def _run_variant(
                     "mean_team_b_kills",
                 )
                 wandb_logger.log(
-                    {
-                        f"eval/{k}": float(getattr(eval_stats, k))
-                        for k in _eval_scalar_keys
-                    },
+                    {f"eval/{k}": float(getattr(eval_stats, k)) for k in _eval_scalar_keys},
                     step=update_idx,
                 )
                 if last_eval > (best_eval + early_stop_min_delta):
@@ -447,8 +444,7 @@ def _run_variant(
             output_dir / "ckpt_final.pt",
         )
         print(
-            f"[{phase_label}/{variant_name}] best checkpoint: "
-            f"eval@{best_update}={best_eval:+.3f}",
+            f"[{phase_label}/{variant_name}] best checkpoint: eval@{best_update}={best_eval:+.3f}",
             flush=True,
         )
         return best_eval
@@ -462,12 +458,8 @@ def train_from_config(config: dict) -> dict[str, float]:
     run_cfg = config.get("run", {})
     default_out = "runs/phase2_memory_toy" if phase == 2 else "runs/phase3_ranger"
     out_root = Path(str(run_cfg.get("output_dir", default_out)))
-    rec_eval = _run_variant(
-        config, use_recurrence=True, output_dir=out_root / "recurrent"
-    )
+    rec_eval = _run_variant(config, use_recurrence=True, output_dir=out_root / "recurrent")
     if "feedforward" in phase_spec.get("training_variants", ()):
-        ff_eval = _run_variant(
-            config, use_recurrence=False, output_dir=out_root / "feedforward"
-        )
+        ff_eval = _run_variant(config, use_recurrence=False, output_dir=out_root / "feedforward")
         return {"recurrent": rec_eval, "feedforward": ff_eval}
     return {"recurrent": rec_eval}

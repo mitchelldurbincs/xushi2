@@ -17,10 +17,14 @@ from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 
 
 _BASE_MECH_ARGS: list[str] = [
-    "--revolver-damage-centi-hp", "7500",
-    "--revolver-fire-cooldown-ticks", "15",
-    "--revolver-hitbox-radius", "0.75",
-    "--respawn-ticks", "240",
+    "--revolver-damage-centi-hp",
+    "7500",
+    "--revolver-fire-cooldown-ticks",
+    "15",
+    "--revolver-hitbox-radius",
+    "0.75",
+    "--respawn-ticks",
+    "240",
 ]
 
 
@@ -37,10 +41,14 @@ def test_dump_obs_writes_csv_with_expected_columns(
     _run_eval(
         _BASE_MECH_ARGS
         + [
-            "--dump-obs", str(out_csv),
-            "--opponent-bot", "noop",
-            "--learner-team", "A",
-            "--round-length-seconds", "3",
+            "--dump-obs",
+            str(out_csv),
+            "--opponent-bot",
+            "noop",
+            "--learner-team",
+            "A",
+            "--round-length-seconds",
+            "3",
         ],
         monkeypatch,
     )
@@ -63,10 +71,14 @@ def test_dump_reward_writes_csv_with_expected_columns(
     _run_eval(
         _BASE_MECH_ARGS
         + [
-            "--dump-reward", str(out_csv),
-            "--opponent-bot", "noop",
-            "--learner-team", "A",
-            "--round-length-seconds", "3",
+            "--dump-reward",
+            str(out_csv),
+            "--opponent-bot",
+            "noop",
+            "--learner-team",
+            "A",
+            "--round-length-seconds",
+            "3",
         ],
         monkeypatch,
     )
@@ -85,10 +97,13 @@ def test_dump_obs_without_opponent_bot_errors(
     out_csv = tmp_path / "obs.csv"
     monkeypatch.setattr(
         "sys.argv",
-        ["xushi2-eval"] + _BASE_MECH_ARGS
+        ["xushi2-eval"]
+        + _BASE_MECH_ARGS
         + [
-            "--dump-obs", str(out_csv),
-            "--round-length-seconds", "3",
+            "--dump-obs",
+            str(out_csv),
+            "--round-length-seconds",
+            "3",
         ],
     )
     # argparse's parser.error() raises SystemExit(2).

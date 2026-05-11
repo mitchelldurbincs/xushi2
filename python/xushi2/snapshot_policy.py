@@ -86,8 +86,7 @@ class SnapshotPolicy:
                 return actor_obs_to_partial_entity_grid_obs(
                     flat,
                     visible_radius=float(self.env_cfg.get("visible_radius", 0.65)),
-                    team_shared=str(self.env_cfg.get("fog_mode", "team_shared"))
-                    == "team_shared",
+                    team_shared=str(self.env_cfg.get("fog_mode", "team_shared")) == "team_shared",
                 )
             return actor_obs_to_entity_grid_obs(flat)
         raise ValueError(f"unsupported snapshot obs_encoder {self.cfg.obs_encoder!r}")
@@ -148,8 +147,7 @@ class SnapshotPolicy:
                     team_b_view=bool(team_b_view[row]),
                 )
                 alive[row, enemy_idx] = (
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0]
-                    > 0.5
+                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
                 )
         radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
             self.env_cfg.get("visible_radius", 0.65)
@@ -256,10 +254,7 @@ class SnapshotLeague:
         league_cfg: dict | None,
     ) -> "SnapshotLeague":
         if league_cfg:
-            groups = {
-                group: tuple(league_cfg.get(group, ()))
-                for group in cls._GROUP_ORDER
-            }
+            groups = {group: tuple(league_cfg.get(group, ())) for group in cls._GROUP_ORDER}
             weights = dict(league_cfg.get("weights", {}))
             return cls(groups, weights)
         return cls({"latest": tuple(flat_paths)}, {"latest": 1.0})

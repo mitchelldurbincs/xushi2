@@ -24,7 +24,9 @@ def accumulate(metrics_sum: dict[str, float], mb_stats: dict[str, float], n_vali
         metrics_sum[key] += val * n_valid
 
 
-def reduce_metrics(metrics_sum: dict[str, float], *, total_valid: float, num_minibatches: int, lr: float) -> dict[str, float]:
+def reduce_metrics(
+    metrics_sum: dict[str, float], *, total_valid: float, num_minibatches: int, lr: float
+) -> dict[str, float]:
     denom = max(total_valid, 1.0)
     out = {k: v / denom for k, v in metrics_sum.items()}
     out["num_minibatches"] = float(num_minibatches)

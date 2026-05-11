@@ -131,8 +131,7 @@ def test_reward_info_carries_both_teams():
     assert "reward_team_a" in info
     assert "reward_team_b" in info
     # Symmetric (zero-sum) before any clipping triggers.
-    assert info["reward_team_a"] + info["reward_team_b"] == pytest.approx(
-        0.0, abs=1e-9)
+    assert info["reward_team_a"] + info["reward_team_b"] == pytest.approx(0.0, abs=1e-9)
 
 
 def test_action_space_contains_zero_action():

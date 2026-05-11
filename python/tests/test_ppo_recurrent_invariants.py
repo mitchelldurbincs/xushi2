@@ -131,9 +131,7 @@ def _memory_toy_env_fn(
     episode_length: int = 8, cue_visible_ticks: int = 4
 ) -> Callable[[], MemoryToyEnv]:
     def _thunk() -> MemoryToyEnv:
-        return MemoryToyEnv(
-            episode_length=episode_length, cue_visible_ticks=cue_visible_ticks
-        )
+        return MemoryToyEnv(episode_length=episode_length, cue_visible_ticks=cue_visible_ticks)
 
     return _thunk
 
@@ -144,8 +142,6 @@ def _rollout_tensors_equal(r_a, r_b) -> None:
         ta = getattr(r_a, field)
         tb = getattr(r_b, field)
         assert torch.equal(ta, tb), f"rollout field {field!r} differs"
-
-
 
 
 def test_collect_rollout_delegates_to_rollout_collector(monkeypatch):
@@ -176,9 +172,11 @@ def test_update_delegates_to_ppo_updater(monkeypatch):
     monkeypatch.setattr(ppo_updater, "update_ppo", _fake_update)
     assert trainer.update(rollout) == expected
 
+
 # ---------------------------------------------------------------------------
 # Test 1: rollout determinism
 # ---------------------------------------------------------------------------
+
 
 def test_rollout_determinism_two_trainers_same_seed():
     """Two trainers with identical config, identical seed, identical
@@ -202,6 +200,7 @@ def test_rollout_determinism_two_trainers_same_seed():
 # ---------------------------------------------------------------------------
 # Test 2: episode-reset zeroes h_init
 # ---------------------------------------------------------------------------
+
 
 def test_hidden_state_zero_after_env_reset():
     """For every env ``e`` and tick ``t > 0``: if ``done[e, t-1] == 1``,
@@ -248,6 +247,7 @@ def test_hidden_state_zero_after_env_reset():
 # ---------------------------------------------------------------------------
 # Test 3: h_init identical across PPO epochs
 # ---------------------------------------------------------------------------
+
 
 def test_bptt_h_init_identical_across_ppo_epochs():
     """The ``h_init`` fed to the model at training time for a given
@@ -321,6 +321,7 @@ def test_bptt_h_init_identical_across_ppo_epochs():
 # Test 4: feedforward mode must ignore h_init
 # ---------------------------------------------------------------------------
 
+
 def test_feedforward_mode_training_ignores_hidden_state():
     """With ``use_recurrence=False``, the trainer's update must produce
     byte-identical results whether the rollout's ``h_init`` tensor
@@ -376,9 +377,7 @@ def test_feedforward_mode_training_ignores_hidden_state():
 
     # Mutate h_init on the cloned rollout to random non-zero garbage.
     gen = torch.Generator().manual_seed(0)
-    rollout_b.h_init = torch.randn(
-        rollout_b.h_init.shape, generator=gen
-    ).to(rollout_b.h_init.dtype)
+    rollout_b.h_init = torch.randn(rollout_b.h_init.shape, generator=gen).to(rollout_b.h_init.dtype)
 
     # Run B on the fresh trainer with the mutated rollout.
     trainer2.update(rollout_b)
@@ -398,6 +397,7 @@ def test_feedforward_mode_training_ignores_hidden_state():
 # ---------------------------------------------------------------------------
 # Test 5: loss mask respects episode boundaries (pad contributes zero)
 # ---------------------------------------------------------------------------
+
 
 def test_loss_mask_respects_episode_boundaries():
     """The PPO update must weight per-sample losses by ``valid_mask``
@@ -503,8 +503,7 @@ def test_loss_mask_respects_episode_boundaries():
             # Inject random noise only at pad positions for fields that
             # feed the loss: obs, action, old_logprob, advantage,
             # return_, old_value.
-            for key in ("obs", "action", "old_logprob", "advantage",
-                        "return_", "old_value"):
+            for key in ("obs", "action", "old_logprob", "advantage", "return_", "old_value"):
                 t = batch[key]
                 if t.dim() == 3:
                     # (S, L, D) — broadcast pad_mask over the last dim.

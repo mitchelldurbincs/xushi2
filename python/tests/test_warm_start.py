@@ -193,9 +193,7 @@ def _eval_stats(mean_reward: float) -> EvaluationStats:
     )
 
 
-def test_run_variant_invokes_warm_start_when_configured(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_variant_invokes_warm_start_when_configured(tmp_path: Path, monkeypatch) -> None:
     cfg = _base_phase2_config(tmp_path)
     cfg["run"]["init_from_checkpoint"] = str(tmp_path / "init.pt")
 
@@ -206,9 +204,7 @@ def test_run_variant_invokes_warm_start_when_configured(
 
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
     monkeypatch.setattr(ppo_orch, "_load_init_checkpoint", _fake_load)
-    monkeypatch.setattr(
-        ppo_orch, "evaluate_policy_stats", lambda *a, **k: _eval_stats(0.1)
-    )
+    monkeypatch.setattr(ppo_orch, "evaluate_policy_stats", lambda *a, **k: _eval_stats(0.1))
 
     ppo_mod._run_variant(cfg, use_recurrence=True, output_dir=tmp_path / "out")
 
@@ -221,9 +217,7 @@ def test_run_variant_invokes_warm_start_when_configured(
     assert expected_cfg_arg["use_recurrence"] is True
 
 
-def test_run_variant_skips_warm_start_when_unset(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_run_variant_skips_warm_start_when_unset(tmp_path: Path, monkeypatch) -> None:
     cfg = _base_phase2_config(tmp_path)
     # No "init_from_checkpoint" key.
 
@@ -234,9 +228,7 @@ def test_run_variant_skips_warm_start_when_unset(
 
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
     monkeypatch.setattr(ppo_orch, "_load_init_checkpoint", _fake_load)
-    monkeypatch.setattr(
-        ppo_orch, "evaluate_policy_stats", lambda *a, **k: _eval_stats(0.1)
-    )
+    monkeypatch.setattr(ppo_orch, "evaluate_policy_stats", lambda *a, **k: _eval_stats(0.1))
 
     ppo_mod._run_variant(cfg, use_recurrence=True, output_dir=tmp_path / "out")
 

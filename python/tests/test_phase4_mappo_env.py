@@ -38,6 +38,7 @@ def _make_env(opponent_bot: str = "noop", **kwargs) -> Phase4MappoEnv:
 
 # --- Task 1: construction / spaces / validation ---
 
+
 def test_construct_observation_space_shape_is_3_by_actor_dim():
     env = _make_env()
     assert env.observation_space.shape == (3, ACTOR_PHASE1_DIM)
@@ -63,12 +64,11 @@ def test_invalid_opponent_bot_raises():
 
 def test_invalid_learner_team_raises():
     with pytest.raises(ValueError, match="learner_team"):
-        Phase4MappoEnv(
-            _make_sim_cfg(), opponent_bot="noop", learner_team="C"
-        )
+        Phase4MappoEnv(_make_sim_cfg(), opponent_bot="noop", learner_team="C")
 
 
 # --- Task 2: reset ---
+
 
 def test_reset_returns_correct_shapes():
     env = _make_env()
@@ -99,12 +99,11 @@ def test_reset_rejects_team_size_in_sim_cfg():
 
 # --- Task 3: step ---
 
+
 def test_step_returns_correct_shapes_and_finite_values():
     env = _make_env(opponent_bot="noop")
     env.reset(seed=0)
-    obs, reward, term, trunc, info = env.step(
-        np.zeros((3, 6), dtype=np.float32)
-    )
+    obs, reward, term, trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
     assert obs.shape == (3, ACTOR_PHASE1_DIM)
     assert reward.shape == (3,)
     assert reward.dtype == np.float32
@@ -162,6 +161,7 @@ def test_hardcoded_walk_to_objective_scores_against_noop():
 
 # --- Task 4: build_critic_obs ---
 
+
 def test_build_critic_obs_writes_135_finite_floats_with_actor_prefix():
     env = _make_env()
     env.reset(seed=0)
@@ -180,11 +180,14 @@ def test_build_critic_obs_before_reset_raises():
         env.build_critic_obs(out)
 
 
-@pytest.mark.parametrize("bad", [
-    np.zeros(CRITIC_DIM - 1, dtype=np.float32),
-    np.zeros((CRITIC_DIM, 1), dtype=np.float32),
-    np.zeros(CRITIC_DIM, dtype=np.float64),
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.zeros(CRITIC_DIM - 1, dtype=np.float32),
+        np.zeros((CRITIC_DIM, 1), dtype=np.float32),
+        np.zeros(CRITIC_DIM, dtype=np.float64),
+    ],
+)
 def test_build_critic_obs_buffer_validation(bad):
     env = _make_env()
     env.reset(seed=0)
@@ -203,6 +206,7 @@ def test_critic_obs_team_b_uses_team_b_actor_prefix():
 
 
 # --- Task 5: determinism + smoke ---
+
 
 def test_determinism_two_envs_same_seed_same_state_hash():
     rng = np.random.default_rng(0)

@@ -3,9 +3,15 @@ from train.models import build_model
 
 
 def test_recurrent_forward_shapes():
-    model = build_model(obs_dim=3, action_dim=2, use_recurrence=True,
-                        embed_dim=64, gru_hidden=64, head_hidden=64,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=3,
+        action_dim=2,
+        use_recurrence=True,
+        embed_dim=64,
+        gru_hidden=64,
+        head_hidden=64,
+        action_log_std_init=-1.0,
+    )
     obs = torch.zeros(8, 3)
     h = model.init_hidden(batch_size=8)
     action_mean, log_std, value, h_next = model.forward(obs, h)
@@ -17,9 +23,15 @@ def test_recurrent_forward_shapes():
 
 def test_feedforward_bypasses_gru():
     """With use_recurrence=False, forward output must not depend on h."""
-    model = build_model(obs_dim=3, action_dim=2, use_recurrence=False,
-                        embed_dim=64, gru_hidden=64, head_hidden=64,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=3,
+        action_dim=2,
+        use_recurrence=False,
+        embed_dim=64,
+        gru_hidden=64,
+        head_hidden=64,
+        action_log_std_init=-1.0,
+    )
     obs = torch.randn(4, 3)
     h1 = torch.zeros(4, 64)
     h2 = torch.randn(4, 64)
@@ -32,9 +44,15 @@ def test_feedforward_bypasses_gru():
 def test_recurrent_uses_hidden_state():
     """With use_recurrence=True, forward output MUST depend on h."""
     torch.manual_seed(0)
-    model = build_model(obs_dim=3, action_dim=2, use_recurrence=True,
-                        embed_dim=64, gru_hidden=64, head_hidden=64,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=3,
+        action_dim=2,
+        use_recurrence=True,
+        embed_dim=64,
+        gru_hidden=64,
+        head_hidden=64,
+        action_log_std_init=-1.0,
+    )
     obs = torch.randn(4, 3)
     h1 = torch.zeros(4, 64)
     h2 = torch.ones(4, 64)
@@ -44,17 +62,29 @@ def test_recurrent_uses_hidden_state():
 
 
 def test_init_hidden_is_zeros():
-    model = build_model(obs_dim=3, action_dim=2, use_recurrence=True,
-                        embed_dim=64, gru_hidden=64, head_hidden=64,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=3,
+        action_dim=2,
+        use_recurrence=True,
+        embed_dim=64,
+        gru_hidden=64,
+        head_hidden=64,
+        action_log_std_init=-1.0,
+    )
     h = model.init_hidden(batch_size=3)
     assert torch.all(h == 0)
 
 
 def test_action_sampling_tanh_squash_bounds():
-    model = build_model(obs_dim=3, action_dim=2, use_recurrence=True,
-                        embed_dim=64, gru_hidden=64, head_hidden=64,
-                        action_log_std_init=2.0)  # high std → actions could blow up
+    model = build_model(
+        obs_dim=3,
+        action_dim=2,
+        use_recurrence=True,
+        embed_dim=64,
+        gru_hidden=64,
+        head_hidden=64,
+        action_log_std_init=2.0,
+    )  # high std → actions could blow up
     obs = torch.zeros(1000, 3)
     h = model.init_hidden(1000)
     action, logp, _ = model.sample_action(obs, h)
@@ -64,10 +94,17 @@ def test_action_sampling_tanh_squash_bounds():
 
 
 def test_hybrid_action_sampling_layout():
-    model = build_model(obs_dim=31, action_dim=6, continuous_action_dim=3,
-                        binary_action_dim=3, use_recurrence=True,
-                        embed_dim=32, gru_hidden=16, head_hidden=16,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=31,
+        action_dim=6,
+        continuous_action_dim=3,
+        binary_action_dim=3,
+        use_recurrence=True,
+        embed_dim=32,
+        gru_hidden=16,
+        head_hidden=16,
+        action_log_std_init=-1.0,
+    )
     obs = torch.zeros(32, 31)
     h = model.init_hidden(32)
     action, logp, _ = model.sample_action(obs, h)
@@ -78,10 +115,17 @@ def test_hybrid_action_sampling_layout():
 
 
 def test_hybrid_greedy_action_uses_binary_threshold():
-    model = build_model(obs_dim=31, action_dim=6, continuous_action_dim=3,
-                        binary_action_dim=3, use_recurrence=True,
-                        embed_dim=16, gru_hidden=8, head_hidden=8,
-                        action_log_std_init=-1.0)
+    model = build_model(
+        obs_dim=31,
+        action_dim=6,
+        continuous_action_dim=3,
+        binary_action_dim=3,
+        use_recurrence=True,
+        embed_dim=16,
+        gru_hidden=8,
+        head_hidden=8,
+        action_log_std_init=-1.0,
+    )
     obs = torch.zeros(2, 31)
     h = model.init_hidden(2)
     with torch.no_grad():

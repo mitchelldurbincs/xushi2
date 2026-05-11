@@ -63,9 +63,7 @@ class EntityAttentionEncoder(nn.Module):
         if tokens.shape[:2] != valid_mask.shape:
             raise ValueError("tokens and valid_mask batch/entity axes must match")
         if tokens.shape[2] != self.entity_dim:
-            raise ValueError(
-                f"tokens last dim must be {self.entity_dim}, got {tokens.shape[2]}"
-            )
+            raise ValueError(f"tokens last dim must be {self.entity_dim}, got {tokens.shape[2]}")
 
         valid = valid_mask.to(dtype=torch.bool, device=tokens.device)
         empty = ~valid.any(dim=1)

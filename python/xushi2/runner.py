@@ -15,12 +15,14 @@ from . import xushi2_cpp as _cpp
 
 _VALID_BOTS = frozenset({"walk_to_objective", "hold_and_shoot", "basic", "noop"})
 
-_REQUIRED_MECHANICS_KEYS = frozenset({
-    "revolver_damage_centi_hp",
-    "revolver_fire_cooldown_ticks",
-    "revolver_hitbox_radius",
-    "respawn_ticks",
-})
+_REQUIRED_MECHANICS_KEYS = frozenset(
+    {
+        "revolver_damage_centi_hp",
+        "revolver_fire_cooldown_ticks",
+        "revolver_hitbox_radius",
+        "respawn_ticks",
+    }
+)
 
 _HERO_KIND_BY_NAME = {
     "vanguard": _cpp.HeroKind.Vanguard,
@@ -111,19 +113,16 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
         if len(raw_kinds) != 6:
             raise ValueError("sim.hero_kinds must list exactly 6 slot kinds")
         try:
-            cfg.hero_kinds = [
-                _HERO_KIND_BY_NAME[str(kind).lower()] for kind in raw_kinds
-            ]
+            cfg.hero_kinds = [_HERO_KIND_BY_NAME[str(kind).lower()] for kind in raw_kinds]
         except KeyError as exc:
-            raise ValueError(
-                "sim.hero_kinds entries must be Vanguard, Ranger, or Mender"
-            ) from exc
+            raise ValueError("sim.hero_kinds entries must be Vanguard, Ranger, or Mender") from exc
     cfg.mechanics = _build_mechanics(sim_cfg["mechanics"])
     return cfg
 
 
-def run_episode(sim_cfg: dict, bot_a: str, bot_b: str,
-                seed_override: int | None = None) -> EpisodeResult:
+def run_episode(
+    sim_cfg: dict, bot_a: str, bot_b: str, seed_override: int | None = None
+) -> EpisodeResult:
     """Run one scripted-vs-scripted episode and return the hash trajectory."""
     if bot_a not in _VALID_BOTS:
         raise ValueError(f"unknown bot_a {bot_a!r}; valid: {sorted(_VALID_BOTS)}")
@@ -131,8 +130,7 @@ def run_episode(sim_cfg: dict, bot_a: str, bot_b: str,
         raise ValueError(f"unknown bot_b {bot_b!r}; valid: {sorted(_VALID_BOTS)}")
 
     cfg = _build_config(sim_cfg, seed_override=seed_override)
-    hashes, final_tick, a_kills, b_kills, winner = _cpp.run_scripted_episode(
-        cfg, bot_a, bot_b)
+    hashes, final_tick, a_kills, b_kills, winner = _cpp.run_scripted_episode(cfg, bot_a, bot_b)
     return EpisodeResult(
         decision_hashes=list(hashes),
         final_tick=int(final_tick),

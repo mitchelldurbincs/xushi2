@@ -34,7 +34,10 @@ class MemoryToyEnv(gym.Env):
             dtype=np.float32,
         )
         self.action_space = spaces.Box(
-            low=-1.0, high=1.0, shape=(2,), dtype=np.float32,
+            low=-1.0,
+            high=1.0,
+            shape=(2,),
+            dtype=np.float32,
         )
         self._rng: np.random.Generator | None = None
         self._target: np.ndarray | None = None
@@ -52,7 +55,8 @@ class MemoryToyEnv(gym.Env):
             self._rng = np.random.default_rng(seed)
         theta = float(self._rng.uniform(0.0, 2.0 * np.pi))
         self._target = np.array(
-            [np.cos(theta), np.sin(theta)], dtype=np.float32,
+            [np.cos(theta), np.sin(theta)],
+            dtype=np.float32,
         )
         self._t = 0
         return self._obs(), {}
@@ -76,6 +80,7 @@ class MemoryToyEnv(gym.Env):
         assert self._target is not None
         if self._t < self.k:
             return np.array(
-                [self._target[0], self._target[1], 1.0], dtype=np.float32,
+                [self._target[0], self._target[1], 1.0],
+                dtype=np.float32,
             )
         return np.zeros(3, dtype=np.float32)

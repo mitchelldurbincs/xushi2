@@ -39,6 +39,7 @@ def _fresh_calc_and_sim():
 
 # --- shaped reward -----------------------------------------------------
 
+
 def test_no_deltas_yields_zero_reward():
     rc, sim = _fresh_calc_and_sim()
     a, b = rc.step(sim)
@@ -73,6 +74,7 @@ def test_per_step_reward_is_zero_sum_under_cap():
 
 
 # --- cumulative clip ----------------------------------------------------
+
 
 def test_cumulative_clip_caps_team_a_at_positive_three():
     rc = RewardCalculator()  # default clip = 3.0
@@ -120,6 +122,7 @@ def test_reset_zeroes_cumulative():
 
 # --- terminal rewards ---------------------------------------------------
 
+
 def test_terminal_win_is_plus_ten_for_winner():
     rc, sim = _fresh_calc_and_sim()
     sim.episode_over = True
@@ -162,6 +165,7 @@ def test_terminal_not_clipped_even_after_capped_shaping():
 
 
 # --- configuration ------------------------------------------------------
+
 
 def test_zero_shaping_clip_rejected():
     with pytest.raises(ValueError):
@@ -275,8 +279,12 @@ def test_distance_shaping_produces_nonzero_reward_on_real_env():
         },
     }
     action = {
-        "move_x": 0.0, "move_y": 1.0, "aim_delta": 0.0,
-        "primary_fire": 0, "ability_1": 0, "ability_2": 0,
+        "move_x": 0.0,
+        "move_y": 1.0,
+        "aim_delta": 0.0,
+        "primary_fire": 0,
+        "ability_1": 0,
+        "ability_2": 0,
     }
 
     # Baseline run: no distance shaping.
@@ -286,7 +294,8 @@ def test_distance_shaping_produces_nonzero_reward_on_real_env():
 
     # Shaped run: distance_shaping_coef > 0.
     env_on = XushiEnv(
-        sim_cfg, opponent_bot="noop",
+        sim_cfg,
+        opponent_bot="noop",
         reward_cfg={"distance_shaping_coef": 0.01},
     )
     env_on.reset(seed=0xD1CEDA7A)
@@ -301,6 +310,7 @@ def test_distance_shaping_produces_nonzero_reward_on_real_env():
 
 
 # --- team_spirit mixin (per-agent path only) ---------------------------
+
 
 def test_team_spirit_zero_preserves_individual_credit():
     rc = RewardCalculator(per_agent_rewards=True, team_spirit=0.0)
@@ -405,6 +415,7 @@ def test_team_spirit_no_op_on_scalar_path():
 
 # --- damage-dealt shaping (per-agent, opt-in) --------------------------
 
+
 def test_damage_dealt_default_zero_no_op():
     """Default damage_dealt_coef=0 produces no damage-related reward."""
     rc = RewardCalculator(per_agent_rewards=True)
@@ -477,6 +488,7 @@ def test_damage_dealt_no_op_on_scalar_path():
 
 
 # --- per-agent rewards (opt-in flag) -----------------------------------
+
 
 def test_per_agent_default_false_returns_scalars():
     """Default-false flag preserves today's scalar contract."""

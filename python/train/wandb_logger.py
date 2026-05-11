@@ -105,16 +105,8 @@ def make_logger(
         _LOGGER.warning("wandb not installed; metrics will not be logged")
         return _NullLogger()
 
-    project = (
-        os.environ.get("WANDB_PROJECT")
-        or wandb_cfg.get("project")
-        or DEFAULT_PROJECT
-    )
-    entity = (
-        os.environ.get("WANDB_ENTITY")
-        or wandb_cfg.get("entity")
-        or DEFAULT_ENTITY
-    )
+    project = os.environ.get("WANDB_PROJECT") or wandb_cfg.get("project") or DEFAULT_PROJECT
+    entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity") or DEFAULT_ENTITY
     group = wandb_cfg.get("group")
 
     enriched_config = dict(run_config)
@@ -133,9 +125,7 @@ def make_logger(
             reinit="finish_previous",
         )
     except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
-            "wandb.init failed (%s); metrics will not be logged", exc
-        )
+        _LOGGER.warning("wandb.init failed (%s); metrics will not be logged", exc)
         return _NullLogger()
 
     return _ActiveLogger(run)

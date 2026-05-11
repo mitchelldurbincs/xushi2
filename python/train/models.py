@@ -95,9 +95,7 @@ class ActorCritic(nn.Module):
         )
         self.actor_mean_head = nn.Linear(head_hidden, continuous_action_dim)
         self.actor_binary_head = (
-            nn.Linear(head_hidden, binary_action_dim)
-            if binary_action_dim > 0
-            else None
+            nn.Linear(head_hidden, binary_action_dim) if binary_action_dim > 0 else None
         )
 
         # Critic head
@@ -108,9 +106,7 @@ class ActorCritic(nn.Module):
         )
 
         # State-independent learned log-std for continuous controls only.
-        self.log_std = nn.Parameter(
-            torch.ones(continuous_action_dim) * action_log_std_init
-        )
+        self.log_std = nn.Parameter(torch.ones(continuous_action_dim) * action_log_std_init)
 
     def init_hidden(self, batch_size: int) -> torch.Tensor:
         p = next(self.parameters())
@@ -173,7 +169,9 @@ class ActorCritic(nn.Module):
         action = torch.cat(pieces, dim=-1) if pieces else obs.new_zeros((obs.shape[0], 0))
         return action, logprob, outputs.h_next
 
-    def greedy_action(self, obs: torch.Tensor, h: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def greedy_action(
+        self, obs: torch.Tensor, h: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         outputs = self.policy_outputs(obs, h)
         pieces: list[torch.Tensor] = []
         if self.continuous_action_dim > 0:

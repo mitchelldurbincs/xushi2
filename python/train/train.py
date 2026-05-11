@@ -26,8 +26,9 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(fh)
 
 
-def _run_pass(sim_cfg: dict, bot_a: str, bot_b: str, episodes: int,
-              base_seed: int) -> list[EpisodeResult]:
+def _run_pass(
+    sim_cfg: dict, bot_a: str, bot_b: str, episodes: int, base_seed: int
+) -> list[EpisodeResult]:
     results: list[EpisodeResult] = []
     for i in range(episodes):
         results.append(run_episode(sim_cfg, bot_a, bot_b, seed_override=base_seed + i))
@@ -41,17 +42,23 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
         return 1
     for ep_idx, (a, b) in enumerate(zip(pass_a, pass_b)):
         if a.final_tick != b.final_tick:
-            print(f"[xushi2] MISMATCH at episode={ep_idx}: "
-                  f"final_tick {a.final_tick} vs {b.final_tick}")
+            print(
+                f"[xushi2] MISMATCH at episode={ep_idx}: "
+                f"final_tick {a.final_tick} vs {b.final_tick}"
+            )
             return 1
         if len(a.decision_hashes) != len(b.decision_hashes):
-            print(f"[xushi2] MISMATCH at episode={ep_idx}: "
-                  f"decision count {len(a.decision_hashes)} vs {len(b.decision_hashes)}")
+            print(
+                f"[xushi2] MISMATCH at episode={ep_idx}: "
+                f"decision count {len(a.decision_hashes)} vs {len(b.decision_hashes)}"
+            )
             return 1
         for d_idx, (ha, hb) in enumerate(zip(a.decision_hashes, b.decision_hashes)):
             if ha != hb:
-                print(f"[xushi2] MISMATCH at episode={ep_idx} decision={d_idx}: "
-                      f"expected=0x{ha:016x} actual=0x{hb:016x}")
+                print(
+                    f"[xushi2] MISMATCH at episode={ep_idx} decision={d_idx}: "
+                    f"expected=0x{ha:016x} actual=0x{hb:016x}"
+                )
                 return 1
     return 0
 
@@ -87,23 +94,31 @@ def main() -> int:
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
 
     if phase_int == 11:
-        print(f"[xushi2] phase={phase} mappo match_type=current "
-              f"learner_team=both base_seed=0x{base_seed:x}")
+        print(
+            f"[xushi2] phase={phase} mappo match_type=current "
+            f"learner_team=both base_seed=0x{base_seed:x}"
+        )
     elif phase_int in (4, 5, 6, 7, 8, 9, 10):
         opponent = str(env_cfg.get("opponent_bot", "?"))
         learner = str(env_cfg.get("learner_team", "A"))
-        print(f"[xushi2] phase={phase} mappo opponent={opponent} "
-              f"learner_team={learner} base_seed=0x{base_seed:x}")
+        print(
+            f"[xushi2] phase={phase} mappo opponent={opponent} "
+            f"learner_team={learner} base_seed=0x{base_seed:x}"
+        )
     elif phase_int == 3:
         opponent = str(env_cfg.get("opponent_bot", "?"))
         learner = str(env_cfg.get("learner_team", "A"))
-        print(f"[xushi2] phase={phase} opponent={opponent} "
-              f"learner_team={learner} base_seed=0x{base_seed:x}")
+        print(
+            f"[xushi2] phase={phase} opponent={opponent} "
+            f"learner_team={learner} base_seed=0x{base_seed:x}"
+        )
     elif phase_int == 2:
         print(f"[xushi2] phase={phase} memory_toy base_seed=0x{base_seed:x}")
     else:
-        print(f"[xushi2] phase={phase} episodes={episodes} "
-              f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}")
+        print(
+            f"[xushi2] phase={phase} episodes={episodes} "
+            f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}"
+        )
 
     if phase_int == 0:
         if not assert_determinism:
@@ -118,8 +133,10 @@ def main() -> int:
         if rc == 0:
             total = sum(len(r.decision_hashes) for r in pass_a)
             per_ep = len(pass_a[0].decision_hashes) if pass_a else 0
-            print(f"[xushi2] OK: {episodes} episodes × {per_ep} decisions "
-                  f"({total} hashes) all identical")
+            print(
+                f"[xushi2] OK: {episodes} episodes × {per_ep} decisions "
+                f"({total} hashes) all identical"
+            )
         return rc
 
     if phase_int in (2, 3):

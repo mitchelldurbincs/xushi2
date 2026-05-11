@@ -31,13 +31,9 @@ def _make_sim_cfg(round_length: int = 5) -> dict:
 def test_partial_obs_masks_enemy_token_and_grid_when_hidden() -> None:
     obs = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[:, actor_field_slice("enemy_alive")] = 1.0
-    obs[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.9, 0.0], dtype=np.float32
-    )
+    obs[:, actor_field_slice("enemy_relative_position")] = np.array([0.9, 0.0], dtype=np.float32)
 
-    out = actor_obs_to_partial_entity_grid_obs(
-        obs, visible_radius=0.5, team_shared=False
-    )
+    out = actor_obs_to_partial_entity_grid_obs(obs, visible_radius=0.5, team_shared=False)
     token_width = ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM
     tokens = out[:, :token_width].reshape(3, ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM)
     mask = out[:, token_width : token_width + ENTITY_TOKEN_COUNT]
@@ -50,16 +46,10 @@ def test_partial_obs_masks_enemy_token_and_grid_when_hidden() -> None:
 def test_partial_obs_team_shared_unions_enemy_visibility() -> None:
     obs = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[:, actor_field_slice("enemy_alive")] = 1.0
-    obs[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.9, 0.0], dtype=np.float32
-    )
-    obs[1, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.1, 0.0], dtype=np.float32
-    )
+    obs[:, actor_field_slice("enemy_relative_position")] = np.array([0.9, 0.0], dtype=np.float32)
+    obs[1, actor_field_slice("enemy_relative_position")] = np.array([0.1, 0.0], dtype=np.float32)
 
-    out = actor_obs_to_partial_entity_grid_obs(
-        obs, visible_radius=0.5, team_shared=True
-    )
+    out = actor_obs_to_partial_entity_grid_obs(obs, visible_radius=0.5, team_shared=True)
     token_width = ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM
     mask = out[:, token_width : token_width + ENTITY_TOKEN_COUNT]
     assert np.all(mask[:, 1] == 1.0)
@@ -68,16 +58,10 @@ def test_partial_obs_team_shared_unions_enemy_visibility() -> None:
 def test_partial_obs_per_agent_keeps_visibility_local() -> None:
     obs = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[:, actor_field_slice("enemy_alive")] = 1.0
-    obs[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.9, 0.0], dtype=np.float32
-    )
-    obs[1, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.1, 0.0], dtype=np.float32
-    )
+    obs[:, actor_field_slice("enemy_relative_position")] = np.array([0.9, 0.0], dtype=np.float32)
+    obs[1, actor_field_slice("enemy_relative_position")] = np.array([0.1, 0.0], dtype=np.float32)
 
-    out = actor_obs_to_partial_entity_grid_obs(
-        obs, visible_radius=0.5, team_shared=False
-    )
+    out = actor_obs_to_partial_entity_grid_obs(obs, visible_radius=0.5, team_shared=False)
     token_width = ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM
     mask = out[:, token_width : token_width + ENTITY_TOKEN_COUNT]
     assert mask[:, 1].tolist() == [0.0, 1.0, 0.0]
@@ -86,9 +70,7 @@ def test_partial_obs_per_agent_keeps_visibility_local() -> None:
 def test_partial_obs_line_of_sight_override_can_hide_near_enemy() -> None:
     obs = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[:, actor_field_slice("enemy_alive")] = 1.0
-    obs[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.1, 0.0], dtype=np.float32
-    )
+    obs[:, actor_field_slice("enemy_relative_position")] = np.array([0.1, 0.0], dtype=np.float32)
 
     out = actor_obs_to_partial_entity_grid_obs(
         obs,
@@ -105,9 +87,7 @@ def test_partial_obs_uses_last_seen_marker_when_enemy_hidden() -> None:
     obs = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[:, actor_field_slice("enemy_alive")] = 1.0
     obs[:, actor_field_slice("own_position")] = np.array([0.1, 0.0], dtype=np.float32)
-    obs[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.9, 0.0], dtype=np.float32
-    )
+    obs[:, actor_field_slice("enemy_relative_position")] = np.array([0.9, 0.0], dtype=np.float32)
     last_seen = np.tile(np.array([0.3, 0.0], dtype=np.float32), (3, 1))
 
     out = actor_obs_to_partial_entity_grid_obs(
@@ -132,26 +112,16 @@ def test_partial_obs_uses_last_seen_marker_when_enemy_hidden() -> None:
 
 def test_partial_obs_hidden_enemy_live_fields_do_not_leak() -> None:
     obs_a = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
-    obs_a[:, actor_field_slice("own_position")] = np.array(
-        [0.1, -0.1], dtype=np.float32
-    )
+    obs_a[:, actor_field_slice("own_position")] = np.array([0.1, -0.1], dtype=np.float32)
     obs_a[:, actor_field_slice("enemy_alive")] = 1.0
     obs_a[:, actor_field_slice("enemy_hp")] = 0.25
-    obs_a[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [0.2, 0.3], dtype=np.float32
-    )
-    obs_a[:, actor_field_slice("enemy_velocity")] = np.array(
-        [0.4, -0.5], dtype=np.float32
-    )
+    obs_a[:, actor_field_slice("enemy_relative_position")] = np.array([0.2, 0.3], dtype=np.float32)
+    obs_a[:, actor_field_slice("enemy_velocity")] = np.array([0.4, -0.5], dtype=np.float32)
     obs_a[:, actor_field_slice("enemy_on_point")] = 1.0
     obs_b = obs_a.copy()
     obs_b[:, actor_field_slice("enemy_hp")] = 1.0
-    obs_b[:, actor_field_slice("enemy_relative_position")] = np.array(
-        [-0.7, 0.6], dtype=np.float32
-    )
-    obs_b[:, actor_field_slice("enemy_velocity")] = np.array(
-        [-0.3, 0.8], dtype=np.float32
-    )
+    obs_b[:, actor_field_slice("enemy_relative_position")] = np.array([-0.7, 0.6], dtype=np.float32)
+    obs_b[:, actor_field_slice("enemy_velocity")] = np.array([-0.3, 0.8], dtype=np.float32)
     obs_b[:, actor_field_slice("enemy_on_point")] = 0.0
     last_seen = np.tile(np.array([0.4, 0.2], dtype=np.float32), (3, 1))
     kwargs = {
@@ -196,9 +166,7 @@ def test_phase7_env_returns_partial_entity_grid_obs_and_phase4_critic_obs() -> N
         env.build_critic_obs(critic_obs)
         assert np.all(np.isfinite(critic_obs))
 
-        next_obs, reward, term, trunc, _ = env.step(
-            np.zeros((3, 6), dtype=np.float32)
-        )
+        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
         assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
         assert reward.shape == (3,)
         assert isinstance(term, bool)

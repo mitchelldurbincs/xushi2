@@ -79,9 +79,7 @@ def test_snapshot_retention_caps_latest_and_preserves_best(tmp_path: Path) -> No
     )
     retention.record_checkpoint(tmp_path / "ckpt_0001.pt", update=1, score=1.0)
     retention.record_checkpoint(tmp_path / "ckpt_0002.pt", update=2, score=3.0)
-    manifest = retention.record_checkpoint(
-        tmp_path / "ckpt_0003.pt", update=3, score=2.0
-    )
+    manifest = retention.record_checkpoint(tmp_path / "ckpt_0003.pt", update=3, score=2.0)
 
     assert manifest["latest"] == [
         str(tmp_path / "ckpt_0002.pt"),
@@ -264,9 +262,7 @@ def test_phase9_env_uses_snapshot_opponent(tmp_path: Path) -> None:
         critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
         env.build_critic_obs(critic_obs)
         assert np.all(np.isfinite(critic_obs))
-        next_obs, reward, term, trunc, info = env.step(
-            np.zeros((3, 6), dtype=np.float32)
-        )
+        next_obs, reward, term, trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
         assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
         assert reward.shape == (3,)
         assert isinstance(term, bool)

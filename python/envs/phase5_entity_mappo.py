@@ -40,8 +40,7 @@ class Phase5EntityMappoEnv(gym.Env):
     ) -> None:
         if opponent_bot not in VALID_OPPONENT_BOTS:
             raise ValueError(
-                f"unknown opponent_bot {opponent_bot!r}; "
-                f"valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
             )
         super().__init__()
         self._base = Phase4MappoEnv(

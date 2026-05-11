@@ -8,7 +8,9 @@ from typing import Mapping
 LogEvent = dict[str, object]
 
 
-def _event_base(*, event: str, phase: str, variant: str, update: int, total_updates: int) -> LogEvent:
+def _event_base(
+    *, event: str, phase: str, variant: str, update: int, total_updates: int
+) -> LogEvent:
     return {
         "event": event,
         "phase": phase,
@@ -61,9 +63,13 @@ def format_human_event(record: Mapping[str, object]) -> str:
     raise ValueError(f"unknown event type: {event}")
 
 
-def log_update(*, phase: str, variant: str, update: int, total_updates: int, metrics: Mapping[str, float]) -> LogEvent:
+def log_update(
+    *, phase: str, variant: str, update: int, total_updates: int, metrics: Mapping[str, float]
+) -> LogEvent:
     return {
-        **_event_base(event="update", phase=phase, variant=variant, update=update, total_updates=total_updates),
+        **_event_base(
+            event="update", phase=phase, variant=variant, update=update, total_updates=total_updates
+        ),
         "policy_loss": float(metrics["policy_loss"]),
         "value_loss": float(metrics["value_loss"]),
         "entropy": float(metrics["entropy"]),
@@ -77,9 +83,13 @@ def log_update(*, phase: str, variant: str, update: int, total_updates: int, met
     }
 
 
-def log_eval(*, phase: str, variant: str, update: int, total_updates: int, lr: float, eval_stats: object) -> LogEvent:
+def log_eval(
+    *, phase: str, variant: str, update: int, total_updates: int, lr: float, eval_stats: object
+) -> LogEvent:
     return {
-        **_event_base(event="eval", phase=phase, variant=variant, update=update, total_updates=total_updates),
+        **_event_base(
+            event="eval", phase=phase, variant=variant, update=update, total_updates=total_updates
+        ),
         "mean_reward": float(eval_stats.mean_reward),
         "wins": int(eval_stats.wins),
         "losses": int(eval_stats.losses),
@@ -96,15 +106,31 @@ def log_eval(*, phase: str, variant: str, update: int, total_updates: int, lr: f
     }
 
 
-def log_checkpoint(*, phase: str, variant: str, update: int, total_updates: int, path: str) -> LogEvent:
+def log_checkpoint(
+    *, phase: str, variant: str, update: int, total_updates: int, path: str
+) -> LogEvent:
     return {
-        **_event_base(event="checkpoint", phase=phase, variant=variant, update=update, total_updates=total_updates),
+        **_event_base(
+            event="checkpoint",
+            phase=phase,
+            variant=variant,
+            update=update,
+            total_updates=total_updates,
+        ),
         "path": path,
     }
 
 
-def log_early_stop(*, phase: str, variant: str, update: int, total_updates: int, reason: str) -> LogEvent:
+def log_early_stop(
+    *, phase: str, variant: str, update: int, total_updates: int, reason: str
+) -> LogEvent:
     return {
-        **_event_base(event="early_stop", phase=phase, variant=variant, update=update, total_updates=total_updates),
+        **_event_base(
+            event="early_stop",
+            phase=phase,
+            variant=variant,
+            update=update,
+            total_updates=total_updates,
+        ),
         "reason": reason,
     }

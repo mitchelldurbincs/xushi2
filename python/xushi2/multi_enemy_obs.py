@@ -75,12 +75,8 @@ def normalize_world_for_team(
 
 
 def _paint(grid: np.ndarray, channel: int, xy: np.ndarray, value: float) -> None:
-    ix = int(
-        np.clip(round((float(xy[0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1)
-    )
-    iy = int(
-        np.clip(round((1.0 - (float(xy[1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1)
-    )
+    ix = int(np.clip(round((float(xy[0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
+    iy = int(np.clip(round((1.0 - (float(xy[1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
     grid[channel, iy, ix] = max(grid[channel, iy, ix], float(value))
 
 
@@ -113,9 +109,7 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
     obs = np.asarray(obs, dtype=np.float32)
     critic_obs = np.asarray(critic_obs, dtype=np.float32)
     if obs.shape[-1] != ACTOR_PHASE1_DIM:
-        raise ValueError(
-            f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}"
-        )
+        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
     flat_obs = obs.reshape(-1, ACTOR_PHASE1_DIM)
     flat_critic = critic_obs.reshape(-1, CRITIC_DIM)
     if flat_critic.shape[0] != flat_obs.shape[0]:
@@ -140,13 +134,9 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
         dtype=np.float32,
     )
     token_width = MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM
-    tokens = out[:, :token_width].reshape(
-        rows, MULTI_ENEMY_TOKEN_COUNT, ENTITY_TOKEN_DIM
-    )
+    tokens = out[:, :token_width].reshape(rows, MULTI_ENEMY_TOKEN_COUNT, ENTITY_TOKEN_DIM)
     mask = out[:, token_width : token_width + MULTI_ENEMY_TOKEN_COUNT]
-    grids = out[:, -GRID_FLAT_DIM:].reshape(
-        rows, GRID_CHANNELS, GRID_SIZE, GRID_SIZE
-    )
+    grids = out[:, -GRID_FLAT_DIM:].reshape(rows, GRID_CHANNELS, GRID_SIZE, GRID_SIZE)
 
     own_pos = flat_obs[:, actor_field_slice("own_position")]
     own_hp = flat_obs[:, actor_field_slice("own_hp")][:, 0]
@@ -195,9 +185,7 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
             enemy_pos_norm[row, enemy_idx] = enemy_pos
             alive = bool(_enemy_world(flat_critic[row], enemy_idx, "alive_flag")[0] > 0.5)
             rel = enemy_pos - own_pos[row]
-            enemy_visible[row, enemy_idx] = (
-                alive and np.linalg.norm(rel) <= float(visible_radius)
-            )
+            enemy_visible[row, enemy_idx] = alive and np.linalg.norm(rel) <= float(visible_radius)
 
     if visible_override is not None:
         override = np.asarray(visible_override, dtype=bool).reshape(rows, 3)
@@ -206,9 +194,7 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
     stale_pos = None
     stale_valid = np.zeros((rows, 3), dtype=bool)
     if last_seen_enemy_position is not None:
-        stale_pos = np.asarray(last_seen_enemy_position, dtype=np.float32).reshape(
-            rows, 3, 2
-        )
+        stale_pos = np.asarray(last_seen_enemy_position, dtype=np.float32).reshape(rows, 3, 2)
         if last_seen_valid is not None:
             stale_valid = np.asarray(last_seen_valid, dtype=bool).reshape(rows, 3)
         else:
@@ -224,22 +210,14 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
             enemy_tok[_TEAM] = np.array([0.0, 1.0, 0.0], dtype=np.float32)
             if enemy_visible[row, enemy_idx]:
                 rel = enemy_pos_norm[row, enemy_idx] - own_pos[row]
-                enemy_tok[_HP] = _enemy_world(
-                    flat_critic[row], enemy_idx, "hp_normalized"
-                )[0]
+                enemy_tok[_HP] = _enemy_world(flat_critic[row], enemy_idx, "hp_normalized")[0]
                 enemy_tok[_ALIVE] = 1.0
                 enemy_tok[_POSITION] = rel
                 vel = _enemy_world(flat_critic[row], enemy_idx, "world_velocity")
-                enemy_tok[_VELOCITY] = (
-                    (-vel if bool(team_b[row]) else vel) / _RANGER_MAX_SPEED
-                )
-                enemy_tok[_AIM] = _enemy_world(
-                    flat_critic[row], enemy_idx, "world_aim_unit"
-                )
+                enemy_tok[_VELOCITY] = (-vel if bool(team_b[row]) else vel) / _RANGER_MAX_SPEED
+                enemy_tok[_AIM] = _enemy_world(flat_critic[row], enemy_idx, "world_aim_unit")
                 enemy_tok[_AMMO] = _enemy_world(flat_critic[row], enemy_idx, "ammo")[0]
-                enemy_tok[_RELOADING] = _enemy_world(
-                    flat_critic[row], enemy_idx, "reloading"
-                )[0]
+                enemy_tok[_RELOADING] = _enemy_world(flat_critic[row], enemy_idx, "reloading")[0]
                 enemy_tok[_ABILITY_CD] = _enemy_world(
                     flat_critic[row], enemy_idx, "combat_roll_cd"
                 )[0]

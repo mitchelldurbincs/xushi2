@@ -105,11 +105,13 @@ def test_early_stop_from_stagnation_keeps_best_checkpoint(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     cfg = _base_config(tmp_path)
-    cfg["run"].update({
-        "early_stop_patience_evals": 2,
-        "early_stop_min_delta": 0.01,
-        "max_regression_from_best": 1.0,
-    })
+    cfg["run"].update(
+        {
+            "early_stop_patience_evals": 2,
+            "early_stop_min_delta": 0.01,
+            "max_regression_from_best": 1.0,
+        }
+    )
 
     evals = iter([0.10, 0.105, 0.106, 0.106])
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
@@ -132,11 +134,13 @@ def test_early_stop_from_regression_keeps_best_checkpoint(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     cfg = _base_config(tmp_path)
-    cfg["run"].update({
-        "early_stop_patience_evals": 100,
-        "early_stop_min_delta": 0.0,
-        "max_regression_from_best": 0.05,
-    })
+    cfg["run"].update(
+        {
+            "early_stop_patience_evals": 100,
+            "early_stop_min_delta": 0.0,
+            "max_regression_from_best": 0.05,
+        }
+    )
 
     evals = iter([0.50, 0.20])
     monkeypatch.setattr(ppo_orch, "PPOTrainer", _DummyTrainer)
@@ -152,4 +156,6 @@ def test_early_stop_from_regression_keeps_best_checkpoint(
     ckpt = torch.load(out_dir / "ckpt_final.pt")
     assert best_eval == 0.50
     assert ckpt["model_state_dict"]["update_idx"] == 1
-    assert "early-stop: eval regression exceeded max_regression_from_best" in capsys.readouterr().out
+    assert (
+        "early-stop: eval regression exceeded max_regression_from_best" in capsys.readouterr().out
+    )

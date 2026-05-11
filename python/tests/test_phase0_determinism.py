@@ -27,12 +27,15 @@ SIM_CFG = {
 EXPECTED_DECISIONS = 300
 
 
-@pytest.mark.parametrize("bot_a,bot_b", [
-    ("basic", "basic"),
-    ("walk_to_objective", "walk_to_objective"),
-    ("hold_and_shoot", "hold_and_shoot"),
-    ("noop", "noop"),
-])
+@pytest.mark.parametrize(
+    "bot_a,bot_b",
+    [
+        ("basic", "basic"),
+        ("walk_to_objective", "walk_to_objective"),
+        ("hold_and_shoot", "hold_and_shoot"),
+        ("noop", "noop"),
+    ],
+)
 def test_intra_process_determinism(bot_a: str, bot_b: str) -> None:
     a = run_episode(SIM_CFG, bot_a, bot_b)
     b = run_episode(SIM_CFG, bot_a, bot_b)

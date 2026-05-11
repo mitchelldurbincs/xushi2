@@ -132,9 +132,11 @@ def randomized_wall_segments(seed: int, cfg: dict | None = None) -> list[dict[st
     return walls
 
 
-def map_layout_hash(bounds: dict[str, float],
-                    covers: list[dict[str, float]] | tuple[dict[str, float], ...],
-                    walls: list[dict[str, float]] | tuple[dict[str, float], ...] = ()) -> str:
+def map_layout_hash(
+    bounds: dict[str, float],
+    covers: list[dict[str, float]] | tuple[dict[str, float], ...],
+    walls: list[dict[str, float]] | tuple[dict[str, float], ...] = (),
+) -> str:
     """Return a stable 64-bit hash for rounded Phase-8 layout geometry."""
     h = _FNV64_OFFSET
     for key in ("min_x", "min_y", "max_x", "max_y"):

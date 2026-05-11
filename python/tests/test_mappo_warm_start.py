@@ -47,19 +47,30 @@ def _phase4_smoke_cfg(output_dir: Path, **run_overrides) -> dict:
             "action_log_std_init": -1.0,
         },
         "ppo": {
-            "num_envs": 2, "rollout_len": 16, "num_epochs": 1,
-            "minibatch_size": 1, "learning_rate": 3.0e-4,
-            "value_normalization": True, "vector_env": "sync",
-            "torch_num_threads": 1, "lr_schedule": "constant",
-            "lr_final_ratio": 1.0, "warmup_updates": 0,
-            "clip_ratio": 0.2, "value_clip_ratio": 0.2,
-            "gamma": 0.997, "gae_lambda": 0.95,
-            "entropy_coef": 0.01, "value_coef": 0.5,
+            "num_envs": 2,
+            "rollout_len": 16,
+            "num_epochs": 1,
+            "minibatch_size": 1,
+            "learning_rate": 3.0e-4,
+            "value_normalization": True,
+            "vector_env": "sync",
+            "torch_num_threads": 1,
+            "lr_schedule": "constant",
+            "lr_final_ratio": 1.0,
+            "warmup_updates": 0,
+            "clip_ratio": 0.2,
+            "value_clip_ratio": 0.2,
+            "gamma": 0.997,
+            "gae_lambda": 0.95,
+            "entropy_coef": 0.01,
+            "value_coef": 0.5,
             "max_grad_norm": 0.5,
         },
         "run": {
-            "total_updates": 1, "eval_every": 1,
-            "eval_episodes": 1, "checkpoint_every": 1,
+            "total_updates": 1,
+            "eval_every": 1,
+            "eval_episodes": 1,
+            "checkpoint_every": 1,
             "log_every": 1,
             "output_dir": str(output_dir),
             **run_overrides,
@@ -123,23 +134,25 @@ def test_mappo_without_warm_start_with_different_seed_diverges(
     train_phase4_from_config(_set_seed(_phase4_smoke_cfg(seed0_dir), 0))
     seed0_ckpt = torch.load(
         seed0_dir / "mappo" / "ckpt_final.pt",
-        map_location="cpu", weights_only=False,
+        map_location="cpu",
+        weights_only=False,
     )
 
     seed_other_dir = tmp_path / "seed12345"
-    train_phase4_from_config(
-        _set_seed(_phase4_smoke_cfg(seed_other_dir), 12345)
-    )
+    train_phase4_from_config(_set_seed(_phase4_smoke_cfg(seed_other_dir), 12345))
     seed_other_ckpt = torch.load(
         seed_other_dir / "mappo" / "ckpt_final.pt",
-        map_location="cpu", weights_only=False,
+        map_location="cpu",
+        weights_only=False,
     )
 
     sample = "actor_embed.0.weight"
     diff = (
-        seed0_ckpt["model_state_dict"][sample]
-        - seed_other_ckpt["model_state_dict"][sample]
-    ).abs().mean().item()
+        (seed0_ckpt["model_state_dict"][sample] - seed_other_ckpt["model_state_dict"][sample])
+        .abs()
+        .mean()
+        .item()
+    )
     # Two different seeds should produce noticeably different weights.
     # If this is < 0.05, the positive test's threshold is too loose.
     assert diff > 0.05, (

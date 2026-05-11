@@ -25,9 +25,14 @@ from xushi2.runner import _build_config
 
 __all__ = ["Phase4MappoEnv", "VALID_OPPONENT_BOTS"]
 
-VALID_OPPONENT_BOTS: frozenset[str] = frozenset({
-    "walk_to_objective", "hold_and_shoot", "basic", "noop",
-})
+VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
+    {
+        "walk_to_objective",
+        "hold_and_shoot",
+        "basic",
+        "noop",
+    }
+)
 
 _AGENTS_PER_MATCH = _cpp.AGENTS_PER_MATCH
 
@@ -57,26 +62,17 @@ class Phase4MappoEnv(gym.Env):
 
         if opponent_bot not in VALID_OPPONENT_BOTS and opponent_policy is None:
             raise ValueError(
-                f"unknown opponent_bot {opponent_bot!r}; "
-                f"valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
             )
         if learner_team not in ("A", "B"):
-            raise ValueError(
-                f"learner_team must be 'A' or 'B', got {learner_team!r}"
-            )
+            raise ValueError(f"learner_team must be 'A' or 'B', got {learner_team!r}")
 
         self._sim_cfg = dict(sim_cfg)
         self._opponent_bot = opponent_bot
         self._learner_team_str = learner_team
-        self._learner_team = (
-            _cpp.Team.A if learner_team == "A" else _cpp.Team.B
-        )
-        self._own_slots: tuple[int, int, int] = (
-            (0, 1, 2) if learner_team == "A" else (3, 4, 5)
-        )
-        self._enemy_slots: tuple[int, int, int] = (
-            (3, 4, 5) if learner_team == "A" else (0, 1, 2)
-        )
+        self._learner_team = _cpp.Team.A if learner_team == "A" else _cpp.Team.B
+        self._own_slots: tuple[int, int, int] = (0, 1, 2) if learner_team == "A" else (3, 4, 5)
+        self._enemy_slots: tuple[int, int, int] = (3, 4, 5) if learner_team == "A" else (0, 1, 2)
 
         self._sim: _cpp.Sim | None = None
         self._opponent_policy = opponent_policy
@@ -84,16 +80,13 @@ class Phase4MappoEnv(gym.Env):
         # Phase 4 always emits per-agent rewards so MAPPO can use individual
         # credit assignment + the team_spirit lever.
         self._reward_cfg.pop("per_agent_rewards", None)
-        self._reward_calc = RewardCalculator(
-            per_agent_rewards=True, **self._reward_cfg
-        )
+        self._reward_calc = RewardCalculator(per_agent_rewards=True, **self._reward_cfg)
 
-        self._actor_obs_buf = np.zeros(
-            (3, ACTOR_PHASE1_DIM), dtype=np.float32
-        )
+        self._actor_obs_buf = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
 
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf,
+            low=-np.inf,
+            high=np.inf,
             shape=(3, ACTOR_PHASE1_DIM),
             dtype=np.float32,
         )
@@ -106,16 +99,17 @@ class Phase4MappoEnv(gym.Env):
             (3, 1),
         )
         self.action_space = spaces.Box(
-            low=low, high=high, shape=(3, 6), dtype=np.float32,
+            low=low,
+            high=high,
+            shape=(3, 6),
+            dtype=np.float32,
         )
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
         if "team_size" in self._sim_cfg:
-            raise ValueError(
-                "sim_cfg must not carry 'team_size'; the env owns this knob"
-            )
+            raise ValueError("sim_cfg must not carry 'team_size'; the env owns this knob")
 
         cfg = _build_config(self._sim_cfg, seed_override=seed)
         cfg.team_size = 3
@@ -131,9 +125,7 @@ class Phase4MappoEnv(gym.Env):
             raise RuntimeError("reset() must be called before step()")
         action = np.asarray(action, dtype=np.float32)
         if action.ndim != 2 or action.shape[0] != 3 or action.shape[1] < 6:
-            raise ValueError(
-                f"action shape must be (3, >=6), got {action.shape}"
-            )
+            raise ValueError(f"action shape must be (3, >=6), got {action.shape}")
 
         actions = [_cpp.Action() for _ in range(_AGENTS_PER_MATCH)]
         for slot, a in zip(self._own_slots, action):
@@ -159,9 +151,7 @@ class Phase4MappoEnv(gym.Env):
             opponent_actions[:] = enemy_actions
         else:
             for i, enemy_slot in enumerate(self._enemy_slots):
-                scripted = _cpp.scripted_bot_action(
-                    self._sim, enemy_slot, self._opponent_bot
-                )
+                scripted = _cpp.scripted_bot_action(self._sim, enemy_slot, self._opponent_bot)
                 actions[enemy_slot] = scripted
                 opponent_actions[i] = np.array(
                     [
@@ -180,17 +170,11 @@ class Phase4MappoEnv(gym.Env):
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
         own_reward = r_a if self._learner_team_str == "A" else r_b
 
-        terminated = bool(self._sim.episode_over) and (
-            self._sim.winner != _cpp.Team.Neutral
-        )
-        truncated = bool(self._sim.episode_over) and (
-            self._sim.winner == _cpp.Team.Neutral
-        )
+        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
+        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)  # (3,) each
-            own_reward = own_reward + (
-                ta if self._learner_team_str == "A" else tb
-            )
+            own_reward = own_reward + (ta if self._learner_team_str == "A" else tb)
 
         reward = np.asarray(own_reward, dtype=np.float32)
         self._build_actor_obs_all()
@@ -220,15 +204,12 @@ class Phase4MappoEnv(gym.Env):
 
     def build_critic_obs(self, out: np.ndarray) -> None:
         if self._sim is None:
-            raise RuntimeError(
-                "reset() must be called before build_critic_obs()"
-            )
+            raise RuntimeError("reset() must be called before build_critic_obs()")
         if not isinstance(out, np.ndarray):
             raise ValueError("out must be an np.ndarray")
         if out.shape != (CRITIC_DIM,) or out.dtype != np.float32:
             raise ValueError(
-                f"out must be float32 ndarray of shape ({CRITIC_DIM},), "
-                f"got {out.shape} {out.dtype}"
+                f"out must be float32 ndarray of shape ({CRITIC_DIM},), got {out.shape} {out.dtype}"
             )
         _cpp.build_critic_obs(self._sim, self._learner_team, out)
 
@@ -243,9 +224,7 @@ class Phase4MappoEnv(gym.Env):
                     for ally_slot in self._own_slots
                 )
             else:
-                mask[i] = bool(
-                    _cpp.observable_enemy_slots(self._sim, own_slot)[enemy_slot]
-                )
+                mask[i] = bool(_cpp.observable_enemy_slots(self._sim, own_slot)[enemy_slot])
         return mask
 
     def set_team_spirit(self, value: float) -> None:

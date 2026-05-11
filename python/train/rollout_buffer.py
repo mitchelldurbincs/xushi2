@@ -135,9 +135,7 @@ class RolloutBuffer:
         the next add. The next ``add`` for that env will write zero
         ``h_init`` regardless of what the caller hands in."""
         if not (0 <= env_idx < self.num_envs):
-            raise IndexError(
-                f"env_idx {env_idx} out of range [0, {self.num_envs})"
-            )
+            raise IndexError(f"env_idx {env_idx} out of range [0, {self.num_envs})")
         self._reset_pending[env_idx] = True
 
     # ------------------------------------------------------------------
@@ -172,14 +170,9 @@ class RolloutBuffer:
                 # A_{t+1} back into A_t.
                 next_nonterminal = 1.0 - self.done[:, t]
             delta = (
-                self.reward[:, t]
-                + self.gamma * next_value * next_nonterminal
-                - self.value[:, t]
+                self.reward[:, t] + self.gamma * next_value * next_nonterminal - self.value[:, t]
             )
-            last_gae = (
-                delta
-                + self.gamma * self.gae_lambda * next_nonterminal * last_gae
-            )
+            last_gae = delta + self.gamma * self.gae_lambda * next_nonterminal * last_gae
             advantages[:, t] = last_gae
 
         returns = advantages + self.value

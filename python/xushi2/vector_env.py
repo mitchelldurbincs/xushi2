@@ -41,9 +41,7 @@ def _async_worker(
                 info = dict(info)
                 if (term or trunc) and auto_reset:
                     info["final_info"] = dict(info)
-                    info["final_observation"] = np.asarray(
-                        obs, dtype=env.observation_space.dtype
-                    )
+                    info["final_observation"] = np.asarray(obs, dtype=env.observation_space.dtype)
                     episode_count += 1
                     reset_seed = seed_base + 10_000 * episode_count + env_idx
                     obs, reset_info = env.reset(seed=reset_seed)
@@ -160,9 +158,7 @@ class XushiVectorEnv:
         actions = np.asarray(actions, dtype=self.single_action_space.dtype)
         expected_shape = (self.num_envs, *self.single_action_space.shape)
         if actions.shape != expected_shape:
-            raise ValueError(
-                f"actions shape must be {expected_shape}, got {actions.shape}"
-            )
+            raise ValueError(f"actions shape must be {expected_shape}, got {actions.shape}")
 
         obs_parts: list[np.ndarray] = []
         reward_parts: list[np.ndarray] = []
@@ -324,9 +320,7 @@ class XushiAsyncVectorEnv:
         actions = np.asarray(actions, dtype=self.single_action_space.dtype)
         expected_shape = (self.num_envs, *self.single_action_space.shape)
         if actions.shape != expected_shape:
-            raise ValueError(
-                f"actions shape must be {expected_shape}, got {actions.shape}"
-            )
+            raise ValueError(f"actions shape must be {expected_shape}, got {actions.shape}")
         for i, conn in enumerate(self._conns):
             conn.send(("step", actions[i]))
 

@@ -51,9 +51,7 @@ def actor_obs_to_partial_entity_grid_obs(
     """
     obs = np.asarray(obs, dtype=np.float32)
     if obs.shape[-1] != ACTOR_PHASE1_DIM:
-        raise ValueError(
-            f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}"
-        )
+        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
     if visible_radius <= 0.0:
         raise ValueError("visible_radius must be positive")
 
@@ -118,7 +116,19 @@ def actor_obs_to_partial_entity_grid_obs(
             tokens[marker, _ENEMY_TOKEN, :] = enemy_tokens
             mask[marker, _ENEMY_TOKEN] = 1.0
             for idx in np.flatnonzero(marker):
-                x = int(np.clip(round((float(rel_pos[idx, 0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
-                y = int(np.clip(round((1.0 - (float(rel_pos[idx, 1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
+                x = int(
+                    np.clip(
+                        round((float(rel_pos[idx, 0]) + 1.0) * 0.5 * (GRID_SIZE - 1)),
+                        0,
+                        GRID_SIZE - 1,
+                    )
+                )
+                y = int(
+                    np.clip(
+                        round((1.0 - (float(rel_pos[idx, 1]) + 1.0) * 0.5) * (GRID_SIZE - 1)),
+                        0,
+                        GRID_SIZE - 1,
+                    )
+                )
                 grids[idx, 2, y, x] = max(grids[idx, 2, y, x], 0.5)
     return out

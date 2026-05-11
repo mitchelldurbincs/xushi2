@@ -67,9 +67,7 @@ class Phase3RangerEnv(gym.Env):
         self,
         action: np.ndarray,
     ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
-        obs, reward, terminated, truncated, info = self._env.step(
-            self._action_to_dict(action)
-        )
+        obs, reward, terminated, truncated, info = self._env.step(self._action_to_dict(action))
         return obs, reward, terminated, truncated, self._sanitize_info(info)
 
     def close(self) -> None:

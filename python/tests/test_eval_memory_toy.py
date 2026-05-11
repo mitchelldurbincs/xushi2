@@ -33,11 +33,7 @@ def _mk_result(mean: float, *, ci95: float = 0.01, n: int = 32) -> Any:
         "mode": "test",
         "seed": 0,
     }
-    kwargs = {
-        name: values[name]
-        for name in sig.parameters
-        if name != "self" and name in values
-    }
+    kwargs = {name: values[name] for name in sig.parameters if name != "self" and name in values}
 
     if is_dataclass(cls):
         for f in fields(cls):

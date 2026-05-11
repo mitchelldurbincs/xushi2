@@ -32,9 +32,7 @@ def _make_sim_cfg(round_length: int = 5) -> dict:
 def test_actor_obs_to_entity_grid_obs_shapes_and_marks_grid() -> None:
     obs = np.zeros((1, ACTOR_PHASE1_DIM), dtype=np.float32)
     obs[0, actor_field_slice("own_position")] = np.array([0.5, 0.0], dtype=np.float32)
-    obs[0, actor_field_slice("enemy_relative_position")] = np.array(
-        [-0.5, 0.0], dtype=np.float32
-    )
+    obs[0, actor_field_slice("enemy_relative_position")] = np.array([-0.5, 0.0], dtype=np.float32)
     obs[0, actor_field_slice("enemy_alive")] = 1.0
 
     out = actor_obs_to_entity_grid_obs(obs)
@@ -57,9 +55,7 @@ def test_phase6_env_returns_entity_grid_obs_and_phase4_critic_obs() -> None:
         env.build_critic_obs(critic_obs)
         assert np.all(np.isfinite(critic_obs))
 
-        next_obs, reward, term, trunc, _ = env.step(
-            np.zeros((3, 6), dtype=np.float32)
-        )
+        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
         assert next_obs.shape == (3, ENTITY_GRID_OBS_DIM)
         assert reward.shape == (3,)
         assert isinstance(term, bool)

@@ -146,16 +146,9 @@ def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None
 
     train_phase4_from_config(config)
 
-    manifest_path = (
-        tmp_path
-        / "phase4_matrix_retention"
-        / "mappo"
-        / "snapshot_league.json"
-    )
+    manifest_path = tmp_path / "phase4_matrix_retention" / "mappo" / "snapshot_league.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    final_record = next(
-        r for r in manifest["records"] if Path(r["path"]).name == "ckpt_final.pt"
-    )
+    final_record = next(r for r in manifest["records"] if Path(r["path"]).name == "ckpt_final.pt")
     assert final_record["matrix_rows"] == 1
     assert "matrix_score" in final_record
     assert Path(manifest["historical"][0]).name == "ckpt_final.pt"

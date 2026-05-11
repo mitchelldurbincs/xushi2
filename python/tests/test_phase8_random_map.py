@@ -79,9 +79,7 @@ def test_build_config_accepts_wall_segments() -> None:
     cfg = _build_config(
         {
             **_make_sim_cfg(),
-            "wall_segments": [
-                {"x1": 20.0, "y1": 20.0, "x2": 20.0, "y2": 30.0, "half_width": 0.3}
-            ],
+            "wall_segments": [{"x1": 20.0, "y1": 20.0, "x2": 20.0, "y2": 30.0, "half_width": 0.3}],
         }
     )
     walls = cfg.wall_segments
@@ -128,8 +126,7 @@ def test_randomized_cover_markers_are_deterministic_symmetric_and_seed_dependent
         assert marker["radius"] == 1.25
         mirrored = {"x": 2.0 * cx - marker["x"], "y": 2.0 * cy - marker["y"]}
         assert any(
-            abs(other["x"] - mirrored["x"]) < 1e-5
-            and abs(other["y"] - mirrored["y"]) < 1e-5
+            abs(other["x"] - mirrored["x"]) < 1e-5 and abs(other["y"] - mirrored["y"]) < 1e-5
             for other in a
         )
 
@@ -255,9 +252,7 @@ def test_phase8_env_resets_with_seeded_randomized_map() -> None:
         assert len(walls_a) == 2
         assert walls_a[0]["half_width"] == 0.25
 
-        _next_obs, _reward, _term, _trunc, step_info = env.step(
-            np.zeros((3, 6), dtype=np.float32)
-        )
+        _next_obs, _reward, _term, _trunc, step_info = env.step(np.zeros((3, 6), dtype=np.float32))
         assert step_info["map_layout_hash"] == layout_c
         assert step_info["wall_segments"] == walls_c
 

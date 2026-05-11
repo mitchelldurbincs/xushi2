@@ -113,9 +113,7 @@ class Phase7FogMappoEnv(gym.Env):
             last_seen_valid=self._last_seen_valid,
         )
 
-    def _enemy_visibility_matrix(
-        self, flat_obs: np.ndarray, critic: np.ndarray
-    ) -> np.ndarray:
+    def _enemy_visibility_matrix(self, flat_obs: np.ndarray, critic: np.ndarray) -> np.ndarray:
         if self._base._sim is None:
             raise RuntimeError("reset() must be called before converting obs")
         own_slots = self._base._own_slots
@@ -125,12 +123,9 @@ class Phase7FogMappoEnv(gym.Env):
         alive = np.zeros((3, 3), dtype=bool)
         for row in range(3):
             for enemy_idx in range(3):
-                enemy_pos[row, enemy_idx] = self._enemy_norm_position(
-                    critic[row], enemy_idx
-                )
+                enemy_pos[row, enemy_idx] = self._enemy_norm_position(critic[row], enemy_idx)
                 alive[row, enemy_idx] = (
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0]
-                    > 0.5
+                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
                 )
         radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
             self._visible_radius

@@ -35,9 +35,7 @@ def actor_obs_to_entity_grid_obs(obs: np.ndarray) -> np.ndarray:
     """
     obs = np.asarray(obs, dtype=np.float32)
     if obs.shape[-1] != ACTOR_PHASE1_DIM:
-        raise ValueError(
-            f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}"
-        )
+        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
     entity_obs = actor_obs_to_entity_obs(obs)
     flat = obs.reshape(-1, ACTOR_PHASE1_DIM)
     grids = np.zeros((flat.shape[0], GRID_CHANNELS, GRID_SIZE, GRID_SIZE), dtype=np.float32)

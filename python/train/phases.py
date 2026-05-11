@@ -198,8 +198,6 @@ def _make_phase11_env(
     )
 
 
-
-
 def _extract_base_env_cfg(env_cfg: dict, *, opponent_default: str = "basic") -> dict:
     sim_cfg = dict(env_cfg.get("sim", {}))
     return {

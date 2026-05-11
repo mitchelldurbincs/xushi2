@@ -52,13 +52,18 @@ def main() -> int:
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--seed", type=lambda s: int(s, 0), default=0xD1CEDA7A)
-    parser.add_argument("--episodes", type=int, default=1,
-                        help="Number of consecutive episodes to dump")
-    parser.add_argument("--max-decisions", type=int, default=None,
-                        help="Optional cap for quick smoke dumps")
-    parser.add_argument("--stochastic", action="store_true",
-                        help="Sample actions from the policy distribution "
-                        "instead of greedy. Reflects training-time behavior.")
+    parser.add_argument(
+        "--episodes", type=int, default=1, help="Number of consecutive episodes to dump"
+    )
+    parser.add_argument(
+        "--max-decisions", type=int, default=None, help="Optional cap for quick smoke dumps"
+    )
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="Sample actions from the policy distribution "
+        "instead of greedy. Reflects training-time behavior.",
+    )
     args = parser.parse_args()
 
     output_path = Path(args.output)

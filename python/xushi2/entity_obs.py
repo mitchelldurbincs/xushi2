@@ -34,9 +34,7 @@ _OBJECTIVE_TOKEN = 2
 def _as_actor_obs(obs: np.ndarray) -> np.ndarray:
     obs = np.asarray(obs, dtype=np.float32)
     if obs.shape[-1] != ACTOR_PHASE1_DIM:
-        raise ValueError(
-            f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}"
-        )
+        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
     return obs
 
 
@@ -110,9 +108,7 @@ def entity_obs_self_position(obs: np.ndarray) -> np.ndarray:
     """Return the self-token team-frame position from flattened entity obs."""
     obs = np.asarray(obs, dtype=np.float32)
     if obs.shape[-1] < ENTITY_OBS_DIM:
-        raise ValueError(
-            f"entity obs last dim must be at least {ENTITY_OBS_DIM}, got {obs.shape}"
-        )
+        raise ValueError(f"entity obs last dim must be at least {ENTITY_OBS_DIM}, got {obs.shape}")
     tokens = obs[..., : ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM].reshape(
         *obs.shape[:-1], ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
     )

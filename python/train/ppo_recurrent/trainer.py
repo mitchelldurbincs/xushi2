@@ -51,9 +51,7 @@ class PPOTrainer:
         # multi-core boxes. Seeding via ``reset(seed=seed)`` fans out as
         # ``[seed, seed+1, ..., seed+num_envs-1]`` per env in both.
         vec_cls: type = AsyncVectorEnv if config.vector_env == "async" else SyncVectorEnv
-        self.envs = vec_cls(
-            [env_fn for _ in range(config.num_envs)]
-        )
+        self.envs = vec_cls([env_fn for _ in range(config.num_envs)])
         obs, _ = self.envs.reset(seed=self.seed)
         self._last_obs = torch.as_tensor(obs, dtype=torch.float32)
 
@@ -81,9 +79,7 @@ class PPOTrainer:
             head_hidden=config.head_hidden,
             action_log_std_init=config.action_log_std_init,
         )
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=config.learning_rate
-        )
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.learning_rate)
         self.set_learning_rate(config.learning_rate)
 
         # --- Per-trainer action-sampling RNG state. We use the GLOBAL
@@ -103,7 +99,10 @@ class PPOTrainer:
         self._critic_params: list[torch.nn.Parameter] = []
         self._trunk_params: list[torch.nn.Parameter] = []
         for name, p in self.model.named_parameters():
-            if name.startswith(("actor_body", "actor_mean_head", "actor_binary_head")) or name == "log_std":
+            if (
+                name.startswith(("actor_body", "actor_mean_head", "actor_binary_head"))
+                or name == "log_std"
+            ):
                 self._actor_params.append(p)
             elif name.startswith("critic_head"):
                 self._critic_params.append(p)
@@ -143,7 +142,7 @@ class PPOTrainer:
         for p in params:
             if p.grad is not None:
                 total_sq += float(p.grad.detach().pow(2).sum().item())
-        return float(total_sq ** 0.5)
+        return float(total_sq**0.5)
 
     # ------------------------------------------------------------------
     # Rollout
@@ -171,4 +170,3 @@ class PPOTrainer:
     def update(self, rollout: RolloutBuffer) -> dict:
         """Run PPO updates on ``rollout`` and return metrics."""
         return ppo_updater.update_ppo(self, rollout)
-

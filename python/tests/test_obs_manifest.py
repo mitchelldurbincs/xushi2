@@ -66,9 +66,15 @@ def test_critic_fields_have_expected_layout():
 
     # Then enemyN/<world block> for N in 0,1,2 (9 fields each).
     enemy_field_names = [
-        "world_position", "world_velocity", "world_aim_unit",
-        "hp_normalized", "alive_flag", "respawn_timer",
-        "ammo", "reloading", "combat_roll_cd",
+        "world_position",
+        "world_velocity",
+        "world_aim_unit",
+        "hp_normalized",
+        "alive_flag",
+        "respawn_timer",
+        "ammo",
+        "reloading",
+        "combat_roll_cd",
     ]
     cursor = len(expected_prefix)
     for enemy in range(3):
@@ -80,14 +86,19 @@ def test_critic_fields_have_expected_layout():
 
     # Then objective + seed unprefixed.
     tail = [
-        "cap_progress_ticks", "team_a_score_ticks",
-        "team_b_score_ticks", "tick_raw", "seed_hi", "seed_lo",
+        "cap_progress_ticks",
+        "team_a_score_ticks",
+        "team_b_score_ticks",
+        "tick_raw",
+        "seed_hi",
+        "seed_lo",
     ]
     assert actual_names[cursor:] == tail
 
 
 def test_critic_phase1_symbols_removed():
     import xushi2.obs_manifest as m
+
     assert not hasattr(m, "CRITIC_PHASE1_FIELDS")
     assert not hasattr(m, "CRITIC_PHASE1_DIM")
 

@@ -60,9 +60,7 @@ def test_phase5_env_returns_entity_obs_and_phase4_critic_obs() -> None:
         env.build_critic_obs(critic_obs)
         assert np.all(np.isfinite(critic_obs))
 
-        next_obs, reward, term, trunc, _ = env.step(
-            np.zeros((3, 6), dtype=np.float32)
-        )
+        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
         assert next_obs.shape == (3, ENTITY_OBS_DIM)
         assert reward.shape == (3,)
         assert isinstance(term, bool)

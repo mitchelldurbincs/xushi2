@@ -76,14 +76,10 @@ class SelfPlaySchedule:
         if kind == "anchor":
             if self.anchor:
                 path = self.anchor[int(rng.integers(0, len(self.anchor)))]
-                return SelfPlayMatch(
-                    match_type="anchor", group="anchor", snapshot_path=path
-                )
+                return SelfPlayMatch(match_type="anchor", group="anchor", snapshot_path=path)
             if self.anchor_bot is None:
                 raise ValueError("anchor match sampled but no anchor paths or bot exist")
-            return SelfPlayMatch(
-                match_type="anchor", group="anchor", anchor_bot=self.anchor_bot
-            )
+            return SelfPlayMatch(match_type="anchor", group="anchor", anchor_bot=self.anchor_bot)
 
         paths: list[tuple[str, str]] = []
         paths.extend(("latest", p) for p in self.latest)

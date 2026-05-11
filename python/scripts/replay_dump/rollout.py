@@ -25,8 +25,15 @@ def load_phase4_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     return model, ckpt_config
 
 
-def dump_phase3(model, ckpt_config: dict, *, seed: int, episodes: int,
-                max_decisions: int | None, output_path: Path) -> int:
+def dump_phase3(
+    model,
+    ckpt_config: dict,
+    *,
+    seed: int,
+    episodes: int,
+    max_decisions: int | None,
+    output_path: Path,
+) -> int:
     train_config = {
         "phase": int(ckpt_config.get("phase", 3)),
         "env": ckpt_config["env"],
@@ -56,7 +63,8 @@ def dump_phase3(model, ckpt_config: dict, *, seed: int, episodes: int,
                     obs, _r, term, trunc, info = env.step(action)
                     opp = info["opponent_action"]
                     opponent_fields = [
-                        float(opp["move_x"]), float(opp["move_y"]),
+                        float(opp["move_x"]),
+                        float(opp["move_y"]),
                         float(opp["aim_delta"]),
                         float(opp["primary_fire"]),
                         float(opp["ability_1"]),
@@ -72,9 +80,16 @@ def dump_phase3(model, ckpt_config: dict, *, seed: int, episodes: int,
     return n_decisions
 
 
-def dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
-               episodes: int, max_decisions: int | None, output_path: Path,
-               stochastic: bool = False) -> int:
+def dump_mappo(
+    model: MappoActorCritic,
+    ckpt_config: dict,
+    *,
+    seed: int,
+    episodes: int,
+    max_decisions: int | None,
+    output_path: Path,
+    stochastic: bool = False,
+) -> int:
     wanted_phase = int(ckpt_config.get("phase", 4))
     if wanted_phase != 11 and ckpt_config["env"].get("learner_team", "A") != "A":
         raise ValueError("MAPPO replay dumping currently supports learner_team='A'")
@@ -82,9 +97,7 @@ def dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
     phase, spec = resolve_phase({"phase": wanted_phase, "env": ckpt_config["env"]})
     if phase not in (4, 5, 6, 7, 8, 9, 10, 11):
         raise AssertionError("internal phase resolution error")
-    env_fn, _env_meta, _seed_base = spec["env_bundle"](
-        {"phase": phase, "env": ckpt_config["env"]}
-    )
+    env_fn, _env_meta, _seed_base = spec["env_bundle"]({"phase": phase, "env": ckpt_config["env"]})
     header = header_fields(ckpt_config, seed=seed)
     include_target = int(model.cfg.target_action_dim) > 0
     zero_slot = [0.0] * (7 if include_target else 6)
@@ -128,7 +141,9 @@ def dump_mappo(model: MappoActorCritic, ckpt_config: dict, *, seed: int,
                                 raise ValueError(
                                     "phase11 league replay dump requires opponent_actions info"
                                 )
-                            opponent_slots = [action_to_fields(opponent_actions[i]) for i in range(3)]
+                            opponent_slots = [
+                                action_to_fields(opponent_actions[i]) for i in range(3)
+                            ]
                             slots = policy_slots[:3] + opponent_slots
                     else:
                         obs, _reward, term, trunc, info = env.step(action)

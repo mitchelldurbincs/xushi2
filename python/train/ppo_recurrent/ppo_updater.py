@@ -28,8 +28,12 @@ def update_ppo(trainer, rollout) -> dict[str, float]:
     for _epoch in range(cfg.num_epochs):
         gen = torch.Generator()
         gen.manual_seed(mb_seed)
-        for batch in rollout.iter_episode_minibatches(minibatch_size=cfg.minibatch_size, generator=gen):
-            mb_stats, n_valid = ppo_minibatch_step(trainer, batch, return_mean=ret_mean, return_std=ret_std)
+        for batch in rollout.iter_episode_minibatches(
+            minibatch_size=cfg.minibatch_size, generator=gen
+        ):
+            mb_stats, n_valid = ppo_minibatch_step(
+                trainer, batch, return_mean=ret_mean, return_std=ret_std
+            )
             metrics_lib.accumulate(metrics_sum, mb_stats, n_valid)
             if n_valid > 0:
                 total_valid += n_valid
@@ -46,7 +50,9 @@ def update_ppo(trainer, rollout) -> dict[str, float]:
     return metrics
 
 
-def ppo_minibatch_step(trainer, batch: dict[str, torch.Tensor], *, return_mean: float, return_std: float):
+def ppo_minibatch_step(
+    trainer, batch: dict[str, torch.Tensor], *, return_mean: float, return_std: float
+):
     cfg = trainer.config
     if hasattr(trainer, "_training_h_init_log"):
         trainer._training_h_init_log.append(batch["h_init"].detach().clone())
@@ -92,7 +98,9 @@ def ppo_minibatch_step(trainer, batch: dict[str, torch.Tensor], *, return_mean: 
     value_n = (value - return_mean) / return_std
     old_value_n = (old_value - return_mean) / return_std
     return_n = (return_ - return_mean) / return_std
-    value_clipped_n = old_value_n + torch.clamp(value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio)
+    value_clipped_n = old_value_n + torch.clamp(
+        value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio
+    )
     vl_unclipped = (value_n - return_n) ** 2
     vl_clipped = (value_clipped_n - return_n) ** 2
     value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), valid_mask)
@@ -112,14 +120,17 @@ def ppo_minibatch_step(trainer, batch: dict[str, torch.Tensor], *, return_mean: 
         approx_kl = _masked_mean(old_logprob - new_logprob, valid_mask)
         clip_fraction = _masked_mean(((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_mask)
 
-    return ({
-        "policy_loss": float(policy_loss.item()),
-        "value_loss": float(value_loss.item()),
-        "entropy": float(entropy_mean.item()),
-        "approx_kl": float(approx_kl.item()),
-        "clip_fraction": float(clip_fraction.item()),
-        "total_loss": float(total_loss.item()),
-        "actor_grad_norm": actor_grad_norm,
-        "critic_grad_norm": critic_grad_norm,
-        "trunk_grad_norm": trunk_grad_norm,
-    }, n_valid)
+    return (
+        {
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy_mean.item()),
+            "approx_kl": float(approx_kl.item()),
+            "clip_fraction": float(clip_fraction.item()),
+            "total_loss": float(total_loss.item()),
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
+            "trunk_grad_norm": trunk_grad_norm,
+        },
+        n_valid,
+    )

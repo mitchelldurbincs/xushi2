@@ -43,9 +43,7 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
         covers = randomized_cover_markers(
             int(seed), ckpt_config["env"].get("map_randomization", {})
         )
-        walls = randomized_wall_segments(
-            int(seed), ckpt_config["env"].get("map_randomization", {})
-        )
+        walls = randomized_wall_segments(int(seed), ckpt_config["env"].get("map_randomization", {}))
         fields["layout"] = map_layout_hash(sim_cfg["map"], covers, walls)
         if covers:
             fields["cover"] = ",".join(

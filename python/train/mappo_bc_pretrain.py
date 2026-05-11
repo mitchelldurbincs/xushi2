@@ -10,6 +10,7 @@ import torch.nn as nn
 from train.mappo_model import MappoActorCritic, MappoConfig, _OWN_POSITION_SLICE
 from xushi2.entity_obs import entity_obs_self_position
 
+
 def _walk_to_objective_targets(obs: torch.Tensor, cfg: MappoConfig) -> torch.Tensor:
     if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
         own_pos_np = entity_obs_self_position(obs.detach().cpu().numpy())
@@ -39,9 +40,7 @@ def _collect_walk_bc_sequence(
         obs, _info = env.reset(seed=seed)
         for _ in range(max_decisions):
             obs_parts.append(obs.astype(np.float32, copy=True))
-            target = _walk_to_objective_targets(
-                torch.as_tensor(obs, dtype=torch.float32), cfg
-            )
+            target = _walk_to_objective_targets(torch.as_tensor(obs, dtype=torch.float32), cfg)
             target_parts.append(target.numpy().astype(np.float32, copy=True))
             obs, _reward, term, trunc, _info = env.step(target.numpy())
             if term or trunc:
@@ -75,23 +74,19 @@ def bc_pretrain_walk_to_objective(
         cont_losses = []
         binary_losses = []
         for t in range(obs_seq.shape[0]):
-            mean, _log_std, logits, _target_logits, h = model.policy_outputs(
-                obs_seq[t], h
-            )
+            mean, _log_std, logits, _target_logits, h = model.policy_outputs(obs_seq[t], h)
             pred_cont = torch.tanh(mean)
             target = target_seq[t]
             cont_losses.append(
-                torch.nn.functional.mse_loss(
-                    pred_cont, target[:, : cfg.continuous_action_dim]
-                )
+                torch.nn.functional.mse_loss(pred_cont, target[:, : cfg.continuous_action_dim])
             )
             binary_losses.append(
                 torch.nn.functional.binary_cross_entropy_with_logits(
                     logits,
                     target[
                         :,
-                        cfg.continuous_action_dim :
-                        cfg.continuous_action_dim + cfg.binary_action_dim,
+                        cfg.continuous_action_dim : cfg.continuous_action_dim
+                        + cfg.binary_action_dim,
                     ],
                 )
             )
@@ -110,5 +105,3 @@ def bc_pretrain_walk_to_objective(
                 f"binary_loss={float(binary_loss.item()):.4f}",
                 flush=True,
             )
-
-

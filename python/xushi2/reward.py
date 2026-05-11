@@ -152,9 +152,7 @@ class RewardCalculator:
         if on_point_shaping_coef < 0.0:
             raise ValueError("on_point_shaping_coef must be >= 0")
         if not 0.0 <= team_spirit <= 1.0:
-            raise ValueError(
-                f"team_spirit must be in [0, 1], got {team_spirit}"
-            )
+            raise ValueError(f"team_spirit must be in [0, 1], got {team_spirit}")
         if damage_dealt_coef < 0.0:
             raise ValueError("damage_dealt_coef must be >= 0")
         self._shaping_clip = float(shaping_clip)
@@ -186,8 +184,7 @@ class RewardCalculator:
             self._pos_slice = actor_field_slice("own_position")
             self._on_point_slice = actor_field_slice("self_on_point")
             self._obs_bufs = [
-                np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32)
-                for _ in range(_cpp.AGENTS_PER_MATCH)
+                np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32) for _ in range(_cpp.AGENTS_PER_MATCH)
             ]
             self._obs_buf_a = self._obs_bufs[_TEAM_A_RANGER_SLOT]
             self._obs_buf_b = self._obs_bufs[_TEAM_B_RANGER_SLOT]
@@ -213,9 +210,7 @@ class RewardCalculator:
         from training progress. Only meaningful on the per-agent path;
         a no-op otherwise."""
         if not 0.0 <= value <= 1.0:
-            raise ValueError(
-                f"team_spirit must be in [0, 1], got {value}"
-            )
+            raise ValueError(f"team_spirit must be in [0, 1], got {value}")
         self._team_spirit = float(value)
 
     def step(self, sim):
@@ -294,18 +289,10 @@ class RewardCalculator:
     def _step_per_agent(self, sim) -> tuple[np.ndarray, np.ndarray]:
         now = _read_counters(sim, per_agent=True)
 
-        a_score_seconds = (now.a_score_ticks - self._prev.a_score_ticks) / float(
-            TICK_HZ
-        )
-        b_score_seconds = (now.b_score_ticks - self._prev.b_score_ticks) / float(
-            TICK_HZ
-        )
-        kills_delta_slot = (now.kills_by_slot - self._prev.kills_by_slot).astype(
-            np.float32
-        )
-        deaths_delta_slot = (
-            now.deaths_by_slot - self._prev.deaths_by_slot
-        ).astype(np.float32)
+        a_score_seconds = (now.a_score_ticks - self._prev.a_score_ticks) / float(TICK_HZ)
+        b_score_seconds = (now.b_score_ticks - self._prev.b_score_ticks) / float(TICK_HZ)
+        kills_delta_slot = (now.kills_by_slot - self._prev.kills_by_slot).astype(np.float32)
+        deaths_delta_slot = (now.deaths_by_slot - self._prev.deaths_by_slot).astype(np.float32)
 
         raw_a = np.zeros(3, dtype=np.float32)
         raw_b = np.zeros(3, dtype=np.float32)
@@ -323,9 +310,9 @@ class RewardCalculator:
         # downstream still bounds total cumulative shaping at the
         # ±shaping_clip cap, so unbounded farming isn't possible.
         if self._damage_dealt_coef > 0.0:
-            damage_delta_slot = (
-                now.damage_dealt_by_slot - self._prev.damage_dealt_by_slot
-            ).astype(np.float32)
+            damage_delta_slot = (now.damage_dealt_by_slot - self._prev.damage_dealt_by_slot).astype(
+                np.float32
+            )
             per_hp = self._damage_dealt_coef / _CENTI_HP_PER_HP
             raw_a += per_hp * damage_delta_slot[0:3]
             raw_b += per_hp * damage_delta_slot[3:6]
@@ -470,9 +457,7 @@ class RewardCalculator:
                 _cpp.build_actor_obs(sim, slot, self._obs_bufs[slot])
             except Exception:
                 return uniform
-            shares[i] = float(
-                self._obs_bufs[slot][self._on_point_slice][0]
-            )
+            shares[i] = float(self._obs_bufs[slot][self._on_point_slice][0])
         total = float(shares.sum())
         if total <= 1e-12:
             return uniform

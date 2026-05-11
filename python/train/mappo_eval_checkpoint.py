@@ -26,6 +26,7 @@ from xushi2.mappo_matrix_gate import check_matrix_gate
 from xushi2.snapshot_retention import SnapshotRetention
 from xushi2.vector_env import make_xushi_vector_env
 
+
 def evaluate_mappo(
     model: MappoActorCritic,
     env_fn: Callable[[], gym.Env],
@@ -134,8 +135,7 @@ def _run_eval_gate(
     gate_path = output_dir / str(gate_cfg.get("output", "eval_gate.json"))
     gate_path.write_text(json.dumps(gate, indent=2) + "\n", encoding="utf-8")
     print(
-        f"[{phase_label}/mappo] eval_gate "
-        f"{'pass' if gate['passed'] else 'fail'} wrote {gate_path}",
+        f"[{phase_label}/mappo] eval_gate {'pass' if gate['passed'] else 'fail'} wrote {gate_path}",
         flush=True,
     )
     if not gate["passed"]:
@@ -204,16 +204,11 @@ def _matrix_retention_summary(
             "matrix_rows": 0,
             "matrix_gate_passed": False if gate is not None else None,
         }
-    scores = [
-        float(row.get("win_rate", 0.0)) - float(row.get("loss_rate", 0.0))
-        for row in rows
-    ]
+    scores = [float(row.get("win_rate", 0.0)) - float(row.get("loss_rate", 0.0)) for row in rows]
     return {
         "matrix_score": float(np.mean(scores)),
         "matrix_rows": len(rows),
-        "matrix_gate_passed": bool(gate.get("passed", False))
-        if gate is not None
-        else None,
+        "matrix_gate_passed": bool(gate.get("passed", False)) if gate is not None else None,
     }
 
 
@@ -234,9 +229,7 @@ def _run_mappo_matrix_eval(
 ) -> list[dict]:
     episodes = int(matrix_cfg.get("episodes", 1))
     anchor_bots = [str(bot) for bot in matrix_cfg.get("anchor_bots", ())]
-    opponent_checkpoints = [
-        str(path) for path in matrix_cfg.get("opponent_checkpoints", ())
-    ]
+    opponent_checkpoints = [str(path) for path in matrix_cfg.get("opponent_checkpoints", ())]
     rows: list[dict] = []
     if model.cfg.n_agents == 6 and int(phase) == 11:
         if bool(matrix_cfg.get("current_selfplay", True)):
@@ -245,9 +238,7 @@ def _run_mappo_matrix_eval(
                 "weights": {"current": 1.0, "snapshot": 0.0, "anchor": 0.0}
             }
             _phase, spec = resolve_phase({"phase": 11, "env": env_cfg})
-            env_fn, _meta, _seed = spec["env_bundle"](
-                {"phase": 11, "env": env_cfg}
-            )
+            env_fn, _meta, _seed = spec["env_bundle"]({"phase": 11, "env": env_cfg})
             stats = evaluate_mappo(
                 model,
                 env_fn,
@@ -269,9 +260,7 @@ def _run_mappo_matrix_eval(
                 "anchor_bot": bot,
             }
             _phase, spec = resolve_phase({"phase": 11, "env": env_cfg})
-            env_fn, _meta, _seed = spec["env_bundle"](
-                {"phase": 11, "env": env_cfg}
-            )
+            env_fn, _meta, _seed = spec["env_bundle"]({"phase": 11, "env": env_cfg})
             stats = evaluate_mappo(
                 model,
                 env_fn,
@@ -296,9 +285,7 @@ def _run_mappo_matrix_eval(
                 "weights": {"latest": 1.0},
             }
             _phase, spec = resolve_phase({"phase": 11, "env": env_cfg})
-            env_fn, _meta, _seed = spec["env_bundle"](
-                {"phase": 11, "env": env_cfg}
-            )
+            env_fn, _meta, _seed = spec["env_bundle"]({"phase": 11, "env": env_cfg})
             stats = evaluate_mappo(
                 model,
                 env_fn,
@@ -360,9 +347,7 @@ def _run_mappo_matrix_eval(
     gate: dict | None = None
     if matrix_cfg.get("gate"):
         gate = check_matrix_gate(rows, dict(matrix_cfg.get("gate", {})))
-        gate_path = output_dir / str(
-            matrix_cfg.get("gate_output", "matrix_gate.json")
-        )
+        gate_path = output_dir / str(matrix_cfg.get("gate_output", "matrix_gate.json"))
         gate_path.write_text(json.dumps(gate, indent=2) + "\n", encoding="utf-8")
         print(
             f"[phase{phase}/mappo] matrix_gate "
@@ -370,9 +355,7 @@ def _run_mappo_matrix_eval(
             flush=True,
         )
         if not gate["passed"]:
-            raise RuntimeError(
-                "MAPPO matrix gate failed: " + "; ".join(gate["failures"])
-            )
+            raise RuntimeError("MAPPO matrix gate failed: " + "; ".join(gate["failures"]))
     for row in rows:
         print(
             f"[phase{phase}/mappo] matrix "
@@ -406,9 +389,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             output_dir / str(retention_cfg.get("manifest", "snapshot_league.json")),
             max_latest=int(retention_cfg.get("max_latest", 20)),
             preserve_best=int(retention_cfg.get("preserve_best", 3)),
-            anchor_paths=tuple(
-                retention_cfg.get("anchor_paths", env_cfg.get("snapshot_paths", ()))
-            )
+            anchor_paths=tuple(retention_cfg.get("anchor_paths", env_cfg.get("snapshot_paths", ())))
             if bool(retention_cfg.get("include_config_anchors", True))
             else (),
             weights=dict(
@@ -630,9 +611,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             gate: dict | None = None
             matrix_cfg = dict(run_cfg.get("matrix_eval", {}))
             if matrix_cfg.get("gate"):
-                gate_path = output_dir / str(
-                    matrix_cfg.get("gate_output", "matrix_gate.json")
-                )
+                gate_path = output_dir / str(matrix_cfg.get("gate_output", "matrix_gate.json"))
                 gate = json.loads(gate_path.read_text(encoding="utf-8"))
             summary = _matrix_retention_summary(rows, gate)
             manifest = retention.record_checkpoint(

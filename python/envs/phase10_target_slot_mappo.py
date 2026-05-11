@@ -101,9 +101,7 @@ class Phase10TargetSlotMappoEnv(gym.Env):
         if action.shape != (3, 7):
             raise ValueError(f"action shape must be (3, 7), got {action.shape}")
         self._last_target_slots = (
-            np.rint(action[:, 6])
-            .clip(0, self.target_action_dim - 1)
-            .astype(np.int64, copy=False)
+            np.rint(action[:, 6]).clip(0, self.target_action_dim - 1).astype(np.int64, copy=False)
         )
         obs, reward, terminated, truncated, info = self._env.step(action)
         info = dict(info)
@@ -122,8 +120,7 @@ class Phase10TargetSlotMappoEnv(gym.Env):
         obs = np.asarray(obs, dtype=np.float32)
         if obs.shape[-1] != MULTI_ENEMY_ENTITY_GRID_OBS_DIM:
             raise ValueError(
-                "base obs last dim must be "
-                f"{MULTI_ENEMY_ENTITY_GRID_OBS_DIM}, got {obs.shape}"
+                f"base obs last dim must be {MULTI_ENEMY_ENTITY_GRID_OBS_DIM}, got {obs.shape}"
             )
         mask_offset = MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM
         mask = obs[..., mask_offset : mask_offset + TARGET_SLOT_MASK_DIM]

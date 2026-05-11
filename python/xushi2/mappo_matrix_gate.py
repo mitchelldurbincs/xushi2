@@ -18,12 +18,8 @@ def check_matrix_gate(rows: list[dict[str, Any]], gate_cfg: dict[str, Any]) -> d
     if len(rows) < min_rows:
         failures.append(f"row_count {len(rows)} < min_rows {min_rows}")
 
-    min_win_rate = {
-        str(k): float(v) for k, v in dict(gate_cfg.get("min_win_rate", {})).items()
-    }
-    max_draw_rate = {
-        str(k): float(v) for k, v in dict(gate_cfg.get("max_draw_rate", {})).items()
-    }
+    min_win_rate = {str(k): float(v) for k, v in dict(gate_cfg.get("min_win_rate", {})).items()}
+    max_draw_rate = {str(k): float(v) for k, v in dict(gate_cfg.get("max_draw_rate", {})).items()}
     counts_by_type: dict[str, int] = {}
     for idx, row in enumerate(rows):
         opponent_type = str(row.get("opponent_type", ""))

@@ -23,19 +23,13 @@ def lr_for_update(
     if total_updates <= 0:
         raise ValueError(f"total_updates must be > 0, got {total_updates}")
     if not (1 <= update_idx <= total_updates):
-        raise ValueError(
-            f"update_idx must be in [1, {total_updates}], got {update_idx}"
-        )
+        raise ValueError(f"update_idx must be in [1, {total_updates}], got {update_idx}")
     if base_lr <= 0.0:
         raise ValueError(f"base_lr must be > 0, got {base_lr}")
     if lr_final_ratio <= 0.0:
-        raise ValueError(
-            f"lr_final_ratio must be > 0, got {lr_final_ratio}"
-        )
+        raise ValueError(f"lr_final_ratio must be > 0, got {lr_final_ratio}")
     if warmup_updates < 0:
-        raise ValueError(
-            f"warmup_updates must be >= 0, got {warmup_updates}"
-        )
+        raise ValueError(f"warmup_updates must be >= 0, got {warmup_updates}")
     if warmup_updates >= total_updates:
         raise ValueError(
             "warmup_updates must be < total_updates so the schedule phase "

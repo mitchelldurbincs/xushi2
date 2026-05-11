@@ -64,7 +64,9 @@ def load_checkpoint(path: str | Path) -> tuple[ActorCritic, dict]:
         gru_hidden=int(model_cfg.get("gru_hidden", 64)),
         head_hidden=int(model_cfg.get("head_hidden", 64)),
         action_log_std_init=float(model_cfg.get("action_log_std_init", -1.0)),
-        continuous_action_dim=int(model_cfg.get("continuous_action_dim", model_cfg.get("action_dim", 2))),
+        continuous_action_dim=int(
+            model_cfg.get("continuous_action_dim", model_cfg.get("action_dim", 2))
+        ),
         binary_action_dim=int(model_cfg.get("binary_action_dim", 0)),
     )
     model.load_state_dict(state_dict)
@@ -72,9 +74,7 @@ def load_checkpoint(path: str | Path) -> tuple[ActorCritic, dict]:
     return model, config
 
 
-def _apply_hidden_mutation(
-    h: torch.Tensor, mode: str, rng: torch.Generator
-) -> torch.Tensor:
+def _apply_hidden_mutation(h: torch.Tensor, mode: str, rng: torch.Generator) -> torch.Tensor:
     if mode == "normal":
         return h
     if mode == "zero_every_tick":
@@ -145,9 +145,7 @@ def run_ablation(
     )
 
 
-def ablation_modes_differ(
-    model: ActorCritic, config: dict, num_episodes: int, seed: int
-) -> bool:
+def ablation_modes_differ(model: ActorCritic, config: dict, num_episodes: int, seed: int) -> bool:
     """Sanity check: the three ablation modes must route through distinct
     code paths. Returns True iff all three mean rewards are pairwise distinct.
     """
@@ -174,17 +172,11 @@ def _check_gate(
     if not (normal.mean > -0.15):
         failures.append(f"normal_mean={normal.mean:.3f} is not > -0.15")
     if not (-1.2 <= zero.mean <= -0.8):
-        failures.append(
-            f"zero_every_tick_mean={zero.mean:.3f} outside [-1.2, -0.8]"
-        )
+        failures.append(f"zero_every_tick_mean={zero.mean:.3f} outside [-1.2, -0.8]")
     if not (-1.5 <= random_.mean <= -0.8):
-        failures.append(
-            f"random_every_tick_mean={random_.mean:.3f} outside [-1.5, -0.8]"
-        )
+        failures.append(f"random_every_tick_mean={random_.mean:.3f} outside [-1.5, -0.8]")
     if not (normal.mean - zero.mean > 0.5):
-        failures.append(
-            f"gap normal-zero = {normal.mean - zero.mean:.3f} is not > 0.5"
-        )
+        failures.append(f"gap normal-zero = {normal.mean - zero.mean:.3f} is not > 0.5")
     return len(failures) == 0, failures
 
 
@@ -203,9 +195,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="MemoryToy ablation gate")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--episodes", type=int, default=500)
-    parser.add_argument(
-        "--seed", type=lambda s: int(s, 0), default=0x4D454D54
-    )
+    parser.add_argument("--seed", type=lambda s: int(s, 0), default=0x4D454D54)
     args = parser.parse_args()
 
     model, config = load_checkpoint(args.checkpoint)

@@ -75,9 +75,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         )
         self._sim: _cpp.Sim | None = None
         self._opponent_policy: SnapshotPolicy | None = None
-        self._flat_actor_obs = np.zeros(
-            (_AGENTS_PER_MATCH, ACTOR_PHASE1_DIM), dtype=np.float32
-        )
+        self._flat_actor_obs = np.zeros((_AGENTS_PER_MATCH, ACTOR_PHASE1_DIM), dtype=np.float32)
         self._last_map_bounds: dict[str, float] | None = None
         self._last_cover_markers: list[dict[str, float]] = []
         self._last_wall_segments: list[dict[str, float]] = []
@@ -85,9 +83,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._last_match = SelfPlayMatch(match_type="current", group="current")
         self._last_loss_mask = np.ones(_AGENTS_PER_MATCH, dtype=np.float32)
         self._last_opponent_actions = np.zeros((3, 6), dtype=np.float32)
-        self._last_seen_enemy_position = np.zeros(
-            (_AGENTS_PER_MATCH, 3, 2), dtype=np.float32
-        )
+        self._last_seen_enemy_position = np.zeros((_AGENTS_PER_MATCH, 3, 2), dtype=np.float32)
         self._last_seen_valid = np.zeros((_AGENTS_PER_MATCH, 3), dtype=bool)
 
         self.observation_space = spaces.Box(
@@ -114,9 +110,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         if "team_size" in self._base_sim_cfg:
-            raise ValueError(
-                "sim_cfg must not carry 'team_size'; the env owns this knob"
-            )
+            raise ValueError("sim_cfg must not carry 'team_size'; the env owns this knob")
 
         seed_int = 0 if seed is None else int(seed)
         bounds = randomized_map_bounds(seed_int, self._map_randomization)
@@ -161,14 +155,9 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
             raise RuntimeError("reset() must be called before step()")
         action = np.asarray(action, dtype=np.float32)
         if action.ndim != 2 or action.shape[0] != _AGENTS_PER_MATCH or action.shape[1] < 6:
-            raise ValueError(
-                f"action shape must be ({_AGENTS_PER_MATCH}, >=6), got {action.shape}"
-            )
+            raise ValueError(f"action shape must be ({_AGENTS_PER_MATCH}, >=6), got {action.shape}")
 
-        actions = [
-            Phase4MappoEnv._action_to_cpp(action[slot])
-            for slot in range(_AGENTS_PER_MATCH)
-        ]
+        actions = [Phase4MappoEnv._action_to_cpp(action[slot]) for slot in range(_AGENTS_PER_MATCH)]
         self._last_opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
@@ -209,12 +198,8 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
 
         r_a, r_b = self._reward_calc.step(self._sim)
         team_rewards = [float(r_a)] * 3 + [float(r_b)] * 3
-        terminated = bool(self._sim.episode_over) and (
-            self._sim.winner != _cpp.Team.Neutral
-        )
-        truncated = bool(self._sim.episode_over) and (
-            self._sim.winner == _cpp.Team.Neutral
-        )
+        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
+        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
             for i in range(3):
@@ -241,8 +226,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         expected = (_AGENTS_PER_MATCH * CRITIC_DIM,)
         if out.shape != expected or out.dtype != np.float32:
             raise ValueError(
-                f"out must be float32 ndarray of shape {expected}, "
-                f"got {out.shape} {out.dtype}"
+                f"out must be float32 ndarray of shape {expected}, got {out.shape} {out.dtype}"
             )
         views = out.reshape(_AGENTS_PER_MATCH, CRITIC_DIM)
         _cpp.build_critic_obs(self._sim, _cpp.Team.A, views[0])
@@ -264,12 +248,10 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         for row in range(_AGENTS_PER_MATCH):
             for enemy_idx in range(3):
                 if visible[row, enemy_idx]:
-                    self._last_seen_enemy_position[row, enemy_idx] = (
-                        self._enemy_norm_position(
-                            critic[row],
-                            enemy_idx,
-                            team_b_view=row >= 3,
-                        )
+                    self._last_seen_enemy_position[row, enemy_idx] = self._enemy_norm_position(
+                        critic[row],
+                        enemy_idx,
+                        team_b_view=row >= 3,
                     )
                     self._last_seen_valid[row, enemy_idx] = True
         return actor_obs_to_multi_enemy_entity_grid_obs(
@@ -297,8 +279,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
                     team_b_view=row >= 3,
                 )
                 alive[row, enemy_idx] = (
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0]
-                    > 0.5
+                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
                 )
         radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
             self._visible_radius
@@ -314,9 +295,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
                         for ally in ally_slots
                     )
                     team_rows = slice(0, 3) if slot < 3 else slice(3, 6)
-                    radius[slot, enemy_idx] = bool(
-                        radius[team_rows, enemy_idx].any()
-                    )
+                    radius[slot, enemy_idx] = bool(radius[team_rows, enemy_idx].any())
             else:
                 native = _cpp.observable_enemy_slots(self._sim, slot)
                 for enemy_idx, enemy_slot in enumerate(enemy_slots):
