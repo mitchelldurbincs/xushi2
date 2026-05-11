@@ -2,9 +2,11 @@
 
 #include <xushi2/common/limits.hpp>
 
+#include "viewer_layout.hpp"
+
 namespace {
 
-constexpr int kPanelX = 720;
+constexpr int kPanelX = viewer_layout::kPanelX;
 
 Color team_color(xushi2::common::Team team) {
     switch (team) {

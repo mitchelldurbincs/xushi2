@@ -30,20 +30,21 @@
 #include "render_arena.hpp"
 #include "render_debug.hpp"
 #include "panel.hpp"
+#include "viewer_layout.hpp"
 
 namespace {
 
-constexpr int kWindowWidth = 1280;
-constexpr int kWindowHeight = 720;
+constexpr int kWindowWidth = viewer_layout::kWindowWidth;
+constexpr int kWindowHeight = viewer_layout::kWindowHeight;
 constexpr int kTargetFps = 60;  // render rate; sim runs at 30 Hz internally
 constexpr std::uint32_t kActionRepeat = 3U;
 constexpr float kDecisionSeconds =
     static_cast<float>(kActionRepeat) / static_cast<float>(xushi2::sim::kTickHz);
 
 // Layout: a square arena viewport on the left, an info panel on the right.
-constexpr int kArenaPx = 720;       // square; matches window height
-constexpr int kArenaMarginPx = 12;  // padding inside the arena viewport
-constexpr int kPanelX = kArenaPx;
+constexpr int kArenaPx = viewer_layout::kArenaPx;
+constexpr int kArenaMarginPx = viewer_layout::kArenaMarginPx;
+constexpr int kPanelX = viewer_layout::kPanelX;
 
 // Shot tracers: a brief line from shooter origin along aim direction, fading
 // over kShotFadeTicks (sim ticks). One slot per hero is plenty since the
