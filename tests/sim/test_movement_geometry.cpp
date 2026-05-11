@@ -19,7 +19,7 @@ TEST(MovementGeometry, ZeroLengthSegmentDoesNotCrossWall) {
 TEST(MovementGeometry, InsideCoverPushesOutUsingFallback) {
     MatchConfig cfg{}; cfg.map.min_x=-100; cfg.map.min_y=-100; cfg.map.max_x=100; cfg.map.max_y=100;
     cfg.num_cover_circles=1; cfg.cover_circles[0].center={0.0F,0.0F}; cfg.cover_circles[0].radius=2.0F;
-    common::Vec2 p = resolve_cover_overlap({0.0F,0.0F}, {0.0F,1.0F}, cfg);
+    xushi2::common::Vec2 p = resolve_cover_overlap({0.0F,0.0F}, {0.0F,1.0F}, cfg);
     EXPECT_NEAR(p.x, 0.0F, 1e-4F);
     EXPECT_NEAR(p.y, 2.0F, 1e-4F);
 }
