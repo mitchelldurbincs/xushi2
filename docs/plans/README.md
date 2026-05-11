@@ -1,33 +1,27 @@
-# Plans Folder Routing
+# Plans Folder Policy
 
-This directory is split into two buckets:
+## Routing rules
 
-- `active/`: currently relevant plans/design notes that should guide ongoing implementation and review work.
-- `archive/`: dated result logs (`*-result.md`) plus superseded design/implementation notes that are kept only for historical traceability.
+Place plan files in `docs/plans/active/` when they are still driving current work.
+Move plan files to `docs/plans/archive/` when any of the following is true:
 
-## Naming convention
+1. **Completed**: implementation and validation are done (`Status: done`).
+2. **Superseded**: a newer plan replaced it as source of truth.
+3. **Blocked for more than 14 days**: unresolved blockers have paused execution for >14 days.
+4. **Historical-only**: the document is no longer used for active decisions.
 
-Use date-first filenames so files sort chronologically:
+## Required active-plan header
 
-- Format: `YYYY-MM-DD-topic.md`
-- Result logs: `YYYY-MM-DD-topic-result.md` (store in `archive/`)
-- Design/plan notes: `YYYY-MM-DD-topic-design.md` or `YYYY-MM-DD-topic.md` (store in `active/` unless superseded)
+Every file in `docs/plans/active/` must include this header near the top:
 
-## Where to put new docs (decision checklist)
+- `Status: active|blocked|done`
+- `Owner: <name or team>`
+- `Last-updated: YYYY-MM-DD`
 
-1. Is this document intended to drive current or near-term implementation decisions?
-   - **Yes** → put it in `active/`.
-2. Is this a completed run log, experiment outcome, or phase result summary (`*-result.md`)?
-   - **Yes** → put it in `archive/`.
-3. Is this doc no longer the source of truth because a newer plan/design replaced it?
-   - **Yes** → move it to `archive/` and link to the replacement from commit/PR context.
-4. Unsure?
-   - Start in `active/`, then move to `archive/` once it is clearly superseded or only historical.
+When `Status: done`, move the file to `archive/` in the same change.
+When `Status: blocked`, update `Last-updated` on each blocker review; move to `archive/` once blocked for >14 days unless reactivated.
 
-## Current canonical plans
+## Naming
 
-Keep this list intentionally small and update it whenever canonical planning docs change.
-
-- [2026-05-08-phase4-cap-training-escalation.md](active/2026-05-08-phase4-cap-training-escalation.md)
-- [2026-05-08-phase4-cap-training-escalation-design.md](active/2026-05-08-phase4-cap-training-escalation-design.md)
-- [2026-05-08-team-spirit-per-agent-rewards.md](active/2026-05-08-team-spirit-per-agent-rewards.md)
+- Use date-first names: `YYYY-MM-DD-topic.md`
+- Result summaries belong in `archive/`: `YYYY-MM-DD-topic-result.md`

@@ -1,5 +1,9 @@
 # Phase 4 Cap-Training Escalation Implementation Plan
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Get the Phase 4 MAPPO policy to actually train against the `basic` opponent. Climb a 3-rung escalation, advancing only when the prior rung empirically fails.

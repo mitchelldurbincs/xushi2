@@ -1,5 +1,9 @@
 # Phase 4 MAPPO Env — Implementation Plan
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add `python/envs/phase4_mappo.py` exposing `Phase4MappoEnv` — a 3v3 MAPPO-shaped Gymnasium env with per-agent obs/action/reward and a separate caller-buffered `build_critic_obs` hook. First consumer of the prior slice's `build_critic_obs` (already in `main`).

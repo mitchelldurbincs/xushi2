@@ -1,5 +1,9 @@
 # Team-Spirit + Per-Agent Rewards Implementation Plan
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Wire OpenAI Five-style per-agent shaped rewards and the `team_spirit` credit-assignment lever (with a 0.3 → 1.0 linear ramp over the first 30% of training) into the Phase 4 MAPPO path, so that `team_spirit` is a real lever and not a no-op.

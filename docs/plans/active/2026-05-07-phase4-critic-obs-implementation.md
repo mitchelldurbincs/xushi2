@@ -1,5 +1,9 @@
 # Phase 4 Critic Obs — Implementation Plan
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Replace the 1v1 (Phase-1) centralized-critic observation builder with a 3v3 (Phase-4) builder that emits 135 floats — 3 own-team actor mirrors + 3 per-enemy world blocks + objective + seed — and bundle the minimal `MatchConfig.team_size` plumbing the sim needs to be exercised at 3v3.

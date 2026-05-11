@@ -1,5 +1,9 @@
 # Phase 4 Cap-Training Escalation — Design
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 **Goal:** Get the Phase 4 MAPPO policy to actually train against the `basic` opponent. Apply a 3-rung escalation, climbing only when the prior rung empirically fails.
 
 ## Why this is needed

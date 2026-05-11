@@ -1,5 +1,9 @@
 # Phase 4 — 3v3 MAPPO Env: Design
 
+Status: active
+Owner: TBD
+Last-updated: 2026-05-11
+
 **Date:** 2026-05-07
 **Status:** Design approved. Ready for implementation.
 **Slice:** Audit item 3 from `2026-04-24-phase4-prep.md`.
