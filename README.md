@@ -20,7 +20,21 @@ Deterministic 2D 3v3 control-point shooter simulator for multi-agent RL, with re
 - `experiments/configs/` — training configs
 - `docs/` — specs, design docs, plans/results
 
-## Build + test (C++)
+## Recommended commands (Makefile)
+
+```bash
+make build-cpp
+make test-cpp
+make py-install
+make train-smoke
+make format
+make lint
+make clean
+```
+
+## Advanced: underlying raw commands
+
+### C++ build + test
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -28,7 +42,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-## Python setup
+### Python setup
 
 ```bash
 cd python
@@ -37,7 +51,7 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-## Common training entrypoints
+### Common training entrypoints
 
 ```bash
 # Phase 4 MAPPO smoke
@@ -51,6 +65,14 @@ python -m train.train --config ../experiments/configs/phase11/probe/phase11_curr
 
 # Phase 11 mixed league probe
 python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
+```
+
+### Python quality tools
+
+```bash
+cd python
+ruff format .
+ruff check .
 ```
 
 ## Key docs
