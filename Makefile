@@ -11,7 +11,7 @@ py-install:
 	cd python && python -m venv .venv && . .venv/bin/activate && pip install -e .
 
 train-smoke:
-	cd python && python -m train.train --config ../experiments/configs/phase4_mappo_smoke.yaml
+	cd python && python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
 format:
 	cd python && ruff format .

@@ -3,7 +3,7 @@
 Usage:
     python -m scripts.dump_replay \
         --checkpoint runs/.../ckpt_0600.pt \
-        --output replays/phase3_v3_eval.replay \
+        --output ../data/replays/phase3_v3_eval.replay \
         --seed 0xD1CEDA7A
 
 Replay format (ASCII, line-delimited):
