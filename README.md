@@ -22,6 +22,9 @@ Xushi2 combines a deterministic C++ simulation core with Python training/evaluat
 ```bash
 make build-cpp
 make test-cpp
+make bench-cpp
+make run-bench
+make bench-smoke
 make py-install
 make train-smoke
 make format
@@ -35,9 +38,31 @@ make clean
 ### C++ build + test
 
 ```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DXUSHI2_BUILD_BENCHMARKS=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+```
+
+
+
+### C++ benchmarks
+
+```bash
+# Configure benchmark build in Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DXUSHI2_BUILD_BENCHMARKS=ON
+
+# Build benchmark targets
+cmake --build build -j --target benchmarks
+
+# Run all discovered benchmark binaries via Makefile wrapper
+make run-bench
+
+# Or run a benchmark binary directly (Google Benchmark flags)
+./build/benchmarks/<benchmark_binary> \
+  --benchmark_repetitions=5 \
+  --benchmark_min_time=0.1 \
+  --benchmark_out=build/benchmarks/results/<benchmark_binary>.json \
+  --benchmark_out_format=json
 ```
 
 ### Python setup
