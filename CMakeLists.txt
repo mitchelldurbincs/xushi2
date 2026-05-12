@@ -31,6 +31,7 @@ endif()
 option(XUSHI2_BUILD_VIEWER        "Build the raylib viewer"            ON)
 option(XUSHI2_BUILD_PYTHON_MODULE "Build the pybind11 Python module"   ON)
 option(XUSHI2_BUILD_TESTS         "Build unit / integration tests"     ON)
+option(XUSHI2_BUILD_BENCHMARKS    "Build microbenchmarks"               ON)
 option(XUSHI2_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors"  OFF)
 
 # Static libs (xushi2_sim, xushi2_bots) are linked into the pybind11 shared
@@ -80,6 +81,22 @@ if(XUSHI2_BUILD_PYTHON_MODULE)
     FetchContent_MakeAvailable(pybind11)
 endif()
 
+# --- Google Benchmark (benchmarks only) ---
+if(XUSHI2_BUILD_BENCHMARKS)
+    find_package(benchmark QUIET)
+    if(NOT benchmark_FOUND)
+        FetchContent_Declare(
+            googlebenchmark
+            GIT_REPOSITORY https://github.com/google/benchmark.git
+            GIT_TAG        v1.8.4
+            GIT_SHALLOW    TRUE
+            FIND_PACKAGE_ARGS NAMES benchmark
+        )
+        set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googlebenchmark)
+    endif()
+endif()
+
 # --- GoogleTest (tests only) ---
 if(XUSHI2_BUILD_TESTS)
     find_package(GTest QUIET)
@@ -101,4 +118,8 @@ add_subdirectory(src)
 
 if(XUSHI2_BUILD_TESTS)
     add_subdirectory(tests)
+endif()
+
+if(XUSHI2_BUILD_BENCHMARKS)
+    add_subdirectory(benchmarks)
 endif()
