@@ -182,8 +182,8 @@ The viewer converts real human key/mouse rising edges into single one-decision i
 -0.01  per second enemy team controls the objective
 +0.25  enemy kill
 -0.25  ally death
-+small useful healing delivered (overheal excluded, capped) — Phase 4+ (Mender)
-+small damage blocked near ally (Vanguard shield, capped) — Phase 4+ (Vanguard)
++small useful healing delivered (overheal excluded, capped) — Phase 6a+ (Mender)
++small damage blocked near ally (Vanguard shield, capped) — Phase 6a+ (Vanguard)
 
 total non-terminal shaping clipped to [-3.0, +3.0] per episode per team
 ```
@@ -192,13 +192,13 @@ Under game-design §3's "+1 score point per second while controlling", the per-s
 
 The ±3 clip is applied per team independently; once one team's running total saturates the cap, the other side's clipped step delta will no longer be the exact negation.
 
-The healing and damage-blocked shaping terms are Phase 4+ items (they activate once Mender and Vanguard enter the roster); Phase 1–3 is Ranger-only so they are unimplemented by design.
+The healing and damage-blocked shaping terms are Phase 6a+ items (they activate once Mender and Vanguard enter the roster); Phases 1–5 are Ranger-only so they are unimplemented by design. Within Phase 6a they are turned on one at a time — healing first (tune the coef in isolation), then damage-blocked — to keep coef tuning a single-variable problem.
 
 Every shaped event is applied as `team_reward = own_events − enemy_events`. This symmetrization preserves zero-sum at the reward level, which in turn preserves `V_B ≈ −V_A` and avoids per-role reward engineering complexity.
 
 ### Why these magnitudes
 
-Under worst-case shaping accumulation — in Phase 1–3, full-round objective hold + many kills; in Phase 4+, also useful healing and damage-blocked events — shaping sums to ~3.0. Terminal is ±10.0. The cap ensures terminal always dominates, so agents cannot learn to lose-but-farm-shaping.
+Under worst-case shaping accumulation — in Phases 1–5, full-round objective hold + many kills; in Phase 6a+, also useful healing and damage-blocked events — shaping sums to ~3.0. Terminal is ±10.0. The cap ensures terminal always dominates, so agents cannot learn to lose-but-farm-shaping.
 
 Note: objective shaping is **0.01 per second while controlling the objective** (computed in code as `0.01 * score_ticks_delta / TICK_HZ`). Under game-design §3's "+1 score point per second while controlling" rule, this is equivalent to ~0.01 per score point as an approximate-equivalent framing. Max over a full-round hold ≈ 1.8, already comfortably under the shaping cap.
 
@@ -275,7 +275,29 @@ Still flat obs, still fixed map.
 
 **Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
 
-**Phase 6 — Add the egocentric grid. *OA5-analog milestone.*** Concat a small CNN feature with the entity features. 3v3 Vanguard / Ranger / Mender. Fixed map. **Full vision.** This is the phase where "teamfights emerge from self-play without explicit communication" becomes a testable claim: the information structure (team-shared/full vision, no pings, no learned comms, recurrent policy per agent, centralized critic, `team_spirit`-scalarized reward — see §5) mirrors OpenAI Five's setup. If teamfights do not emerge here, no amount of fog-of-war polish will rescue them in Phase 7; debugging stops here until they do.
+**Phase 6 — Heterogeneous roster, then grid, then teamfight-emergence evaluation.** Phase 6 is split into three sub-phases to keep each delta debuggable. The original "add grid + add new heroes + add new shaping + claim emergent teamfights" formulation bundled four deltas at once, which violates the one-delta-at-a-time rule. Run them serially:
+
+- **Phase 6a — Heterogeneous roster on the Phase 5 encoder.** Introduce Vanguard + Mender alongside Ranger. 3v3 Vanguard / Ranger / Mender, fixed map, full vision. Keep the Phase 5 encoder stack (entity tokens + attention pooling, **no grid yet**). The entity-token schema exercises non-trivially for the first time — `active allied Barrier`, `active enemy Barrier`, and `Mender beam relationship` tokens become non-zero — and the hero embedding now spans three roles. New per-role shaping terms (§5) turn on **one at a time**: healing-delivered first, tuned in isolation; then damage-blocked once healing has settled. Gates to exit 6a:
+  - Win rate vs `basic` scripted opponent ≥ Phase 5 baseline.
+  - `fire-while-shielding rate` (§11) trends toward 0 — proves Barrier/Warhammer mutual exclusion is being learned, not just sim-enforced.
+  - Healing efficiency metric (§11) climbs and is not overheal-spam (overheal exclusion in the shaping is working as intended).
+  - Mender beam target distribution favors damaged allies over random.
+  - Ability-on-cooldown rates near 0 across all three kits.
+  - Hidden-enemy leak tests (§10) green — the schema changed, re-run them.
+
+- **Phase 6b — Add the egocentric grid + CNN encoder.** Concat a small CNN feature with the entity features. Roster, shaping, map, and opponent ladder all held constant from 6a; the only delta is the added grid input and CNN encoder branch. Gates to exit 6b:
+  - Win rate vs `basic` ≥ 6a baseline (regression check — adding the grid should not hurt).
+  - **Grid-ablation eval**: zero out the grid input at eval time and re-measure win rate. The drop should be material; if the policy plays equivalently without the grid, the CNN is decorative and the encoder needs debugging before moving on. This is the cheapest catch for "attention already captured everything the grid would have."
+  - Positioning metrics improve over 6a baseline: cover usage near walls, line-of-sight-maintenance time, teammate-position variance during contested-cap moments.
+
+- **Phase 6c — Teamfight-emergence evaluation (analysis, not a training phase). *OA5-analog milestone.*** This is the testable research claim: given the full encoder stack + heterogeneous roster + centralized critic + symmetrized shaping + `team_spirit` ramp (§5), do coordinated teamfights emerge from self-play without explicit communication? The information structure (team-shared/full vision, no pings, no learned comms, recurrent policy per agent, centralized critic) mirrors OpenAI Five's setup. Evaluate the 6b checkpoint against:
+  - Spatial clustering during contested-cap moments (teammates within radius X for >Y% of the time, vs a random-policy baseline).
+  - Role-conditional positioning: Vanguard front, Mender back, Ranger flexible.
+  - Replay-level causal chains: count Barrier-up → Mender-beam-on-tank → Ranger-DPS-from-off-angle sequences across N sampled eval replays.
+  - First-pick conversion rate > 50% (proxy for focus-fire being learned).
+  - Comeback rate > 0 (not pure snowballing).
+
+  If 6c fails, the fix is almost never "add fog of war." It is revisiting shaping coefs, opponent curriculum, or `team_spirit` ramp on the 6b checkpoint. Do not advance to Phase 7 until 6c passes — fog will not rescue a non-coordinated policy.
 
 **Phase 7 — Partial observation.** Split into two sub-phases so the fog delta is incremental on a working Phase-6 policy, not a cold start:
 
@@ -290,7 +312,9 @@ Still flat obs, still fixed map.
 
 ### Why this ordering matters
 
-The phases are ordered so that when a phase fails to converge, the delta from the previous phase is a single component: RNN (Phase 2→3), multi-agent (3→4), attention (4→5), grid (5→6), team-shared fog (6→7a), per-agent fog (7a→7b), randomization (7b→8), snapshot pool (8→9). Debugging is a binary search on the delta. If you combine deltas, debugging is combinatorial and you'll burn weeks on a training run you can't diagnose.
+The phases are ordered so that when a phase fails to converge, the delta from the previous phase is a single component: RNN (Phase 2→3), multi-agent (3→4), attention (4→5), heterogeneous roster + per-role shaping (5→6a), grid (6a→6b), team-shared fog (6c→7a), per-agent fog (7a→7b), randomization (7b→8), snapshot pool (8→9). Debugging is a binary search on the delta. If you combine deltas, debugging is combinatorial and you'll burn weeks on a training run you can't diagnose.
+
+**Each phase needs its own opponent curriculum, not just a single warm-start.** The Phase 4 journal (`docs/journal/reinforcement_learning_journal.md`) shows even a "small" 1v1→3v3 delta required a three-stage opponent ladder (`walk_to_objective` → `hold_and_shoot` → `basic`) with explicit shaping-coef schedules at each rung. Treat the per-phase plan as required output: opponent rungs, reward-coef values per rung, and update budgets per rung, written before the run starts. A single warm-start across phase boundaries is the exception, not the default.
 
 ### Team-relative coordinate normalization
 
