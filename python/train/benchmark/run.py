@@ -134,8 +134,10 @@ def _run_once(
             if target != "env_step_only":
                 trainer.update(rollout)
             t2 = time.perf_counter()
-            rollout_time += t1 - t0
-            update_time += (t2 - t1) if target != "env_step_only" else 0.0
+            if target != "update_only":
+                rollout_time += t1 - t0
+            if target != "env_step_only":
+                update_time += t2 - t1
             total_samples += env_steps_per_iteration
 
         total_time = rollout_time + update_time
