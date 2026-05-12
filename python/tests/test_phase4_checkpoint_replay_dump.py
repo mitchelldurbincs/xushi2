@@ -9,11 +9,12 @@ import yaml
 
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
+from _paths import config_path, script_path
 
 
 def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml",
+        config_path("phase4/probe/phase4_mappo_objective_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -40,7 +41,7 @@ def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -65,7 +66,7 @@ def test_dump_replay_supports_phase5_entity_attention_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase5_entity_attention_probe.yaml",
+        config_path("phase5_entity_attention_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -92,7 +93,7 @@ def test_dump_replay_supports_phase5_entity_attention_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -117,7 +118,7 @@ def test_dump_replay_supports_phase6_entity_grid_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase6_entity_grid_probe.yaml",
+        config_path("phase6_entity_grid_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -144,7 +145,7 @@ def test_dump_replay_supports_phase6_entity_grid_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -169,7 +170,7 @@ def test_dump_replay_supports_phase7_team_fog_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase7_team_fog_probe.yaml",
+        config_path("phase7_team_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -196,7 +197,7 @@ def test_dump_replay_supports_phase7_team_fog_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -224,7 +225,7 @@ def test_dump_replay_supports_phase7_per_agent_fog_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase7_per_agent_fog_probe.yaml",
+        config_path("phase7_per_agent_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -251,7 +252,7 @@ def test_dump_replay_supports_phase7_per_agent_fog_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -279,7 +280,7 @@ def test_dump_replay_supports_phase8_random_map_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -306,7 +307,7 @@ def test_dump_replay_supports_phase8_random_map_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -338,7 +339,7 @@ def test_dump_replay_supports_phase9_snapshot_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         snapshot_config = yaml.safe_load(fh)
@@ -360,7 +361,7 @@ def test_dump_replay_supports_phase9_snapshot_checkpoint(
     )
 
     with open(
-        "../experiments/configs/phase9_snapshot_probe.yaml",
+        config_path("phase9_snapshot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -394,7 +395,7 @@ def test_dump_replay_supports_phase9_snapshot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -426,7 +427,7 @@ def test_dump_replay_supports_phase10_target_slot_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase10_target_slot_probe.yaml",
+        config_path("phase10_target_slot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -453,7 +454,7 @@ def test_dump_replay_supports_phase10_target_slot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -482,7 +483,7 @@ def test_dump_replay_supports_phase11_current_selfplay_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
+        config_path("phase11/probe/phase11_current_selfplay_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -509,7 +510,7 @@ def test_dump_replay_supports_phase11_current_selfplay_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -538,7 +539,7 @@ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         snapshot_config = yaml.safe_load(fh)
@@ -560,7 +561,7 @@ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     )
 
     with open(
-        "../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml",
+        config_path("phase11/probe/phase11_mixed_league_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -591,7 +592,7 @@ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",

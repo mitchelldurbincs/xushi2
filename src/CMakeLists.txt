@@ -1,9 +1,7 @@
 add_subdirectory(common)
 add_subdirectory(sim)
 add_subdirectory(bots)
-if(XUSHI2_BUILD_BENCHMARKS)
-    add_subdirectory(sim/tools)
-endif()
+add_subdirectory(sim/tools)
 
 if(XUSHI2_BUILD_VIEWER)
     add_subdirectory(viewer)

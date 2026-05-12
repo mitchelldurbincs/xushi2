@@ -20,3 +20,23 @@ target_link_libraries(xushi2_viewer
 set_target_properties(xushi2_viewer PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+add_executable(xushi2_viewer_bench
+    src/bench_main.cpp
+    src/replay_loader.cpp
+    src/render_arena.cpp
+    src/render_debug.cpp
+    src/panel.cpp
+    src/viewer_labels.cpp
+)
+
+target_link_libraries(xushi2_viewer_bench
+    PRIVATE
+        xushi2::sim
+        xushi2::bots
+        raylib
+)
+
+set_target_properties(xushi2_viewer_bench PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)

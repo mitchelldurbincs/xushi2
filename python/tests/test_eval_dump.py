@@ -1,4 +1,4 @@
-"""Smoke test for xushi2-eval --dump-obs / --dump-reward (Phase 1b).
+"""Smoke test for xushi2-eval-dump --dump-obs / --dump-reward (Phase 1b).
 
 We call eval.main() with a fresh argv and verify the CSVs land with
 sensible shapes. This only exercises the env-mode dump — the Phase-0
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from eval import eval as eval_mod
+from eval import dump_env_trajectory as dump_mod
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 
 _BASE_MECH_ARGS: list[str] = [
@@ -28,8 +28,8 @@ _BASE_MECH_ARGS: list[str] = [
 
 
 def _run_eval(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.argv", ["xushi2-eval", *argv])
-    exit_code = eval_mod.main()
+    monkeypatch.setattr("sys.argv", ["xushi2-eval-dump", *argv])
+    exit_code = dump_mod.main()
     assert exit_code == 0
 
 
@@ -97,7 +97,7 @@ def test_dump_obs_without_opponent_bot_errors(
     monkeypatch.setattr(
         "sys.argv",
         [
-            "xushi2-eval",
+            "xushi2-eval-dump",
             *_BASE_MECH_ARGS,
             "--dump-obs",
             str(out_csv),
@@ -107,4 +107,4 @@ def test_dump_obs_without_opponent_bot_errors(
     )
     # argparse's parser.error() raises SystemExit(2).
     with pytest.raises(SystemExit):
-        eval_mod.main()
+        dump_mod.main()

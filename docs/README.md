@@ -26,6 +26,7 @@ This index groups project documentation by purpose.
 
 - [`standards/cpp_determinism_checklist.md`](./standards/cpp_determinism_checklist.md): C++ determinism checklist for simulator/runtime changes.
 - [`standards/python_training_checklist.md`](./standards/python_training_checklist.md): Python training checklist for RL pipeline and experiment changes.
+- [`standards/cpp_benchmarking_guide.md`](./standards/cpp_benchmarking_guide.md): Benchmark build/run standards and determinism guardrails for C++ performance work.
 
 ## Plans
 
