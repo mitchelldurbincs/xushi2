@@ -11,11 +11,12 @@ from envs.phase10_target_slot_mappo import (
 )
 from train.mappo import MappoActorCritic, make_mappo_config
 from xushi2.obs_manifest import CRITIC_DIM
+from _paths import config_path
 
 
 def _load_config() -> dict:
     with open(
-        "../experiments/configs/phase10_target_slot_probe.yaml",
+        config_path("phase10_target_slot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         return yaml.safe_load(fh)

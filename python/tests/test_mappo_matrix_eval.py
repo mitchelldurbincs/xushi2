@@ -15,11 +15,12 @@ from train.mappo import (
     train_phase4_from_config,
 )
 from train.phases import resolve_phase
+from _paths import config_path, script_path
 
 
 def _write_phase8_checkpoint(path: Path) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -61,7 +62,7 @@ def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/eval_mappo_matrix.py",
+            str(script_path("eval_mappo_matrix.py")),
             "--checkpoint",
             str(checkpoint),
             "--anchor-bot",
@@ -94,7 +95,7 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
     tmp_path: Path,
 ) -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -122,7 +123,7 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml",
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
