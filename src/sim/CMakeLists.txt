@@ -9,6 +9,7 @@ add_library(xushi2_sim STATIC
     src/internal/sim_spawn_reset.cpp
     src/internal/sim_target_query.cpp
     src/internal/sim_tick_pipeline.cpp
+    src/internal/sim_tick_stages.cpp
     src/internal/sim_stage_mender.cpp
     src/internal/sim_stage_ranger.cpp
     src/internal/sim_stage_vanguard.cpp

@@ -6,18 +6,11 @@
 #include <raylib.h>
 
 #include "render_arena.hpp"
+#include "viewer_labels.hpp"
 
 namespace {
 constexpr std::uint32_t kShotFadeTicks = 12U;
 
-const char* target_token_label(std::uint8_t target_slot) {
-    switch (target_slot) {
-        case 1: return "E1";
-        case 2: return "E2";
-        case 3: return "E3";
-        default: return "-";
-    }
-}
 }  // namespace
 
 void draw_cover_markers(const ArenaTransform& t, const std::vector<CoverMarker>& markers) {
@@ -151,7 +144,7 @@ void draw_target_token_debug(const ArenaTransform& t, const xushi2::sim::MatchSt
         const auto target = actions[slot].target_slot;
         if (target == 0 && !actions[slot].ability_2) continue;
         const Vector2 p = world_to_screen(t, h.position);
-        DrawText(TextFormat("t:%s", target_token_label(target)), static_cast<int>(p.x + 8.0F), static_cast<int>(p.y - 22.0F), 13,
+        DrawText(TextFormat("t:%s", viewer_labels::target_slot_label(target, viewer_labels::TargetSlotLabelMode::Compact)), static_cast<int>(p.x + 8.0F), static_cast<int>(p.y - 22.0F), 13,
                  Color{245, 225, 120, 220});
         if (target >= 1 && target <= 3) {
             const std::uint32_t enemy_idx = static_cast<std::uint32_t>(target - 1U);

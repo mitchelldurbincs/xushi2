@@ -109,4 +109,15 @@ common::Vec2 resolve_cover_overlap(common::Vec2 p, common::Vec2 fallback_dir,
     return p;
 }
 
+common::Vec2 resolve_displaced_position(common::Vec2 current_pos, common::Vec2 intended_next_pos,
+                                      common::Vec2 cover_fallback_dir,
+                                      const MatchConfig& config) {
+    intended_next_pos.x =
+        common::clampf(intended_next_pos.x, config.map.min_x, config.map.max_x);
+    intended_next_pos.y =
+        common::clampf(intended_next_pos.y, config.map.min_y, config.map.max_y);
+    intended_next_pos = prevent_wall_crossing(current_pos, intended_next_pos, config);
+    return resolve_cover_overlap(intended_next_pos, cover_fallback_dir, config);
+}
+
 }  // namespace xushi2::sim::internal
