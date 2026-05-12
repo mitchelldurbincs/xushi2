@@ -29,6 +29,7 @@ make py-install
 make train-smoke
 make format
 make lint
+make bench-viewer
 make clean
 ```
 
@@ -100,3 +101,25 @@ ruff check .
 ## Documentation
 
 See the structured docs index: [`docs/README.md`](docs/README.md).
+
+
+## Viewer benchmark
+
+Run a local viewer benchmark and regression check:
+
+```bash
+make bench-viewer
+```
+
+This target emits `build/bench/viewer_bench.json` from `xushi2_viewer --json-out ...` and compares it to `data/bench/viewer_baseline.json` using a default **15% tolerance band** for frame-time metrics (`avg/p50/p95/p99`) and FPS.
+
+Intentionally refresh baselines (for expected performance shifts):
+
+```bash
+./build/src/viewer/xushi2_viewer --replay data/replays/golden_phase0_basic.txt --json-out data/bench/viewer_baseline.json
+```
+
+Hardware variance guidance:
+- Keep tolerance in the **10-20%** range across developer machines.
+- Prefer collecting baselines on a stable, low-background-load machine.
+- If CI hardware differs significantly from local hardware, maintain separate baseline files per environment.

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     import gymnasium as gym
 
+from train.mappo_advantage import compute_gae
 from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
 from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
@@ -45,41 +46,6 @@ class MappoRollout:
         self.agent_loss_mask = (
             torch.as_tensor(raw_mask, dtype=torch.float32).view(1, A, 1).expand(N, A, L).clone()
         )
-
-    def compute_gae(self, cfg: MappoConfig) -> None:
-        if cfg.value_per_agent:
-            last_gae = torch.zeros(cfg.num_envs, cfg.n_agents)
-            for t in reversed(range(cfg.rollout_len)):
-                if t == cfg.rollout_len - 1:
-                    next_value = self.last_value
-                    next_nonterminal = (1.0 - self.last_done).view(cfg.num_envs, 1)
-                else:
-                    next_value = self.value[:, :, t + 1]
-                    next_nonterminal = (1.0 - self.done[:, t]).view(cfg.num_envs, 1)
-                delta = (
-                    self.reward[:, :, t]
-                    + cfg.gamma * next_value * next_nonterminal
-                    - self.value[:, :, t]
-                )
-                last_gae = delta + cfg.gamma * cfg.gae_lambda * next_nonterminal * last_gae
-                self.advantages[:, :, t] = last_gae
-            self.returns = self.advantages + self.value
-            return
-
-        active_count = self.agent_loss_mask.sum(dim=1).clamp(min=1.0)
-        reward = (self.reward * self.agent_loss_mask).sum(dim=1) / active_count
-        last_gae = torch.zeros(cfg.num_envs)
-        for t in reversed(range(cfg.rollout_len)):
-            if t == cfg.rollout_len - 1:
-                next_value = self.last_value
-                next_nonterminal = 1.0 - self.last_done
-            else:
-                next_value = self.value[:, t + 1]
-                next_nonterminal = 1.0 - self.done[:, t]
-            delta = reward[:, t] + cfg.gamma * next_value * next_nonterminal - self.value[:, t]
-            last_gae = delta + cfg.gamma * cfg.gae_lambda * next_nonterminal * last_gae
-            self.advantages[:, t] = last_gae
-        self.returns = self.advantages + self.value
 
 
 class MappoTrainer:
@@ -247,7 +213,7 @@ class MappoTrainer:
 
     def update(self, rollout: MappoRollout) -> dict[str, float]:
         cfg = self.cfg
-        rollout.compute_gae(cfg)
+        compute_gae(rollout, cfg)
         rollout_metrics = self._rollout_metrics(rollout)
         if cfg.value_normalization:
             if cfg.value_per_agent:

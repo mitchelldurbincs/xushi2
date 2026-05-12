@@ -176,7 +176,7 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
         return 0
 
     if phase_int in (4, 5, 6, 7, 8, 9, 10, 11):
-        from train.mappo import train_phase4_from_config
+        from train.mappo_eval_checkpoint import train_phase4_from_config
 
         result = train_phase4_from_config(full_config)
         print(f"[phase{phase_int}] mappo_final={float(result['mappo']):.3f}")

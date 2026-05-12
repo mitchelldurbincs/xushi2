@@ -1,4 +1,4 @@
-.PHONY: build-cpp test-cpp bench-cpp run-bench bench-smoke py-install train-smoke format lint clean
+.PHONY: build-cpp test-cpp bench-cpp run-bench bench-smoke py-install train-smoke format lint clean bench-viewer
 
 build-cpp:
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -49,3 +49,9 @@ clean:
 	rm -rf build
 	rm -rf python/.pytest_cache python/.mypy_cache python/.ruff_cache
 	find python -type d -name '__pycache__' -prune -exec rm -rf {} +
+
+
+bench-viewer: build-cpp
+	mkdir -p build/bench
+	./build/src/viewer/xushi2_viewer --replay data/replays/golden_phase0_basic.txt --json-out build/bench/viewer_bench.json
+	python python/scripts/check_viewer_bench.py --result build/bench/viewer_bench.json --baseline data/bench/viewer_baseline.json --tolerance-pct 15
