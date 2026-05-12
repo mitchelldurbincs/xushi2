@@ -274,7 +274,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     "hold_and_shoot, basic, noop");
             }
             auto bot = xushi2::bots::make_bot_by_name(bot_name);
-            return bot->decide(sim.state(), agent_slot);
+            return bot->decide(sim.state(), sim.config(), agent_slot);
         },
         py::arg("sim"), py::arg("agent_slot"), py::arg("bot_name"),
         "Return the Action the named scripted bot would emit for "

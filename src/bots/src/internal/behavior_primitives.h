@@ -11,7 +11,8 @@ const sim::HeroState* find_opponent(const sim::MatchState& state,
 
 float aim_delta_toward(const sim::HeroState& self, float tx, float ty);
 
-common::Action walk_to_objective(const sim::HeroState& self);
+common::Action walk_to_objective(const sim::HeroState& self,
+                                 const sim::MapBounds& map);
 
 common::Action hold_and_shoot(const sim::MatchState& state,
                               const sim::HeroState& self);

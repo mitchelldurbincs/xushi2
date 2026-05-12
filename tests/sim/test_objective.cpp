@@ -40,7 +40,8 @@ void step_with_bots(Sim& sim, xushi2::bots::IBot* bot_a,
                 continue;
             }
             xushi2::bots::IBot* bot = (h.team == Team::A) ? bot_a : bot_b;
-            actions[static_cast<std::size_t>(slot)] = bot->decide(state, slot);
+            actions[static_cast<std::size_t>(slot)] =
+                bot->decide(state, sim.config(), slot);
         }
         sim.step(actions);
     }

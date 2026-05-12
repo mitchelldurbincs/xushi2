@@ -63,7 +63,7 @@ ScriptedEpisodeResult run_scripted_episode(const sim::MatchConfig& config,
                 continue;  // absent slot: leave Action{} (zeros)
             }
             IBot& bot = (h.team == common::Team::A) ? *bot_a : *bot_b;
-            actions[i] = bot.decide(state, static_cast<int>(i));
+            actions[i] = bot.decide(state, config, static_cast<int>(i));
         }
         sim.step_decision(actions);
         result.decision_hashes.push_back(sim.state_hash());

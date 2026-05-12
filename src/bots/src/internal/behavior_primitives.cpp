@@ -8,9 +8,12 @@ namespace xushi2::bots::internal {
 
 namespace {
 
-constexpr float kObjectiveX = 25.0F;
-constexpr float kObjectiveY = 25.0F;
 constexpr float kArriveRadius = 0.25F;
+
+common::Vec2 objective_center(const sim::MapBounds& map) {
+    return common::Vec2{0.5F * (map.min_x + map.max_x),
+                        0.5F * (map.min_y + map.max_y)};
+}
 
 }  // namespace
 
@@ -36,10 +39,12 @@ float aim_delta_toward(const sim::HeroState& self, float tx, float ty) {
     return common::clampf(raw, -common::kAimDeltaMax, common::kAimDeltaMax);
 }
 
-common::Action walk_to_objective(const sim::HeroState& self) {
+common::Action walk_to_objective(const sim::HeroState& self,
+                                 const sim::MapBounds& map) {
     common::Action a{};
-    const float dx = kObjectiveX - self.position.x;
-    const float dy = kObjectiveY - self.position.y;
+    const common::Vec2 center = objective_center(map);
+    const float dx = center.x - self.position.x;
+    const float dy = center.y - self.position.y;
     const float dist2 = dx * dx + dy * dy;
     if (dist2 > kArriveRadius * kArriveRadius) {
         const float inv = 1.0F / std::sqrt(dist2);

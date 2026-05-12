@@ -33,19 +33,23 @@ const sim::HeroState* get_active_hero_or_null(const sim::MatchState& state,
 
 class WalkToObjectiveBot final : public IBot {
    public:
-    common::Action decide(const sim::MatchState& state, int agent_index) override {
+    common::Action decide(const sim::MatchState& state,
+                          const sim::MatchConfig& config,
+                          int agent_index) override {
         const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
         if (self == nullptr) {
             return common::Action{};
         }
-        return internal::walk_to_objective(*self);
+        return internal::walk_to_objective(*self, config.map);
     }
     std::string name() const override { return "walk_to_objective"; }
 };
 
 class HoldAndShootBot final : public IBot {
    public:
-    common::Action decide(const sim::MatchState& state, int agent_index) override {
+    common::Action decide(const sim::MatchState& state,
+                          const sim::MatchConfig& /*config*/,
+                          int agent_index) override {
         const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
         if (self == nullptr) {
             return common::Action{};
@@ -57,12 +61,14 @@ class HoldAndShootBot final : public IBot {
 
 class BasicBot final : public IBot {
    public:
-    common::Action decide(const sim::MatchState& state, int agent_index) override {
+    common::Action decide(const sim::MatchState& state,
+                          const sim::MatchConfig& config,
+                          int agent_index) override {
         const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
         if (self == nullptr) {
             return common::Action{};
         }
-        common::Action walk = internal::walk_to_objective(*self);
+        common::Action walk = internal::walk_to_objective(*self, config.map);
         common::Action shoot = internal::hold_and_shoot(state, *self);
         // Combine: walk's movement, shoot's aim + fire.
         walk.aim_delta = shoot.aim_delta;
@@ -74,7 +80,9 @@ class BasicBot final : public IBot {
 
 class NoopBot final : public IBot {
    public:
-    common::Action decide(const sim::MatchState& /*state*/, int /*agent_index*/) override {
+    common::Action decide(const sim::MatchState& /*state*/,
+                          const sim::MatchConfig& /*config*/,
+                          int /*agent_index*/) override {
         return common::Action{};
     }
     std::string name() const override { return "noop"; }

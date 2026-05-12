@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <test_config.hpp>
+#include <xushi2/bots/bot.h>
 #include <xushi2/bots/runner.h>
 #include <xushi2/sim/sim.h>
 
@@ -52,4 +53,20 @@ TEST(Runner, BasicEvolvesState) {
     const auto r = xushi2::bots::run_scripted_episode(phase0_config(), "basic", "basic");
     ASSERT_FALSE(r.decision_hashes.empty());
     EXPECT_NE(r.decision_hashes.front(), r.decision_hashes.back());
+}
+
+TEST(Runner, WalkToObjectiveUsesConfiguredMapCenter) {
+    auto cfg = phase0_config();
+    cfg.map.min_x = 10.0F;
+    cfg.map.max_x = 70.0F;
+    cfg.map.min_y = -20.0F;
+    cfg.map.max_y = 20.0F;
+
+    xushi2::sim::Sim sim(cfg);
+    auto bot = xushi2::bots::make_walk_to_objective_bot();
+
+    const auto action = bot->decide(sim.state(), sim.config(), 0);
+
+    EXPECT_NEAR(action.move_x, 0.0F, 1e-6F);
+    EXPECT_GT(action.move_y, 0.99F);
 }

@@ -22,7 +22,8 @@ TEST(Integration, ScriptedBotsSmoke) {
 
     for (int t = 0; t < max_ticks && !sim.episode_over(); ++t) {
         for (int i = 0; i < xushi2::sim::kAgentsPerMatch; ++i) {
-            actions[static_cast<std::size_t>(i)] = bot->decide(sim.state(), i);
+            actions[static_cast<std::size_t>(i)] =
+                bot->decide(sim.state(), sim.config(), i);
         }
         sim.step(actions);
     }

@@ -15,6 +15,7 @@
 namespace xushi2::bots {
 
 using common::Action;
+using sim::MatchConfig;
 using sim::MatchState;
 
 // Every scripted bot implements this interface. Stateless *wrt the sim* —
@@ -25,7 +26,9 @@ class IBot {
 
     // Called once per policy decision for a single agent slot.
     // `agent_index` is an offset into MatchState::heroes.
-    virtual Action decide(const MatchState& state, int agent_index) = 0;
+    virtual Action decide(const MatchState& state,
+                          const MatchConfig& config,
+                          int agent_index) = 0;
 
     virtual std::string name() const = 0;
 };

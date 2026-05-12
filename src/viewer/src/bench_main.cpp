@@ -128,8 +128,8 @@ int main(int argc, char** argv) {
             actions = replay->decisions[replay_idx].actions;
             ++replay_idx;
         } else {
-            actions[0] = bot_a->decide(sim.state(), 0);
-            actions[3] = bot_b->decide(sim.state(), 3);
+            actions[0] = bot_a->decide(sim.state(), sim.config(), 0);
+            actions[3] = bot_b->decide(sim.state(), sim.config(), 3);
         }
         sim.step_decision(actions);
         update_shot_tracers(shots, prev_heroes, sim.state().heroes, sim.state().tick);
