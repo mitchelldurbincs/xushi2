@@ -22,6 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
+    "pytest-timeout>=2.2",
     "ruff>=0.1",
     "mypy>=1.7",
     "pybind11-stubgen>=2.4",
@@ -56,3 +57,7 @@ ignore = ["N806", "N812"]
 # Run from python/ so it finds python/tests/.
 testpaths = ["tests"]
 pythonpath = ["."]
+# Auto-fail any test that hangs >10 minutes. Dump traceback (not just SIGKILL)
+# so the stuck frame is visible. Override per-test with @pytest.mark.timeout(N).
+timeout = 600
+timeout_method = "thread"
