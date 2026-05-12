@@ -31,6 +31,7 @@ endif()
 option(XUSHI2_BUILD_VIEWER        "Build the raylib viewer"            ON)
 option(XUSHI2_BUILD_PYTHON_MODULE "Build the pybind11 Python module"   ON)
 option(XUSHI2_BUILD_TESTS         "Build unit / integration tests"     ON)
+option(XUSHI2_BUILD_BENCHMARKS    "Build benchmark binaries"            OFF)
 option(XUSHI2_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors"  OFF)
 
 # Static libs (xushi2_sim, xushi2_bots) are linked into the pybind11 shared
