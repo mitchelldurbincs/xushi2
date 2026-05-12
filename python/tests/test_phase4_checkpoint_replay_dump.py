@@ -9,7 +9,7 @@ import yaml
 
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
-from _paths import config_path
+from _paths import config_path, script_path
 
 
 def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
@@ -41,7 +41,7 @@ def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -93,7 +93,7 @@ def test_dump_replay_supports_phase5_entity_attention_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -145,7 +145,7 @@ def test_dump_replay_supports_phase6_entity_grid_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -197,7 +197,7 @@ def test_dump_replay_supports_phase7_team_fog_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -252,7 +252,7 @@ def test_dump_replay_supports_phase7_per_agent_fog_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -307,7 +307,7 @@ def test_dump_replay_supports_phase8_random_map_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -395,7 +395,7 @@ def test_dump_replay_supports_phase9_snapshot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -454,7 +454,7 @@ def test_dump_replay_supports_phase10_target_slot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -510,7 +510,7 @@ def test_dump_replay_supports_phase11_current_selfplay_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",
@@ -592,7 +592,7 @@ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/dump_replay.py",
+            str(script_path("dump_replay.py")),
             "--checkpoint",
             str(checkpoint_path),
             "--output",

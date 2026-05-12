@@ -22,3 +22,8 @@ def repo_path(*parts: str) -> Path:
 def config_path(rel: str) -> Path:
     """Absolute path to a file under ``experiments/configs/``."""
     return REPO_ROOT / "experiments" / "configs" / rel
+
+
+def script_path(rel: str) -> Path:
+    """Absolute path to a file under ``python/scripts/``."""
+    return REPO_ROOT / "python" / "scripts" / rel

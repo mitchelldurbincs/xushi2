@@ -15,7 +15,7 @@ from train.mappo import (
     train_phase4_from_config,
 )
 from train.phases import resolve_phase
-from _paths import config_path
+from _paths import config_path, script_path
 
 
 def _write_phase8_checkpoint(path: Path) -> None:
@@ -62,7 +62,7 @@ def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/eval_mappo_matrix.py",
+            str(script_path("eval_mappo_matrix.py")),
             "--checkpoint",
             str(checkpoint),
             "--anchor-bot",

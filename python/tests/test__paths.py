@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _paths import REPO_ROOT, config_path, repo_path
+from _paths import REPO_ROOT, config_path, repo_path, script_path
 
 
 def test_repo_root_contains_experiments_configs() -> None:
@@ -31,3 +31,8 @@ def test_config_path_independent_of_cwd(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     assert config_path("phase0_determinism.yaml") == expected
     assert config_path("phase0_determinism.yaml").is_file()
+
+
+def test_script_path_resolves_real_file() -> None:
+    p = script_path("dump_replay.py")
+    assert p.is_file(), f"expected file at {p}"

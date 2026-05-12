@@ -233,8 +233,7 @@ def test_phase6_entity_grid_probe_config_is_compact() -> None:
     cfg = make_mappo_config(config)
     assert cfg.num_envs == 2
     assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+    assert cfg.obs_dim == ENTITY_GRID_OBS_DIM
     assert cfg.obs_encoder == "entity_attention_grid"
     assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
     assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
