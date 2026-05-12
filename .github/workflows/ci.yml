@@ -25,6 +25,14 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
+      - name: Verify golden replay is up to date
+        run: |
+          ./build/src/sim/tools/dump_golden > /tmp/golden_actual.txt
+          if ! diff -u data/replays/golden_phase0_basic.txt /tmp/golden_actual.txt; then
+            echo "::error::golden_phase0_basic.txt is stale — regenerate with: ./build/src/sim/tools/dump_golden > data/replays/golden_phase0_basic.txt"
+            exit 1
+          fi
+
       - name: Run C++ tests
         run: ctest --test-dir build --output-on-failure
 

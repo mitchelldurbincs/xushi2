@@ -19,7 +19,7 @@ int main() {
     cfg.randomize_map = false;
     const auto r = x::bots::run_scripted_episode(cfg, "basic", "basic");
     for (auto h : r.decision_hashes) {
-        std::printf("%016lx\n", static_cast<unsigned long>(h));
+        std::printf("%016llx\n", static_cast<unsigned long long>(h));
     }
     return 0;
 }
