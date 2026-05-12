@@ -20,6 +20,9 @@ compile_commands.json
 *.exp
 *.exe
 
+# Stray top-level tool binaries (built artifacts belong in build/)
+/dump_golden
+
 # Python
 __pycache__/
 *.py[cod]
