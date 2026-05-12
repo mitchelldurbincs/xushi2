@@ -3,6 +3,7 @@
 #include <xushi2/common/limits.hpp>
 
 #include "viewer_layout.hpp"
+#include "viewer_labels.hpp"
 
 namespace {
 
@@ -32,17 +33,6 @@ const char* mender_weapon_label(xushi2::common::MenderWeapon weapon) {
         case xushi2::common::MenderWeapon::Sidearm: return "sidearm";
     }
     return "unknown";
-}
-
-const char* target_token_label(std::uint8_t target_slot) {
-    switch (target_slot) {
-        case 0: return "self";
-        case 1: return "enemy0";
-        case 2: return "enemy1";
-        case 3: return "enemy2";
-        case 4: return "objective";
-        default: return "?";
-    }
 }
 
 }  // namespace
@@ -95,7 +85,7 @@ void draw_panel_replay_section(const PanelViewModel& model, int x, int& y) {
     if (!model.replay_loss_mask.empty()) { DrawText(TextFormat("  lossmask %s", std::string(model.replay_loss_mask).c_str()), x, y, 16, LIGHTGRAY); y += 22; }
     if (model.replay_target_slot) {
         DrawText("  target   enabled", x, y, 16, LIGHTGRAY); y += 22;
-        DrawText(TextFormat("  tokens   0:%s 1:%s 2:%s", target_token_label(model.replay_actions[0].target_slot), target_token_label(model.replay_actions[1].target_slot), target_token_label(model.replay_actions[2].target_slot)), x, y, 13, GRAY); y += 18;
+        DrawText(TextFormat("  tokens   0:%s 1:%s 2:%s", viewer_labels::target_slot_label(model.replay_actions[0].target_slot, viewer_labels::TargetSlotLabelMode::Full), viewer_labels::target_slot_label(model.replay_actions[1].target_slot, viewer_labels::TargetSlotLabelMode::Full), viewer_labels::target_slot_label(model.replay_actions[2].target_slot, viewer_labels::TargetSlotLabelMode::Full)), x, y, 13, GRAY); y += 18;
     }
     if (model.replay_last_seen) { DrawText("  lastseen enabled", x, y, 16, LIGHTGRAY); y += 22; }
     if (model.replay_cover_count > 0) { DrawText(TextFormat("  cover    %zu", model.replay_cover_count), x, y, 16, LIGHTGRAY); y += 22; }

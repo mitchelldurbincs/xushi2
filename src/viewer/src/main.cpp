@@ -28,6 +28,7 @@
 #include "panel.hpp"
 #include "viewer_layout.hpp"
 #include "replay_loader.hpp"
+#include "viewer_labels.hpp"
 
 namespace {
 
@@ -59,18 +60,6 @@ struct TetherTrail {
     xushi2::common::Team team = xushi2::common::Team::Neutral;
     xushi2::sim::Tick fired_tick = 0;
 };
-
-const char* target_token_label(std::uint8_t target_slot) {
-    switch (target_slot) {
-        case 0: return "self";
-        case 1: return "enemy0";
-        case 2: return "enemy1";
-        case 3: return "enemy2";
-        case 4: return "objective";
-        default: return "?";
-    }
-}
-
 
 }  // namespace
 
