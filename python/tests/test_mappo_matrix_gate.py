@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from xushi2.mappo_matrix_gate import check_matrix_gate
+from _paths import script_path
 
 
 def _rows() -> list[dict]:
@@ -51,7 +52,7 @@ def test_check_mappo_matrix_cli_writes_summary(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/check_mappo_matrix.py",
+            str(script_path("check_mappo_matrix.py")),
             "--matrix",
             str(matrix_path),
             "--min-rows",

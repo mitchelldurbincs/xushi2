@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from _paths import script_path
 
 
 def test_phase4_walk_objective_dump_replay_writes_six_slot_text_replay(
@@ -12,7 +13,7 @@ def test_phase4_walk_objective_dump_replay_writes_six_slot_text_replay(
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/diag_phase4_walk_objective.py",
+            str(script_path("diag_phase4_walk_objective.py")),
             "--dump-replay",
             str(replay_path),
         ],

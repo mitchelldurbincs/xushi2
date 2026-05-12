@@ -1,0 +1,4 @@
+seed=101 phase=4 fog=0 target_slot=0 last_seen=0 round_seconds=20 action_repeat=3 team_size=3 map_min_x=0 map_min_y=0 map_max_x=24 map_max_y=24 match_type=bench_min heroes=ranger,ranger,ranger,ranger,ranger,ranger
+0 0 0 0 0 0 0 0 0 0 0 0
+3 0.2 0 0 0 1 0 -0.2 0 3.14 0 1 0
+6 0 0 0 0 0 1 0 0 0 0 0 1
