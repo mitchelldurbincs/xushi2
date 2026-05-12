@@ -31,6 +31,7 @@ dev = [
 [project.scripts]
 xushi2-train = "train.train:main"
 xushi2-eval  = "eval.eval:main"
+xushi2-eval-dump = "eval.dump_env_trajectory:main"
 
 [tool.setuptools]
 # The C++ extension `xushi2_cpp` is built by CMake and placed directly inside
