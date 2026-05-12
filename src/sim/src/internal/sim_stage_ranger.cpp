@@ -6,6 +6,7 @@
 
 #include "sim_combat.h"
 #include "sim_movement_geometry.h"
+#include "sim_target_query.h"
 #include "sim_weapon_ranger.h"
 
 namespace xushi2::sim::internal {
@@ -24,6 +25,6 @@ static void maybe_combat_roll(HeroState& h, const common::Action& a, bool aim_co
 
 void stage_abilities_combat_roll(const TickContext& ctx){ for(std::uint32_t i=0;i<kAgentsPerMatch;++i){HeroState& h=ctx.state.heroes[i]; if(!h.present||h.kind!=common::HeroKind::Ranger) continue; maybe_combat_roll(h,ctx.actions[i],ctx.aim_consumed[i],ctx.config);} }
 
-void stage_abilities_ranger_mark_target(const TickContext& ctx){ for(std::uint32_t i=0;i<kAgentsPerMatch;++i){HeroState& ranger=ctx.state.heroes[i]; if(!ranger.present||!ranger.alive||ranger.kind!=common::HeroKind::Ranger) continue; const auto& a=ctx.actions[i]; if(ctx.aim_consumed[i]||!a.ability_2||a.target_slot!=1||ranger.cd_ability_2!=0) continue; float best_dist_sq=common::kRangerRevolverRange*common::kRangerRevolverRange; int best_slot=-1; for(std::uint32_t j=0;j<kAgentsPerMatch;++j){const HeroState& target=ctx.state.heroes[j]; if(!target.present||!target.alive||target.team==ranger.team) continue; common::Vec2 to_target{target.position.x-ranger.position.x,target.position.y-ranger.position.y}; float dist_sq=to_target.x*to_target.x+to_target.y*to_target.y; if(dist_sq>best_dist_sq||segment_blocked_by_cover(ranger.position,target.position,ctx.config)) continue; best_dist_sq=dist_sq; best_slot=(int)j;} ranger.cd_ability_2=common::kRangerMarkTargetCooldownTicks; if(best_slot>=0){HeroState& target=ctx.state.heroes[(std::uint32_t)best_slot]; target.ranger_marked_ticks=common::kRangerMarkTargetDurationTicks; target.ranger_marked_by=ranger.team;}} }
+void stage_abilities_ranger_mark_target(const TickContext& ctx){ for(std::uint32_t i=0;i<kAgentsPerMatch;++i){HeroState& ranger=ctx.state.heroes[i]; if(!ranger.present||!ranger.alive||ranger.kind!=common::HeroKind::Ranger) continue; const auto& a=ctx.actions[i]; if(ctx.aim_consumed[i]||!a.ability_2||a.target_slot!=1||ranger.cd_ability_2!=0) continue; int best_slot=nearest_enemy_in_range_with_los(ctx.state,i,common::kRangerRevolverRange,ctx.config); ranger.cd_ability_2=common::kRangerMarkTargetCooldownTicks; if(best_slot>=0){HeroState& target=ctx.state.heroes[(std::uint32_t)best_slot]; target.ranger_marked_ticks=common::kRangerMarkTargetDurationTicks; target.ranger_marked_by=ranger.team;}} }
 
 }  // namespace
