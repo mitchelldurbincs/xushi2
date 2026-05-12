@@ -135,9 +135,13 @@ def test_reward_info_carries_both_teams():
 
 def test_action_space_contains_zero_action():
     env = XushiEnv(_sim_cfg(), opponent_bot="noop")
-    # spaces.Discrete samples are np.int64, but Gymnasium's contains() also
-    # accepts Python ints for Discrete subspaces.
-    assert env.action_space.contains(_zero_action())
+    # Box.contains() warns when given Python floats; cast the continuous
+    # fields to the declared dtype so the check is warning-free. Discrete
+    # subspaces accept Python ints directly.
+    action = _zero_action()
+    for key in ("move_x", "move_y", "aim_delta"):
+        action[key] = np.array(action[key], dtype=np.float32)
+    assert env.action_space.contains(action)
 
 
 def test_all_valid_opponent_bots_instantiate():

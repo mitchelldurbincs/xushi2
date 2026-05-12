@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "sim_types.h"
+#include <xushi2/sim/sim.h>
 
 namespace xushi2::sim::internal {
 
