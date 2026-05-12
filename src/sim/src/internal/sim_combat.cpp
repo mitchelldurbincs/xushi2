@@ -8,6 +8,7 @@
 #include <xushi2/common/assert.hpp>
 #include <xushi2/common/limits.hpp>
 
+#include "sim_target_query.h"
 #include "sim_weapon_ranger.h"
 
 namespace xushi2::sim::internal {
@@ -16,9 +17,6 @@ namespace xushi2::sim::internal {
 //
 // Writes DamageEvents into the per-tick buffer; applies no HP changes.
 
-// Ray–circle intersection. Returns t >= 0 at which the ray enters the
-// circle, or a negative value if the ray misses / is past the circle. The
-// ray is (origin + t*d), d assumed unit length.
 static float ray_circle_hit_t(common::Vec2 origin, common::Vec2 d, common::Vec2 center, float radius) {
     const common::Vec2 oc{origin.x - center.x, origin.y - center.y};
     const float b = oc.x * d.x + oc.y * d.y;
@@ -34,7 +32,7 @@ static float ray_circle_hit_t(common::Vec2 origin, common::Vec2 d, common::Vec2 
     }
     const float t_far = -b + sqrt_disc;
     if (t_far >= 0.0F) {
-        return 0.0F;  // origin inside circle
+        return 0.0F;
     }
     return -1.0F;
 }
@@ -197,57 +195,12 @@ void resolve_revolver_fire(MatchState& state,
         }
         // Hitscan ray.
         const common::Vec2 d{std::cos(shooter.aim_angle), std::sin(shooter.aim_angle)};
-        const float cover_t =
-            first_cover_hit_t(shooter.position, d, common::kRangerRevolverRange, config);
-        float best_barrier_t = std::numeric_limits<float>::infinity();
-        int best_barrier_slot = -1;
-        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
-            const HeroState& barrier_owner = state.heroes[j];
-            if (!barrier_owner.present || !barrier_owner.alive ||
-                barrier_owner.team == shooter.team ||
-                !barrier_owner.vanguard_barrier_active ||
-                barrier_owner.vanguard_barrier_hp_centi <= 0) {
-                continue;
-            }
-            const float t = ray_circle_hit_t(
-                shooter.position, d, barrier_owner.position,
-                common::kVanguardBarrierRadius);
-            if (t < 0.0F || t > common::kRangerRevolverRange) {
-                continue;
-            }
-            if (t < best_barrier_t) {
-                best_barrier_t = t;
-                best_barrier_slot = static_cast<int>(j);
-            }
-        }
-        float best_t = std::numeric_limits<float>::infinity();
-        int best_slot = -1;
-        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
-            const HeroState& target = state.heroes[j];
-            if (!target.present || !target.alive) {
-                continue;
-            }
-            if (target.team == shooter.team) {
-                continue;  // no friendly fire
-            }
-            const float t =
-                ray_circle_hit_t(shooter.position, d, target.position, m.revolver_hitbox_radius);
-            if (t < 0.0F || t > common::kRangerRevolverRange) {
-                continue;
-            }
-            // Deterministic tie-break by slot index (stable).
-            if (t < best_t) {
-                best_t = t;
-                best_slot = static_cast<int>(j);
-            }
-        }
+        const RayHitCandidate hit = first_ray_hit_enemy_or_barrier(
+            state, i, d, common::kRangerRevolverRange, m.revolver_hitbox_radius, config);
         // Magazine decrement + fire-gate arm happen regardless of hit/miss.
         weapon_on_fire_success(shooter.weapon, m);
-        if (cover_t <= best_barrier_t && cover_t <= best_t) {
-            continue;
-        }
-        if (best_barrier_slot >= 0 && best_barrier_t <= best_t) {
-            HeroState& barrier_owner = state.heroes[best_barrier_slot];
+        if (hit.kind == RayHitCandidate::Kind::Barrier && hit.slot >= 0) {
+            HeroState& barrier_owner = state.heroes[static_cast<std::uint32_t>(hit.slot)];
             barrier_owner.vanguard_barrier_hp_centi = std::max<std::int32_t>(
                 0,
                 barrier_owner.vanguard_barrier_hp_centi -
@@ -259,9 +212,9 @@ void resolve_revolver_fire(MatchState& state,
             }
             continue;
         }
-        if (best_slot >= 0) {
+        if (hit.kind == RayHitCandidate::Kind::Enemy && hit.slot >= 0) {
             buf[i].attacker_id = shooter.id;
-            buf[i].victim_slot = static_cast<std::uint32_t>(best_slot);
+            buf[i].victim_slot = static_cast<std::uint32_t>(hit.slot);
             buf[i].damage_centi_hp = m.revolver_damage_centi_hp;
             has_damage[i] = true;
         }
@@ -287,54 +240,12 @@ void resolve_mender_sidearm_fire(MatchState& state,
         }
 
         const common::Vec2 d{std::cos(shooter.aim_angle), std::sin(shooter.aim_angle)};
-        const float cover_t =
-            first_cover_hit_t(shooter.position, d, common::kMenderSidearmRange, config);
-        float best_barrier_t = std::numeric_limits<float>::infinity();
-        int best_barrier_slot = -1;
-        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
-            const HeroState& barrier_owner = state.heroes[j];
-            if (!barrier_owner.present || !barrier_owner.alive ||
-                barrier_owner.team == shooter.team ||
-                !barrier_owner.vanguard_barrier_active ||
-                barrier_owner.vanguard_barrier_hp_centi <= 0) {
-                continue;
-            }
-            const float t = ray_circle_hit_t(
-                shooter.position, d, barrier_owner.position,
-                common::kVanguardBarrierRadius);
-            if (t < 0.0F || t > common::kMenderSidearmRange) {
-                continue;
-            }
-            if (t < best_barrier_t) {
-                best_barrier_t = t;
-                best_barrier_slot = static_cast<int>(j);
-            }
-        }
-
-        float best_t = std::numeric_limits<float>::infinity();
-        int best_slot = -1;
-        for (std::uint32_t j = 0; j < kAgentsPerMatch; ++j) {
-            const HeroState& target = state.heroes[j];
-            if (!target.present || !target.alive || target.team == shooter.team) {
-                continue;
-            }
-            const float t =
-                ray_circle_hit_t(shooter.position, d, target.position, m.revolver_hitbox_radius);
-            if (t < 0.0F || t > common::kMenderSidearmRange) {
-                continue;
-            }
-            if (t < best_t) {
-                best_t = t;
-                best_slot = static_cast<int>(j);
-            }
-        }
+        const RayHitCandidate hit = first_ray_hit_enemy_or_barrier(
+            state, i, d, common::kMenderSidearmRange, m.revolver_hitbox_radius, config);
 
         shooter.weapon.fire_cooldown_ticks = common::kMenderSidearmCooldownTicks;
-        if (cover_t <= best_barrier_t && cover_t <= best_t) {
-            continue;
-        }
-        if (best_barrier_slot >= 0 && best_barrier_t <= best_t) {
-            HeroState& barrier_owner = state.heroes[best_barrier_slot];
+        if (hit.kind == RayHitCandidate::Kind::Barrier && hit.slot >= 0) {
+            HeroState& barrier_owner = state.heroes[static_cast<std::uint32_t>(hit.slot)];
             barrier_owner.vanguard_barrier_hp_centi = std::max<std::int32_t>(
                 0,
                 barrier_owner.vanguard_barrier_hp_centi -
@@ -346,9 +257,9 @@ void resolve_mender_sidearm_fire(MatchState& state,
             }
             continue;
         }
-        if (best_slot >= 0) {
+        if (hit.kind == RayHitCandidate::Kind::Enemy && hit.slot >= 0) {
             buf[i].attacker_id = shooter.id;
-            buf[i].victim_slot = static_cast<std::uint32_t>(best_slot);
+            buf[i].victim_slot = static_cast<std::uint32_t>(hit.slot);
             buf[i].damage_centi_hp =
                 static_cast<std::uint32_t>(common::kMenderSidearmDamageCentiHp);
             has_damage[i] = true;
