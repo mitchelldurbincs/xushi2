@@ -11,6 +11,7 @@ from train.mappo import MappoActorCritic, make_mappo_config, train_phase4_from_c
 from train.phases import resolve_phase
 from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.obs_manifest import CRITIC_DIM
+from _paths import config_path
 
 
 def _env() -> Phase11CurrentSelfplayMappoEnv:
@@ -34,7 +35,7 @@ def _env() -> Phase11CurrentSelfplayMappoEnv:
 
 def _write_phase8_snapshot(path: Path) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -162,7 +163,7 @@ def test_phase11_current_selfplay_builds_per_agent_team_critic_obs() -> None:
 
 def test_phase11_config_enables_six_agent_value_per_agent_mappo() -> None:
     with open(
-        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
+        config_path("phase11/probe/phase11_current_selfplay_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -179,7 +180,7 @@ def test_phase11_config_enables_six_agent_value_per_agent_mappo() -> None:
 
 def test_phase11_current_selfplay_train_runs_one_update(tmp_path) -> None:
     with open(
-        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
+        config_path("phase11/probe/phase11_current_selfplay_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -194,7 +195,7 @@ def test_phase11_current_selfplay_train_runs_one_update(tmp_path) -> None:
 
 def test_phase11_anchor_league_train_runs_one_update(tmp_path) -> None:
     with open(
-        "../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml",
+        config_path("phase11/probe/phase11_current_selfplay_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)

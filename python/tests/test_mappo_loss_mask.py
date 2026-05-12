@@ -5,6 +5,7 @@ import torch
 import yaml
 
 from train.mappo import MappoConfig, MappoRollout, make_mappo_config
+from _paths import config_path
 
 
 def _cfg(
@@ -94,7 +95,7 @@ def test_mappo_rollout_per_agent_gae_keeps_opposing_team_rewards_separate() -> N
 
 
 def test_make_mappo_config_validates_agent_loss_mask_shape() -> None:
-    with open("../experiments/configs/phase9_snapshot_probe.yaml", encoding="utf-8") as fh:
+    with open(config_path("phase9_snapshot_probe.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     config["ppo"] = dict(config["ppo"])
     config["ppo"]["agent_loss_mask"] = [1.0, 0.0]
@@ -104,7 +105,7 @@ def test_make_mappo_config_validates_agent_loss_mask_shape() -> None:
 
 
 def test_make_mappo_config_requires_one_active_agent() -> None:
-    with open("../experiments/configs/phase9_snapshot_probe.yaml", encoding="utf-8") as fh:
+    with open(config_path("phase9_snapshot_probe.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     config["ppo"] = dict(config["ppo"])
     config["ppo"]["agent_loss_mask"] = [0.0, 0.0, 0.0]
