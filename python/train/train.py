@@ -1,24 +1,28 @@
-"""Phase-0 acceptance harness.
-
-Loads a YAML config, runs scripted-bot-vs-scripted-bot episodes, runs the
-same sequence a second time, and asserts every per-decision state_hash
-matches bit-identically. Exits 0 on full match, 1 on first divergence.
-
-Usage:
-    python -m train.train --config experiments/configs/phase0_determinism.yaml
-
-Phase 1+ (PPO, flat obs) will reuse this entrypoint.
-"""
+"""Training entrypoint and phase routing."""
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
-from train.phases import resolve_phase
-from xushi2.runner import EpisodeResult, run_episode
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xushi2.runner import EpisodeResult
+
+
+@dataclass(frozen=True)
+class NormalizedEntryConfig:
+    phase_int: int
+    phase_label: str
+    sim_cfg: dict
+    env_cfg: dict
+    run_cfg: dict
+    base_seed: int
 
 
 def load_config(path: Path) -> dict:
@@ -26,9 +30,11 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(fh)
 
 
+# --- phase0 harness ---
 def _run_pass(
     sim_cfg: dict, bot_a: str, bot_b: str, episodes: int, base_seed: int
 ) -> list[EpisodeResult]:
+    from xushi2.runner import run_episode
     results: list[EpisodeResult] = []
     for i in range(episodes):
         results.append(run_episode(sim_cfg, bot_a, bot_b, seed_override=base_seed + i))
@@ -63,72 +69,84 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
     return 0
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="xushi2 training entrypoint")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        required=True,
-        help="Path to a training config YAML under experiments/configs/",
-    )
-    args = parser.parse_args()
+def normalize_entry_config(config: dict) -> NormalizedEntryConfig:
+    from train.phases import resolve_phase
 
-    config = load_config(args.config)
-    phase_raw = config.get("phase", "unknown")
-    try:
-        phase_int, phase_spec = resolve_phase(config)
-    except ValueError as exc:
-        print(f"[xushi2] {exc}")
-        return 2
-    phase = phase_raw
-    env_cfg = config.get("env", {})
-    sim_cfg = config.get("sim", {})
+    phase_int, phase_spec = resolve_phase(config)
+    env_cfg = dict(config.get("env", {}))
+    sim_cfg = dict(config.get("sim", {}))
     if phase_int in (2, 3, 4):
-        sim_cfg = env_cfg.get("sim", {})
-    run_cfg = config.get("run", {})
-
-    episodes = int(run_cfg.get("episodes", 4))
-    bot_a = str(run_cfg.get("team_a_bot", "basic"))
-    bot_b = str(run_cfg.get("team_b_bot", "basic"))
-    assert_determinism = bool(run_cfg.get("assert_determinism", True))
+        sim_cfg = dict(env_cfg.get("sim", {}))
+    run_cfg = dict(config.get("run", {}))
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
+    return NormalizedEntryConfig(
+        phase_int=phase_int,
+        phase_label=str(phase_spec["label"]),
+        sim_cfg=sim_cfg,
+        env_cfg=env_cfg,
+        run_cfg=run_cfg,
+        base_seed=base_seed,
+    )
 
-    if phase_int == 11:
-        print(
-            f"[xushi2] phase={phase} mappo match_type=current "
-            f"learner_team=both base_seed=0x{base_seed:x}"
-        )
-    elif phase_int in (4, 5, 6, 7, 8, 9, 10):
-        opponent = str(env_cfg.get("opponent_bot", "?"))
-        learner = str(env_cfg.get("learner_team", "A"))
-        print(
-            f"[xushi2] phase={phase} mappo opponent={opponent} "
-            f"learner_team={learner} base_seed=0x{base_seed:x}"
-        )
-    elif phase_int == 3:
-        opponent = str(env_cfg.get("opponent_bot", "?"))
-        learner = str(env_cfg.get("learner_team", "A"))
-        print(
-            f"[xushi2] phase={phase} opponent={opponent} "
-            f"learner_team={learner} base_seed=0x{base_seed:x}"
-        )
-    elif phase_int == 2:
-        print(f"[xushi2] phase={phase} memory_toy base_seed=0x{base_seed:x}")
-    else:
-        print(
-            f"[xushi2] phase={phase} episodes={episodes} "
-            f"bots={bot_a} vs {bot_b} base_seed=0x{base_seed:x}"
-        )
+
+def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) -> str:
+    episodes = int(normalized.run_cfg.get("episodes", 4))
+    bot_a = str(normalized.run_cfg.get("team_a_bot", "basic"))
+    bot_b = str(normalized.run_cfg.get("team_b_bot", "basic"))
+
+    phase_groups: list[tuple[set[int], Callable[[], str]]] = [
+        (
+            {11},
+            lambda: (
+                f"[xushi2] phase={phase_raw} mappo match_type=current "
+                f"learner_team=both base_seed=0x{normalized.base_seed:x}"
+            ),
+        ),
+        (
+            {4, 5, 6, 7, 8, 9, 10},
+            lambda: (
+                f"[xushi2] phase={phase_raw} mappo opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+                f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
+                f"base_seed=0x{normalized.base_seed:x}"
+            ),
+        ),
+        (
+            {3},
+            lambda: (
+                f"[xushi2] phase={phase_raw} opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+                f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
+                f"base_seed=0x{normalized.base_seed:x}"
+            ),
+        ),
+        (
+            {2},
+            lambda: f"[xushi2] phase={phase_raw} memory_toy base_seed=0x{normalized.base_seed:x}",
+        ),
+    ]
+    for phases, renderer in phase_groups:
+        if normalized.phase_int in phases:
+            return renderer()
+    return (
+        f"[xushi2] phase={phase_raw} episodes={episodes} "
+        f"bots={bot_a} vs {bot_b} base_seed=0x{normalized.base_seed:x}"
+    )
+
+
+def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
+    phase_int = normalized.phase_int
+    phase_label = full_config.get("phase", "unknown")
 
     if phase_int == 0:
+        episodes = int(normalized.run_cfg.get("episodes", 4))
+        bot_a = str(normalized.run_cfg.get("team_a_bot", "basic"))
+        bot_b = str(normalized.run_cfg.get("team_b_bot", "basic"))
+        assert_determinism = bool(normalized.run_cfg.get("assert_determinism", True))
         if not assert_determinism:
-            # Later phases will slot in here. For now the harness is Phase-0-only.
-            print(f"[xushi2] phase {phase} not yet supported by this entrypoint")
+            print(f"[xushi2] phase {phase_label} not yet supported by this entrypoint")
             return 2
 
-        pass_a = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
-        pass_b = _run_pass(sim_cfg, bot_a, bot_b, episodes, base_seed)
-
+        pass_a = _run_pass(normalized.sim_cfg, bot_a, bot_b, episodes, normalized.base_seed)
+        pass_b = _run_pass(normalized.sim_cfg, bot_a, bot_b, episodes, normalized.base_seed)
         rc = _assert_identical(pass_a, pass_b)
         if rc == 0:
             total = sum(len(r.decision_hashes) for r in pass_a)
@@ -142,29 +160,52 @@ def main() -> int:
     if phase_int in (2, 3):
         from train.ppo_recurrent import train_from_config
 
-        result = train_from_config(config)
+        result = train_from_config(full_config)
         recurrent = float(result["recurrent"])
-        label = phase_spec["label"]
-        if "feedforward" in phase_spec.get("training_variants", ()):
+        from train.phases import resolve_phase
+
+        if "feedforward" in resolve_phase(full_config)[1].get("training_variants", ()):
             feedforward = float(result["feedforward"])
             gap = recurrent - feedforward
             print(
-                f"[{label}] recurrent_final={recurrent:.3f} "
+                f"[{normalized.phase_label}] recurrent_final={recurrent:.3f} "
                 f"feedforward_final={feedforward:.3f} gap={gap:.3f}"
             )
         else:
-            print(f"[{label}] recurrent_final={recurrent:.3f}")
+            print(f"[{normalized.phase_label}] recurrent_final={recurrent:.3f}")
         return 0
 
     if phase_int in (4, 5, 6, 7, 8, 9, 10, 11):
         from train.mappo import train_phase4_from_config
 
-        result = train_phase4_from_config(config)
+        result = train_phase4_from_config(full_config)
         print(f"[phase{phase_int}] mappo_final={float(result['mappo']):.3f}")
         return 0
 
-    print(f"[xushi2] unsupported phase/config shape: phase={phase!r}")
+    print(f"[xushi2] unsupported phase/config shape: phase={phase_label!r}")
     return 2
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="xushi2 training entrypoint")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        required=True,
+        help="Path to a training config YAML under experiments/configs/",
+    )
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+    try:
+        normalized = normalize_entry_config(config)
+    except ValueError as exc:
+        print(f"[xushi2] {exc}")
+        return 2
+
+    phase_raw = config.get("phase", "unknown")
+    print(format_phase_banner(normalized, phase_raw))
+    return run_phase(normalized, config)
 
 
 if __name__ == "__main__":
