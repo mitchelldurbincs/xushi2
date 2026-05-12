@@ -34,6 +34,7 @@
 #include "render_debug.hpp"
 #include "panel.hpp"
 #include "viewer_layout.hpp"
+#include "viewer_labels.hpp"
 
 namespace {
 
@@ -248,16 +249,6 @@ xushi2::common::HeroKind parse_hero_kind(std::string_view s) {
     return xushi2::common::HeroKind::Ranger;
 }
 
-const char* target_token_label(std::uint8_t target_slot) {
-    switch (target_slot) {
-        case 0: return "self";
-        case 1: return "enemy0";
-        case 2: return "enemy1";
-        case 3: return "enemy2";
-        case 4: return "objective";
-        default: return "?";
-    }
-}
 
 std::optional<Replay> load_replay(const std::string& path) {
     std::ifstream in(path);
@@ -624,7 +615,7 @@ void draw_target_token_debug(
         }
         const Vector2 p = world_to_screen(t, h.position);
         Color col = Color{245, 225, 120, 220};
-        DrawText(TextFormat("t:%s", target_token_label(target)),
+        DrawText(TextFormat("t:%s", viewer_labels::target_slot_label(target, viewer_labels::TargetSlotLabelMode::Compact)),
                  static_cast<int>(p.x + 8.0F),
                  static_cast<int>(p.y - 22.0F),
                  13,
