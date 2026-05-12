@@ -245,7 +245,7 @@ This is the OpenAI Five credit-assignment lever. It is **not** a substitute for 
 
 ## 6. Training curriculum
 
-Phases are gates. Do not proceed until the prior phase produces stable, interpretable behavior.
+Phases are gates. **Each phase declares explicit exit criteria below — metrics and thresholds, not vibes.** Do not proceed until the prior phase clears every listed gate; "looks stable on the loss curve" is not sufficient and compounds badly across phases. Where a gate references a baseline from a prior phase (e.g., "≥ Phase 4 win rate"), record that baseline in the phase result log so subsequent regression checks are anchored to a real number.
 
 **Principle: ladder up complexity.** The first learning run should not have CNN + attention + GRU + hybrid action space + MAPPO + self-play all at once. If it fails, the failure mode is unidentifiable. Start with the smallest learning setup that can fail, prove it works, then add one dimension of complexity at a time.
 
@@ -253,27 +253,61 @@ Phases are gates. Do not proceed until the prior phase produces stable, interpre
 
 ### Ladder
 
-**Phase 0 — Sim determinism smoke test.** No learning. Scripted bot vs scripted bot. Run the same seed twice, assert identical trajectories bit-for-bit. Catches determinism bugs before they can poison training.
+**Phase 0 — Sim determinism smoke test.** No learning. Scripted bot vs scripted bot. Run the same seed twice, assert identical trajectories bit-for-bit. Catches determinism bugs before they can poison training. Gates to exit:
+- Same seed, same binary, two intra-process runs → `state_hash` matches every tick (dense golden mode).
+- Two different seeds → hashes differ within the first 100 ticks (sanity: hashing is actually data-dependent).
+- Golden-replay CI job is green and runs on every commit touching sim/replay/obs code.
 
-**Phase 1 — Feedforward PPO, flat obs, 1v1 Ranger.** No RNN, no attention, no grid — a flat vector observation and a small MLP. Self-play (or scripted opponent) is fine here since the state space is small. Fixed map. Goal: validate the entire learning pipeline (env, PPO, logging) on the easiest possible version of the problem.
+**Phase 1 — Feedforward PPO, flat obs, 1v1 Ranger.** No RNN, no attention, no grid — a flat vector observation and a small MLP. Self-play (or scripted opponent) is fine here since the state space is small. Fixed map. Goal: validate the entire learning pipeline (env, PPO, logging) on the easiest possible version of the problem. Gates to exit:
+- Win rate vs `walk_to_objective` scripted bot ≥ 90% (this opponent does not shoot; failing this means the pipeline, not the policy, is broken).
+- No NaN / inf in gradient norms, value loss, or returns across the run.
+- Ability-on-cooldown activation rate (§11) trends toward 0.
+- `fire-while-dead rate` (§11) trends toward 0.
+- Mean episode reward is stable (no decay) across the final 200 updates.
+- Replay inspection (Phase 3.5 viewer if available, otherwise per-tick log dump): policy approaches and stands on the objective; no obvious reward hack.
 
-**Phase 2 — Recurrent PPO on a 1v1 memory toy.** Not the real game — a stripped-down environment that *provably requires* recurrence (e.g., cue visible for 10 ticks, must act on it 30 ticks later). Purpose: validate GRU training (hidden state handling, BPTT, rollout/training consistency) in isolation from game complexity. This is the "memory sanity test" from §10 turned into a phase.
+**Phase 2 — Recurrent PPO on a 1v1 memory toy.** Not the real game — a stripped-down environment that *provably requires* recurrence (e.g., cue visible for 10 ticks, must act on it 30 ticks later). Purpose: validate GRU training (hidden state handling, BPTT, rollout/training consistency) in isolation from game complexity. This is the "memory sanity test" from §10 turned into a phase. Gates to exit:
+- Recurrent policy reaches ≥ 90% of by-construction optimal return.
+- **Feedforward control** on the same env tops out below the recurrent policy by a clear margin (≥ 30 percentage points of optimal). If the feedforward variant solves it, the env doesn't actually require memory and the test is invalid.
+- Hidden-state-zeroed-on-episode-boundary leak test passes (§10).
+- Rollout-vs-training hidden-state determinism test passes (§10): identical `(obs_seq, h0)` produces identical logits in both passes.
 
-**Phase 3 — Recurrent PPO, 1v1 Ranger, flat obs.** Bring recurrence into the real game at minimal scale. Still flat obs, still fixed map.
+**Phase 3 — Recurrent PPO, 1v1 Ranger, flat obs.** Bring recurrence into the real game at minimal scale. Still flat obs, still fixed map. Gates to exit:
+- Win rate vs `basic` firing scripted bot ≥ 60%.
+- **RNN-ablation eval**: re-run inference with the GRU hidden state frozen at zero each step (effectively feedforward). Win rate vs `basic` should drop by ≥ 10 percentage points — proves memory is doing work, not decorative.
+- Behavioral metrics: objective contest time > 0; kill rate per episode > 0; ally-deaths-while-isolated low (this is 1v1 so there is no ally, but the metric infrastructure should exist).
+- Out-of-ammo fire rate, ability-on-cooldown rate, fire-while-dead rate all near 0.
+- Final checkpoint preserved as a warm-start source for Phase 4.
 
 **Phase 3.5 — Minimal replay/debug viewer gate.** Before Phase 4 scale-up,
 build the smallest useful viewer/debugger: draw the arena, objective, agents,
 HP, facing, shots, deaths/respawns, score, cap progress, and reward components
 for an eval episode. Scrubbing a recorded replay is ideal; a deterministic
 live/eval playback is acceptable as the first cut. This is a debugging gate,
-not a polished human-play client.
+not a polished human-play client. Gates to exit:
+- Viewer renders a Phase 3 eval replay end-to-end without crashes or visual glitches.
+- All listed overlay elements present and readable: arena, objective, agent positions + facing, HP bars, shots, deaths/respawns, score, cap progress, per-step reward components.
+- The developer can sit down with the viewer and identify at least one specific behavior in a Phase 3 replay (reward hack candidate, weird movement pattern, ability misuse, etc.) — if you can't extract insight from it, it is not yet a debugging tool.
+- Replay file format documented in `replay_format.md` and round-trips cleanly (load → render → identical to live playback).
 
 **Phase 4 — Recurrent MAPPO, 3v3 Ranger, flat obs.** Introduce multi-agent
 training and the centralized critic while holding hero diversity constant.
 All six slots run Ranger so the phase isolates the multi-agent / CTDE delta.
-Still flat obs, still fixed map.
+Still flat obs, still fixed map. Gates to exit:
+- Win rate vs `basic` 3v3 scripted bot ≥ 50% (per the journal, this was the first non-loss breakthrough; treat it as the floor, not a target).
+- Per-agent reward attribution: summing `r_individual_i` over a team equals the team-scalar reward used in pre-Phase 4 logic to within a documented tolerance (§5; regression test required).
+- Gradient-mask test green: for current-vs-snapshot rollouts, the loss batch contains only `is_learning == True` steps (§7).
+- Hidden-enemy leak tests (§10) green.
+- Behavioral metrics: ally-deaths-while-isolated lower than naïve 3v Phase-3-clone baseline (proves teammates coordinate at least loosely); objective contest time > 0 with all three agents present on point in at least some episodes.
+- `team_spirit` ramp logged in the run; final value documented for downstream phases.
+- Best-eval checkpoint preserved (per journal lesson — PPO oscillates around breakthroughs, so don't rely on `latest`).
 
-**Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
+**Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet. Gates to exit:
+- Win rate vs `basic` 3v3 ≥ Phase 4 baseline (regression check — the encoder swap should not hurt).
+- **Attention-ablation eval**: replace attention pooling with mean-pooling over the same per-entity MLP outputs. Win rate should drop materially; if it doesn't, attention is decorative and the encoder needs debugging before Phase 6.
+- Variable-entity-count edge cases pass (§10): all enemies dead, all teammates dead, 0 visible enemies, maximum visible enemies — no crashes, no NaN logits.
+- Attention masking is sound: dead-agent entity tokens contribute zero post-mask (unit test).
+- Hidden-enemy leak tests still green after the obs-builder rewrite (§10).
 
 **Phase 6 — Heterogeneous roster, then grid, then teamfight-emergence evaluation.** Phase 6 is split into three sub-phases to keep each delta debuggable. The original "add grid + add new heroes + add new shaping + claim emergent teamfights" formulation bundled four deltas at once, which violates the one-delta-at-a-time rule. Run them serially:
 
@@ -301,14 +335,36 @@ Still flat obs, still fixed map.
 
 **Phase 7 — Partial observation.** Split into two sub-phases so the fog delta is incremental on a working Phase-6 policy, not a cold start:
 
-- **Phase 7a — Team-shared fog of war.** Walls block line-of-sight, but visible-enemy sets are unioned across teammates before building each agent's observation (Dota / OA5 fog model). Goal: show teamfights survive partial observation of the *map* without yet requiring agents to infer what teammates see. This is the strict OA5 parity point.
-- **Phase 7b — Per-agent fog of war.** Drop the team-shared union. Each agent sees only what *it* directly has line-of-sight to; the only cross-agent information channel is allies-through-walls (position/HP/alive-state) plus each agent's own last-seen enemy markers. This is the research-novel claim — teamfights survive genuine per-agent partial observation. *Note: Phase-1 heroes (Vanguard / Ranger / Mender) have no team-level reveal abilities (game-design §4), so coordination here must emerge from positioning alone.*
+- **Phase 7a — Team-shared fog of war.** Walls block line-of-sight, but visible-enemy sets are unioned across teammates before building each agent's observation (Dota / OA5 fog model). Goal: show teamfights survive partial observation of the *map* without yet requiring agents to infer what teammates see. This is the strict OA5 parity point. Gates to exit:
+  - Win rate vs `basic` ≥ 80% of the Phase 6b baseline win rate (some fog cost expected; > 20% degradation means the fog rollout has a bug or needs more curriculum).
+  - Phase 6c coordination metrics (spatial clustering during contests, role-conditional positioning) retained within a documented tolerance — coordination must survive the fog.
+  - Last-seen enemy markers used by the policy: ablate the marker feature at eval time → win rate should drop measurably. If it doesn't, the policy is ignoring memory.
+  - Leak tests green specifically for fog: critic still sees hidden enemies, actor does not, no obs delta when a fully-hidden enemy moves/aims/fires (§10).
 
-**Phase 8 — Map randomization.** Turn on per-episode wall randomization. Overfitting mitigation.
+- **Phase 7b — Per-agent fog of war.** Drop the team-shared union. Each agent sees only what *it* directly has line-of-sight to; the only cross-agent information channel is allies-through-walls (position/HP/alive-state) plus each agent's own last-seen enemy markers. This is the research-novel claim — teamfights survive genuine per-agent partial observation. *Note: Phase-1 heroes (Vanguard / Ranger / Mender) have no team-level reveal abilities (game-design §4), so coordination here must emerge from positioning alone.* Gates to exit:
+  - Win rate vs `basic` ≥ 70% of the Phase 7a baseline.
+  - Coordination metrics from 6c retained within tolerance; spatial-clustering metric in particular must not collapse (the claim under test is that positioning-only coordination survives per-agent fog).
+  - Per-agent vs team-shared comparison documented: same eval suite run on both 7a and 7b checkpoints, with delta-table recorded as the headline result for the research-novel claim.
+  - Leak tests green: each agent's obs depends only on *its own* visibility, not the union (regression test).
 
-**Phase 9 — Snapshot self-play league.** Switch opponent sampling to the snapshot pool (§7).
+**Phase 8 — Map randomization.** Turn on per-episode wall randomization. Overfitting mitigation. Anneal in: start with a small pre-validated set of map variants and expand, rather than enabling full random generation cold. Gates to exit:
+  - **Train/test generalization gap** ≤ 10 percentage points: win rate on a held-out set of map variants the policy was never trained on should be within 10pp of training-map win rate.
+  - Win rate vs `basic` on the training-map distribution ≥ 80% of Phase 7b baseline (some randomization cost expected; large gaps mean curriculum needs more annealing).
+  - No reward-hack regression in eval replays from sampled novel maps (the viewer is a first-class tool here; sample N replays and inspect).
+  - Determinism preserved across seeded map generation (same seed → same map; cross-process golden replay test still passes).
 
-**Phase 10 — Target slots, second heroes per role, and missing abilities.** Enable the `target_slot` action head and wire the first targeted diagnostic, Ranger Mark Target. Continue introducing alternative heroes (e.g., Warden alt-tank, Specter flanker DPS, a dedicated utility support) and fill in the remaining deferred Phase-1 abilities (a Mender alternate with Damage Boost; Vanguard's Charge / Fire Strike). Composition-specific strategy learning.
+**Phase 9 — Snapshot self-play league.** Switch opponent sampling to the snapshot pool (§7). Gates to exit:
+  - **Win-rate matrix** computed across the snapshot pool: current policy wins ≥ 55% vs the oldest snapshot, ≥ 50% vs the most recent. A current-vs-oldest win rate below 50% means catastrophic forgetting.
+  - Win rate vs the scripted-bot anchor suite (`walk_to_objective`, `basic`, `hold_and_shoot`, and a defensive-hold variant if available) ≥ Phase 8 baseline. The pool must not let the policy drift away from basic skills.
+  - Gradient-mask invariant from Phase 4 still holds: snapshot-controlled trajectories are excluded from the PPO loss (§7 regression test passes against pool opponents).
+  - No cyclic strategy detected: if the win-rate matrix shows A>B, B>C, C>A patterns dominating across recent snapshots, escalate to investigation before continuing.
+
+**Phase 10 — Target slots, second heroes per role, and missing abilities.** Enable the `target_slot` action head and wire the first targeted diagnostic, Ranger Mark Target. Continue introducing alternative heroes (e.g., Warden alt-tank, Specter flanker DPS, a dedicated utility support) and fill in the remaining deferred Phase-1 abilities (a Mender alternate with Damage Boost; Vanguard's Charge / Fire Strike). Composition-specific strategy learning. Split per-hero introductions into sub-phases (10a Mark Target + target_slot head, 10b first alt hero, etc.) for the same one-delta-at-a-time reasons as Phase 6. Gates to exit each 10.x:
+  - `target_slot` action distribution is non-degenerate: not always 0, not uniform — selection conditions on observed enemy state.
+  - For Mark Target specifically: the marked enemy is more likely to be focused by teammates in the following N decisions than a random visible enemy (proves the targeted info is being used by the team).
+  - Win rate vs `basic` ≥ Phase 9 baseline (no regression from adding heroes/abilities).
+  - New hero kit ability-use rates non-trivial (>0) and ability-on-cooldown rates near 0 — proves the hero is being played, not ignored by the shared policy.
+  - Leak tests green after each obs-schema change.
 
 ### Why this ordering matters
 
