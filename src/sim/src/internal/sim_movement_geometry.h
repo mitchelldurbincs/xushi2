@@ -9,5 +9,8 @@ bool movement_crosses_wall(common::Vec2 from, common::Vec2 to, const WallSegment
 common::Vec2 prevent_wall_crossing(common::Vec2 from, common::Vec2 to, const MatchConfig& config);
 common::Vec2 resolve_cover_overlap(common::Vec2 p, common::Vec2 fallback_dir,
                                    const MatchConfig& config);
+common::Vec2 resolve_displaced_position(common::Vec2 current_pos, common::Vec2 intended_next_pos,
+                                      common::Vec2 cover_fallback_dir,
+                                      const MatchConfig& config);
 
 }  // namespace xushi2::sim::internal
