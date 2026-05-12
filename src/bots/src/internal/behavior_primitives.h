@@ -1,6 +1,6 @@
 #pragma once
 
-#include <xushi2/sim/match_state.hpp>
+#include <xushi2/sim/sim.h>
 
 #include <xushi2/common/action_canon.hpp>
 

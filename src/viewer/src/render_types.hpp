@@ -37,3 +37,14 @@ struct LosDebugCounts {
     std::size_t visible = 0;
     std::size_t blocked = 0;
 };
+
+struct CoverMarker {
+    xushi2::common::Vec2 center{};
+    float radius = 1.0F;
+};
+
+struct WallMarker {
+    xushi2::common::Vec2 a{};
+    xushi2::common::Vec2 b{};
+    float half_width = 0.25F;
+};

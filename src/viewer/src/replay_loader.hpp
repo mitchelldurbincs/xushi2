@@ -6,20 +6,10 @@
 #include <string>
 #include <vector>
 
-#include <xushi2/common/action.hpp>
-#include <xushi2/common/vec2.hpp>
+#include <xushi2/common/types.h>
 #include <xushi2/sim/sim.h>
 
-struct CoverMarker {
-    xushi2::common::Vec2 center{};
-    float radius = 1.0F;
-};
-
-struct WallMarker {
-    xushi2::common::Vec2 a{};
-    xushi2::common::Vec2 b{};
-    float half_width = 0.25F;
-};
+#include "render_types.hpp"
 
 struct ReplayDecision {
     std::uint32_t tick;

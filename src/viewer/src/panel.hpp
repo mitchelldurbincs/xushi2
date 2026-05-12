@@ -8,10 +8,7 @@
 
 #include <xushi2/sim/sim.h>
 
-struct LosDebugCounts {
-    std::size_t visible = 0;
-    std::size_t blocked = 0;
-};
+#include "render_types.hpp"
 
 struct PanelViewModel {
     const xushi2::sim::MatchState& state;
