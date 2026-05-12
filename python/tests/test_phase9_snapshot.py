@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 import torch
 import yaml
 
@@ -40,6 +41,13 @@ def _write_snapshot(path: Path) -> None:
         },
         path,
     )
+
+
+@pytest.fixture(scope="module")
+def shared_snapshot_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    snapshot_path = tmp_path_factory.mktemp("phase9_snapshot") / "snapshot.pt"
+    _write_snapshot(snapshot_path)
+    return snapshot_path
 
 
 def test_snapshot_pool_sampling_is_deterministic(tmp_path: Path) -> None:
@@ -162,21 +170,17 @@ def test_self_play_schedule_samples_current_snapshot_and_anchor(tmp_path: Path) 
     assert schedule.summary == "anchor:1"
 
 
-def test_snapshot_policy_loads_and_emits_actions(tmp_path: Path) -> None:
-    snapshot_path = tmp_path / "snapshot.pt"
-    _write_snapshot(snapshot_path)
-    policy = SnapshotPolicy(snapshot_path)
+def test_snapshot_policy_loads_and_emits_actions(shared_snapshot_path: Path) -> None:
+    policy = SnapshotPolicy(shared_snapshot_path)
     assert policy.phase == 8
     assert policy.cfg.obs_encoder == "entity_attention_grid"
 
 
 def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
-    tmp_path: Path,
+    shared_snapshot_path: Path,
     monkeypatch,
 ) -> None:
-    snapshot_path = tmp_path / "snapshot.pt"
-    _write_snapshot(snapshot_path)
-    policy = SnapshotPolicy(snapshot_path)
+    policy = SnapshotPolicy(shared_snapshot_path)
     live_bounds = {
         "min_x": -11.0,
         "min_y": -13.0,
@@ -218,9 +222,8 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
     assert all(bounds == live_bounds for bounds in captured_norm)
 
 
-def test_phase9_env_uses_snapshot_opponent(tmp_path: Path) -> None:
-    snapshot_path = tmp_path / "snapshot.pt"
-    _write_snapshot(snapshot_path)
+def test_phase9_env_uses_snapshot_opponent(shared_snapshot_path: Path) -> None:
+    snapshot_path = shared_snapshot_path
     with open(
         "../experiments/configs/phase9_snapshot_probe.yaml",
         encoding="utf-8",
