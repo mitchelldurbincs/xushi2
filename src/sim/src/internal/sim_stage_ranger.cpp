@@ -17,8 +17,8 @@ static void maybe_combat_roll(HeroState& h, const common::Action& a, bool aim_co
     if (move_mag_sq > 1e-6F) { const float inv=1.0F/std::sqrt(move_mag_sq); dir={a.move_x*inv,a.move_y*inv}; }
     else { dir={std::cos(h.aim_angle),std::sin(h.aim_angle)}; }
     common::Vec2 next{h.position.x + dir.x * common::kRangerCombatRollDistance,h.position.y + dir.y * common::kRangerCombatRollDistance};
-    next.x = common::clampf(next.x, config.map.min_x, config.map.max_x); next.y = common::clampf(next.y, config.map.min_y, config.map.max_y);
-    next = prevent_wall_crossing(h.position, next, config); h.position = resolve_cover_overlap(next, dir, config);
+    // Intentionally delegate movement collision/bounds handling to shared geometry helper.
+    h.position = resolve_displaced_position(h.position, next, dir, config);
     weapon_on_combat_roll(h.weapon); h.cd_ability_1 = common::kRangerCombatRollCooldownTicks;
 }
 
