@@ -12,14 +12,33 @@ namespace xushi2::bots {
 
 namespace {
 
+// All scripted bots share this gate so invalid/dead slots deterministically
+// produce a no-op action before running any movement/combat policy.
+const sim::HeroState* get_active_hero_or_null(const sim::MatchState& state,
+                                              int agent_index) {
+    if (agent_index < 0) {
+        return nullptr;
+    }
+    const std::size_t idx = static_cast<std::size_t>(agent_index);
+    if (idx >= state.heroes.size()) {
+        return nullptr;
+    }
+    const sim::HeroState& hero = state.heroes[idx];
+    if (!hero.present || !hero.alive) {
+        return nullptr;
+    }
+    return &hero;
+}
+
+
 class WalkToObjectiveBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& state, int agent_index) override {
-        const sim::HeroState& self = state.heroes[static_cast<std::size_t>(agent_index)];
-        if (!self.present || !self.alive) {
+        const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
+        if (self == nullptr) {
             return common::Action{};
         }
-        return internal::walk_to_objective(self);
+        return internal::walk_to_objective(*self);
     }
     std::string name() const override { return "walk_to_objective"; }
 };
@@ -27,11 +46,11 @@ class WalkToObjectiveBot final : public IBot {
 class HoldAndShootBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& state, int agent_index) override {
-        const sim::HeroState& self = state.heroes[static_cast<std::size_t>(agent_index)];
-        if (!self.present || !self.alive) {
+        const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
+        if (self == nullptr) {
             return common::Action{};
         }
-        return internal::hold_and_shoot(state, self);
+        return internal::hold_and_shoot(state, *self);
     }
     std::string name() const override { return "hold_and_shoot"; }
 };
@@ -39,12 +58,12 @@ class HoldAndShootBot final : public IBot {
 class BasicBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& state, int agent_index) override {
-        const sim::HeroState& self = state.heroes[static_cast<std::size_t>(agent_index)];
-        if (!self.present || !self.alive) {
+        const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
+        if (self == nullptr) {
             return common::Action{};
         }
-        common::Action walk = internal::walk_to_objective(self);
-        common::Action shoot = internal::hold_and_shoot(state, self);
+        common::Action walk = internal::walk_to_objective(*self);
+        common::Action shoot = internal::hold_and_shoot(state, *self);
         // Combine: walk's movement, shoot's aim + fire.
         walk.aim_delta = shoot.aim_delta;
         walk.primary_fire = shoot.primary_fire;

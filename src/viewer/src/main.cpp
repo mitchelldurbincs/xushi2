@@ -61,6 +61,20 @@ struct TetherTrail {
     xushi2::sim::Tick fired_tick = 0;
 };
 
+xushi2::sim::MatchConfig make_viewer_config() {
+    xushi2::sim::MatchConfig config{};
+    config.seed = 42;
+    config.round_length_seconds = 30;
+    config.fog_of_war_enabled = false;
+    config.randomize_map = false;
+    config.action_repeat = kActionRepeat;
+    config.mechanics.revolver_damage_centi_hp = 7500U;
+    config.mechanics.revolver_fire_cooldown_ticks = 15U;
+    config.mechanics.revolver_hitbox_radius = 0.75F;
+    config.mechanics.respawn_ticks = 240U;
+    return config;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {

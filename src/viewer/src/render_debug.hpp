@@ -7,17 +7,6 @@
 
 #include "render_types.hpp"
 
-struct CoverMarker {
-    xushi2::common::Vec2 center{};
-    float radius = 1.0F;
-};
-
-struct WallMarker {
-    xushi2::common::Vec2 a{};
-    xushi2::common::Vec2 b{};
-    float half_width = 0.25F;
-};
-
 void draw_cover_markers(const ArenaTransform& t,
                         const std::vector<CoverMarker>& markers);
 void draw_wall_markers(const ArenaTransform& t,
