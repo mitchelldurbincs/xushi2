@@ -10,10 +10,10 @@ import yaml
 
 from train.mappo import (
     MappoActorCritic,
-    _eval_outcome_counts,
     make_mappo_config,
     train_phase4_from_config,
 )
+from train.mappo_model import _eval_outcome_counts
 from train.phases import resolve_phase
 from _paths import config_path, script_path
 

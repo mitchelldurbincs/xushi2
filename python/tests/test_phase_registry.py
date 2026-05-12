@@ -5,11 +5,11 @@ import yaml
 
 from train.mappo import (
     MappoTrainer,
-    _walk_to_objective_targets,
     evaluate_mappo,
     make_mappo_config,
     train_phase4_from_config,
 )
+from train.mappo_bc_pretrain import _walk_to_objective_targets
 from train.phases import PHASE_REGISTRY, resolve_phase
 from xushi2.entity_obs import (
     ENTITY_OBS_DIM,
