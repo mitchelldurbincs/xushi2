@@ -1,0 +1,11 @@
+{
+  "git_commit": null,
+  "replay_name": "data/replays/golden_phase0_basic.txt",
+  "warmup_frames": 120,
+  "measured_frames": 600,
+  "avg_ms": 2.0,
+  "p50_ms": 1.9,
+  "p95_ms": 3.0,
+  "p99_ms": 4.0,
+  "fps": 500.0
+}
