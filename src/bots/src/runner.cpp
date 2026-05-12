@@ -8,18 +8,29 @@
 
 namespace xushi2::bots {
 
+namespace {
+
+using BotFactory = std::unique_ptr<IBot> (*)();
+
+struct BotFactoryEntry {
+    std::string_view name;
+    BotFactory factory;
+};
+
+constexpr std::array<BotFactoryEntry, 4> kBotFactories{{
+    {"walk_to_objective", &make_walk_to_objective_bot},
+    {"hold_and_shoot", &make_hold_and_shoot_bot},
+    {"basic", &make_basic_bot},
+    {"noop", &make_noop_bot},
+}};
+
+}  // namespace
+
 std::unique_ptr<IBot> make_bot_by_name(std::string_view name) {
-    if (name == "walk_to_objective") {
-        return make_walk_to_objective_bot();
-    }
-    if (name == "hold_and_shoot") {
-        return make_hold_and_shoot_bot();
-    }
-    if (name == "basic") {
-        return make_basic_bot();
-    }
-    if (name == "noop") {
-        return make_noop_bot();
+    for (const auto& entry : kBotFactories) {
+        if (entry.name == name) {
+            return entry.factory();
+        }
     }
     X2_REQUIRE(false, common::ErrorCode::InvalidAction);
     return nullptr;
