@@ -1,82 +1,20 @@
 """Evaluation entrypoint.
 
-Phase 0: runs one scripted-vs-scripted match and prints a short summary.
-With --dump-golden, writes the per-decision hash trajectory to stdout (one
-hex hash per line) for committing as a golden-replay artifact.
+Phase 0: runs scripted-vs-scripted matches and prints summary.
+With --dump-golden, writes per-decision hash trajectory to stdout.
 
-Phase 1b: with --dump-obs / --dump-reward, runs the Gymnasium env with a
-scripted opponent and writes obs / reward trajectories to CSV. These are
-debugging tools — they do not change the Phase-0 hash dump behavior.
+Compatibility: legacy --dump-obs / --dump-reward flags now delegate to
+`eval.dump_env_trajectory`.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-from contextlib import ExitStack
 
-from xushi2.env import VALID_OPPONENT_BOTS, XushiEnv
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM
+from eval.dump_env_trajectory import dump_env_trajectory
+from eval.sim_cfg import add_mechanics_args, build_sim_cfg_from_args
+from xushi2.env import VALID_OPPONENT_BOTS
 from xushi2.runner import run_episode
-
-
-def _zero_action() -> dict:
-    return {
-        "move_x": 0.0,
-        "move_y": 0.0,
-        "aim_delta": 0.0,
-        "primary_fire": 0,
-        "ability_1": 0,
-        "ability_2": 0,
-    }
-
-
-def _dump_env_trajectory(
-    sim_cfg: dict,
-    opponent_bot: str,
-    learner_team: str,
-    seed: int,
-    obs_path: str | None,
-    reward_path: str | None,
-) -> None:
-    env = XushiEnv(sim_cfg, opponent_bot=opponent_bot, learner_team=learner_team)
-    obs, _ = env.reset(seed=seed)
-
-    with ExitStack() as stack:
-        obs_writer = None
-        reward_writer = None
-        if obs_path is not None:
-            obs_file = stack.enter_context(open(obs_path, "w", newline=""))
-            obs_writer = csv.writer(obs_file)
-            obs_writer.writerow(["tick", *(f"f{i}" for i in range(ACTOR_PHASE1_DIM))])
-        if reward_path is not None:
-            reward_file = stack.enter_context(open(reward_path, "w", newline=""))
-            reward_writer = csv.writer(reward_file)
-            reward_writer.writerow(
-                ["tick", "step_reward_learner", "reward_team_a", "reward_team_b"]
-            )
-
-        try:
-            # Act as a zero-action learner — this is a trajectory-recording
-            # smoke test, not a policy eval.
-            while True:
-                action = _zero_action()
-                obs, reward, terminated, truncated, info = env.step(action)
-                if obs_writer is not None:
-                    obs_writer.writerow([info["tick"], *obs.tolist()])
-                if reward_writer is not None:
-                    reward_writer.writerow(
-                        [
-                            info["tick"],
-                            reward,
-                            info["reward_team_a"],
-                            info["reward_team_b"],
-                        ]
-                    )
-                if terminated or truncated:
-                    break
-        finally:
-            env.close()
 
 
 def main() -> int:
@@ -89,61 +27,23 @@ def main() -> int:
     parser.add_argument("--bot-a", type=str, default="basic")
     parser.add_argument("--bot-b", type=str, default="basic")
     parser.add_argument("--round-length-seconds", type=int, default=30)
-    parser.add_argument(
-        "--dump-golden",
-        action="store_true",
-        help="Print hash trajectory (one hex per line) to stdout",
-    )
+    parser.add_argument("--dump-golden", action="store_true", help="Print hash trajectory")
 
-    # Phase-1b env-mode flags. Enable obs/reward CSV dumps by running one
-    # episode of the Gymnasium env against a scripted opponent.
-    parser.add_argument(
-        "--dump-obs", type=str, default=None, help="Path for per-decision actor-obs CSV (Phase 1b)"
-    )
-    parser.add_argument(
-        "--dump-reward", type=str, default=None, help="Path for per-decision reward CSV (Phase 1b)"
-    )
-    parser.add_argument(
-        "--opponent-bot",
-        type=str,
-        default=None,
-        choices=sorted(VALID_OPPONENT_BOTS),
-        help="Scripted opponent for the env dump (Phase 1b)",
-    )
-    parser.add_argument(
-        "--learner-team",
-        type=str,
-        default="A",
-        choices=("A", "B"),
-        help="Team controlled by the learner in the env dump (Phase 1b)",
-    )
+    # Backward-compatibility flags: env dump moved to eval.dump_env_trajectory.
+    parser.add_argument("--dump-obs", type=str, default=None)
+    parser.add_argument("--dump-reward", type=str, default=None)
+    parser.add_argument("--opponent-bot", type=str, default=None, choices=sorted(VALID_OPPONENT_BOTS))
+    parser.add_argument("--learner-team", type=str, default="A", choices=("A", "B"))
 
-    # Phase-1 mechanics. Required — no defaults. Match the values in
-    # experiments/configs/phase0_determinism.yaml to reproduce its golden.
-    parser.add_argument("--revolver-damage-centi-hp", type=int, required=True)
-    parser.add_argument("--revolver-fire-cooldown-ticks", type=int, required=True)
-    parser.add_argument("--revolver-hitbox-radius", type=float, required=True)
-    parser.add_argument("--respawn-ticks", type=int, required=True)
+    add_mechanics_args(parser)
     args = parser.parse_args()
 
-    sim_cfg = {
-        "seed": args.seed,
-        "round_length_seconds": args.round_length_seconds,
-        "fog_of_war_enabled": False,
-        "randomize_map": False,
-        "mechanics": {
-            "revolver_damage_centi_hp": args.revolver_damage_centi_hp,
-            "revolver_fire_cooldown_ticks": args.revolver_fire_cooldown_ticks,
-            "revolver_hitbox_radius": args.revolver_hitbox_radius,
-            "respawn_ticks": args.respawn_ticks,
-        },
-    }
+    sim_cfg = build_sim_cfg_from_args(args)
 
-    # Env-mode CSV dump path (Phase 1b). Opponent-bot is required here.
     if args.dump_obs is not None or args.dump_reward is not None:
         if args.opponent_bot is None:
             parser.error("--opponent-bot is required when --dump-obs or --dump-reward is set")
-        _dump_env_trajectory(
+        dump_env_trajectory(
             sim_cfg=sim_cfg,
             opponent_bot=args.opponent_bot,
             learner_team=args.learner_team,
@@ -153,7 +53,6 @@ def main() -> int:
         )
         return 0
 
-    # Phase-0 scripted-vs-scripted mode.
     for ep_idx in range(args.episodes):
         r = run_episode(sim_cfg, args.bot_a, args.bot_b, seed_override=args.seed + ep_idx)
         if args.dump_golden:

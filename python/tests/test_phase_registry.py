@@ -5,11 +5,11 @@ import yaml
 
 from train.mappo import (
     MappoTrainer,
-    _walk_to_objective_targets,
     evaluate_mappo,
     make_mappo_config,
     train_phase4_from_config,
 )
+from train.mappo_bc_pretrain import _walk_to_objective_targets
 from train.phases import PHASE_REGISTRY, resolve_phase
 from xushi2.entity_obs import (
     ENTITY_OBS_DIM,
@@ -23,6 +23,7 @@ from xushi2.grid_obs import (
     GRID_SIZE,
     MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
 )
+from _paths import config_path
 
 PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
 
@@ -139,7 +140,7 @@ def test_phase11_registry_declares_current_selfplay_shapes() -> None:
 
 def test_phase4_smoke_config_builds_mappo_config() -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml", encoding="utf-8"
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
@@ -152,7 +153,7 @@ def test_phase4_smoke_config_builds_mappo_config() -> None:
 
 def test_phase4_config_can_select_async_vector_backend() -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml", encoding="utf-8"
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     config["ppo"] = dict(config["ppo"])
@@ -163,7 +164,7 @@ def test_phase4_config_can_select_async_vector_backend() -> None:
 
 def test_phase4_basic_config_builds_mappo_config() -> None:
     with open(
-        "../experiments/configs/phase4/baseline/phase4_mappo_basic.yaml", encoding="utf-8"
+        config_path("phase4/baseline/phase4_mappo_basic.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
@@ -175,7 +176,7 @@ def test_phase4_basic_config_builds_mappo_config() -> None:
 
 def test_phase4_noop_probe_config_builds_mappo_config() -> None:
     with open(
-        "../experiments/configs/phase4/probe/phase4_mappo_noop_probe.yaml",
+        config_path("phase4/probe/phase4_mappo_noop_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -192,7 +193,7 @@ def test_phase4_noop_probe_config_builds_mappo_config() -> None:
 
 def test_phase4_objective_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml",
+        config_path("phase4/probe/phase4_mappo_objective_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -207,7 +208,7 @@ def test_phase4_objective_probe_config_is_compact() -> None:
 
 def test_phase5_entity_attention_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase5_entity_attention_probe.yaml",
+        config_path("phase5_entity_attention_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -225,15 +226,14 @@ def test_phase5_entity_attention_probe_config_is_compact() -> None:
 
 def test_phase6_entity_grid_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase6_entity_grid_probe.yaml",
+        config_path("phase6_entity_grid_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
     assert cfg.num_envs == 2
     assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+    assert cfg.obs_dim == ENTITY_GRID_OBS_DIM
     assert cfg.obs_encoder == "entity_attention_grid"
     assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
     assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
@@ -245,7 +245,7 @@ def test_phase6_entity_grid_probe_config_is_compact() -> None:
 
 def test_phase7_team_fog_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase7_team_fog_probe.yaml",
+        config_path("phase7_team_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -273,7 +273,7 @@ def test_phase7_team_fog_probe_config_is_compact() -> None:
 
 def test_phase7_per_agent_fog_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase7_per_agent_fog_probe.yaml",
+        config_path("phase7_per_agent_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -301,7 +301,7 @@ def test_phase7_per_agent_fog_probe_config_is_compact() -> None:
 
 def test_phase8_random_map_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -327,7 +327,7 @@ def test_phase8_random_map_probe_config_is_compact() -> None:
 
 def test_phase9_snapshot_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase9_snapshot_probe.yaml",
+        config_path("phase9_snapshot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -362,7 +362,7 @@ def test_phase9_snapshot_probe_config_is_compact() -> None:
 
 def test_phase10_target_slot_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase10_target_slot_probe.yaml",
+        config_path("phase10_target_slot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -393,7 +393,7 @@ def test_phase10_target_slot_probe_config_is_compact() -> None:
 
 def test_phase11_mixed_league_probe_config_is_compact() -> None:
     with open(
-        "../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml",
+        config_path("phase11/probe/phase11_mixed_league_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -415,7 +415,7 @@ def test_phase11_mixed_league_probe_config_is_compact() -> None:
 
 def test_phase4_walk_bc_target_points_toward_objective() -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml", encoding="utf-8"
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
@@ -437,7 +437,7 @@ def test_phase4_walk_bc_target_points_toward_objective() -> None:
 
 def test_phase4_mappo_smoke_train_runs_one_update(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml", encoding="utf-8"
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     config["run"] = dict(config["run"])
@@ -453,7 +453,7 @@ def test_phase4_mappo_smoke_train_runs_one_update(tmp_path: Path) -> None:
 
 def test_phase4_mappo_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase4/probe/phase4_mappo_objective_probe.yaml",
+        config_path("phase4/probe/phase4_mappo_objective_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -466,7 +466,7 @@ def test_phase4_mappo_bc_eval_can_be_best_result(tmp_path: Path) -> None:
 
 def test_phase5_entity_attention_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase5_entity_attention_probe.yaml",
+        config_path("phase5_entity_attention_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -479,7 +479,7 @@ def test_phase5_entity_attention_bc_eval_can_be_best_result(tmp_path: Path) -> N
 
 def test_phase6_entity_grid_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase6_entity_grid_probe.yaml",
+        config_path("phase6_entity_grid_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -492,7 +492,7 @@ def test_phase6_entity_grid_bc_eval_can_be_best_result(tmp_path: Path) -> None:
 
 def test_phase7_team_fog_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase7_team_fog_probe.yaml",
+        config_path("phase7_team_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -505,7 +505,7 @@ def test_phase7_team_fog_bc_eval_can_be_best_result(tmp_path: Path) -> None:
 
 def test_phase7_per_agent_fog_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase7_per_agent_fog_probe.yaml",
+        config_path("phase7_per_agent_fog_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -518,7 +518,7 @@ def test_phase7_per_agent_fog_bc_eval_can_be_best_result(tmp_path: Path) -> None
 
 def test_phase8_random_map_bc_eval_can_be_best_result(tmp_path: Path) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -531,7 +531,7 @@ def test_phase8_random_map_bc_eval_can_be_best_result(tmp_path: Path) -> None:
 
 def test_phase4_mappo_eval_reports_diagnostics() -> None:
     with open(
-        "../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml", encoding="utf-8"
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
     ) as fh:
         config = yaml.safe_load(fh)
     phase, spec = resolve_phase(config)

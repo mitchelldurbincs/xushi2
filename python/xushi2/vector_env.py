@@ -17,6 +17,30 @@ def _worker_critic_obs(env: gym.Env, critic_obs_dim: int) -> np.ndarray:
     return out
 
 
+def _auto_reset_transition_metadata(
+    *,
+    obs: Any,
+    info: dict[str, Any],
+    term: bool,
+    trunc: bool,
+    auto_reset: bool,
+    episode_count: int,
+    seed_base: int,
+    env_idx: int,
+    obs_dtype: np.dtype[Any],
+) -> tuple[dict[str, Any], int, int | None, np.ndarray]:
+    info_out = dict(info)
+    obs_out = np.asarray(obs, dtype=obs_dtype)
+    reset_seed: int | None = None
+    next_episode_count = int(episode_count)
+    if (term or trunc) and auto_reset:
+        info_out["final_info"] = dict(info_out)
+        info_out["final_observation"] = obs_out
+        next_episode_count += 1
+        reset_seed = seed_base + 10_000 * next_episode_count + env_idx
+    return info_out, next_episode_count, reset_seed, obs_out
+
+
 def _async_worker(
     conn,
     env_fn: Callable[[], gym.Env],
@@ -39,17 +63,24 @@ def _async_worker(
                 obs, reward, term, trunc, info = env.step(payload)
                 term = bool(term)
                 trunc = bool(trunc)
-                info = dict(info)
-                if (term or trunc) and auto_reset:
-                    info["final_info"] = dict(info)
-                    info["final_observation"] = np.asarray(obs, dtype=env.observation_space.dtype)
-                    episode_count += 1
-                    reset_seed = seed_base + 10_000 * episode_count + env_idx
+                info, episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
+                    obs=obs,
+                    info=dict(info),
+                    term=term,
+                    trunc=trunc,
+                    auto_reset=auto_reset,
+                    episode_count=episode_count,
+                    seed_base=seed_base,
+                    env_idx=env_idx,
+                    obs_dtype=env.observation_space.dtype,
+                )
+                if reset_seed is not None:
                     obs, reset_info = env.reset(seed=reset_seed)
                     info["reset_info"] = dict(reset_info)
+                    obs_out = np.asarray(obs, dtype=env.observation_space.dtype)
                 conn.send(
                     (
-                        obs,
+                        obs_out,
                         np.asarray(reward, dtype=np.float32),
                         term,
                         trunc,
@@ -171,20 +202,26 @@ class XushiVectorEnv:
             obs, reward, term, trunc, info = env.step(actions[i])
             term = bool(term)
             trunc = bool(trunc)
-            info = dict(info)
+            info, next_episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
+                obs=obs,
+                info=dict(info),
+                term=term,
+                trunc=trunc,
+                auto_reset=self.auto_reset,
+                episode_count=int(self._episode_counts[i]),
+                seed_base=self.seed_base,
+                env_idx=i,
+                obs_dtype=self.single_observation_space.dtype,
+            )
             terminated[i] = term
             truncated[i] = trunc
             reward_parts.append(np.asarray(reward, dtype=np.float32))
-            if (term or trunc) and self.auto_reset:
-                info["final_info"] = dict(info)
-                info["final_observation"] = np.asarray(
-                    obs, dtype=self.single_observation_space.dtype
-                )
-                self._episode_counts[i] += 1
-                reset_seed = self.seed_base + 10_000 * int(self._episode_counts[i]) + i
+            self._episode_counts[i] = next_episode_count
+            if reset_seed is not None:
                 obs, reset_info = env.reset(seed=reset_seed)
                 info["reset_info"] = dict(reset_info)
-            obs_parts.append(np.asarray(obs, dtype=self.single_observation_space.dtype))
+                obs_out = np.asarray(obs, dtype=self.single_observation_space.dtype)
+            obs_parts.append(obs_out)
             infos.append(info)
 
         obs_batch = np.stack(obs_parts, axis=0)
