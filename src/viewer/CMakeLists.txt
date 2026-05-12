@@ -22,13 +22,19 @@ set_target_properties(xushi2_viewer PROPERTIES
 )
 
 add_executable(xushi2_viewer_bench
-    src/benchmark_main.cpp
+    src/bench_main.cpp
     src/replay_loader.cpp
+    src/render_arena.cpp
+    src/render_debug.cpp
+    src/panel.cpp
+    src/viewer_labels.cpp
 )
 
 target_link_libraries(xushi2_viewer_bench
     PRIVATE
         xushi2::sim
+        xushi2::bots
+        raylib
 )
 
 set_target_properties(xushi2_viewer_bench PROPERTIES

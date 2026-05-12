@@ -18,11 +18,12 @@ from xushi2.runner import _build_config
 from xushi2.self_play_schedule import SelfPlaySchedule
 from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy, SnapshotPool
 from xushi2.snapshot_retention import SnapshotRetention
+from _paths import config_path
 
 
 def _write_snapshot(path: Path) -> None:
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -207,7 +208,7 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
         fake_normalize_world_for_team,
     )
     with open(
-        "../experiments/configs/phase8_random_map_probe.yaml",
+        config_path("phase8_random_map_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -225,7 +226,7 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
 def test_phase9_env_uses_snapshot_opponent(shared_snapshot_path: Path) -> None:
     snapshot_path = shared_snapshot_path
     with open(
-        "../experiments/configs/phase9_snapshot_probe.yaml",
+        config_path("phase9_snapshot_probe.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)

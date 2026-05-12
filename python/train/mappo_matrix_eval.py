@@ -73,8 +73,19 @@ def matrix_gate_label(value: bool | None) -> str:
     return "ungated" if value is None else ("pass" if value else "fail")
 
 
+def matrix_current_selfplay_env_fn(ckpt_env_cfg: CheckpointEnvConfig):
+    env_cfg = dict(ckpt_env_cfg.values)
+    env_cfg["self_play_schedule"] = {"weights": {"current": 1.0, "snapshot": 0.0, "anchor": 0.0}}
+    _p, spec = resolve_phase({"phase": 11, "env": env_cfg})
+    env_fn, _m, _s = spec["env_bundle"]({"phase": 11, "env": env_cfg})
+    return env_fn
+
+
 def run_mappo_matrix_eval(*, model: MappoActorCritic, phase: int, ckpt_env_cfg: CheckpointEnvConfig, matrix_cfg: MatrixEvalConfig, output_dir: Path, seed: int) -> list[dict]:
     rows: list[dict] = []
+    if int(phase) == 11 and model.cfg.n_agents == 6 and matrix_cfg.current_selfplay:
+        stats = evaluate_mappo(model, matrix_current_selfplay_env_fn(ckpt_env_cfg), episodes=matrix_cfg.episodes, seed=seed + 720_000)
+        rows.append(mappo_matrix_row(learner="ckpt_final.pt", opponent="current", opponent_type="selfplay", stats=stats))
     for i, bot in enumerate(matrix_cfg.anchor_bots):
         stats = evaluate_mappo(model, matrix_native_bot_env_fn(phase, ckpt_env_cfg, bot), episodes=matrix_cfg.episodes, seed=seed + 700_000 + 100*i)
         rows.append(mappo_matrix_row(learner="ckpt_final.pt", opponent=bot, opponent_type="bot", stats=stats))
