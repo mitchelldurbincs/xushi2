@@ -35,11 +35,13 @@ struct BenchOptions {
     int warmup_frames = 300;
     int measured_frames = 3000;
     std::string mode = "render";
+    std::string json_out_path{};
 };
 
 void print_usage(const char* exe) {
     std::fprintf(stderr,
-                 "Usage: %s --replay <path> [--warmup N] [--frames N] [--mode render|sim]\n",
+                 "Usage: %s --replay <path> [--warmup N] [--frames N] [--mode render|sim] "
+                 "[--json-out <path>]\n",
                  exe);
 }
 
@@ -54,6 +56,8 @@ std::optional<BenchOptions> parse_cli(int argc, char** argv) {
             opt.measured_frames = std::atoi(argv[++i]);
         } else if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
             opt.mode = argv[++i];
+        } else if (std::strcmp(argv[i], "--json-out") == 0 && i + 1 < argc) {
+            opt.json_out_path = argv[++i];
         } else {
             print_usage(argv[0]);
             return std::nullopt;
@@ -66,6 +70,22 @@ std::optional<BenchOptions> parse_cli(int argc, char** argv) {
         return std::nullopt;
     }
     return opt;
+}
+
+std::string json_escape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size() + 2);
+    for (const char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n";  break;
+            case '\r': out += "\\r";  break;
+            case '\t': out += "\\t";  break;
+            default:   out += c;      break;
+        }
+    }
+    return out;
 }
 
 }  // namespace
@@ -221,6 +241,39 @@ int main(int argc, char** argv) {
                 p95,
                 p99,
                 fps);
+
+    if (!options->json_out_path.empty()) {
+        FILE* fp = std::fopen(options->json_out_path.c_str(), "w");
+        if (fp == nullptr) {
+            std::fprintf(stderr,
+                         "failed to open --json-out path: %s\n",
+                         options->json_out_path.c_str());
+            return 5;
+        }
+        std::fprintf(fp,
+                     "{\n"
+                     "  \"git_commit\": null,\n"
+                     "  \"replay_name\": \"%s\",\n"
+                     "  \"mode\": \"%s\",\n"
+                     "  \"warmup_frames\": %d,\n"
+                     "  \"measured_frames\": %d,\n"
+                     "  \"avg_ms\": %.4f,\n"
+                     "  \"p50_ms\": %.4f,\n"
+                     "  \"p95_ms\": %.4f,\n"
+                     "  \"p99_ms\": %.4f,\n"
+                     "  \"fps\": %.4f\n"
+                     "}\n",
+                     json_escape(options->replay_path).c_str(),
+                     json_escape(options->mode).c_str(),
+                     options->warmup_frames,
+                     options->measured_frames,
+                     avg,
+                     p50,
+                     p95,
+                     p99,
+                     fps);
+        std::fclose(fp);
+    }
 
     return 0;
 }

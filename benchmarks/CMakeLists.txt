@@ -15,3 +15,11 @@ endfunction()
 xushi2_add_benchmark(bench_sim_tick      bench_sim_tick.cpp)
 xushi2_add_benchmark(bench_obs_build     bench_obs_build.cpp)
 xushi2_add_benchmark(bench_bot_decision  bench_bot_decision.cpp)
+
+# Aggregate target so `cmake --build build --target benchmarks` builds
+# every benchmark binary at once.
+add_custom_target(benchmarks DEPENDS
+    bench_sim_tick
+    bench_obs_build
+    bench_bot_decision
+)

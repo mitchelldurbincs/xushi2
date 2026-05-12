@@ -1,6 +1,7 @@
 {
   "git_commit": null,
-  "replay_name": "data/replays/golden_phase0_basic.txt",
+  "replay_name": "data/benchmarks/viewer/typical_match_scene.replay",
+  "mode": "render",
   "warmup_frames": 120,
   "measured_frames": 600,
   "avg_ms": 2.0,

@@ -1,5 +1,7 @@
 .PHONY: build-cpp test-cpp bench-cpp run-bench bench-smoke py-install train-smoke format lint clean bench-viewer
 
+BENCH_TARGETS := bench_sim_tick bench_obs_build bench_bot_decision
+
 build-cpp:
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 	cmake --build build -j
@@ -11,27 +13,31 @@ bench-cpp:
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DXUSHI2_BUILD_BENCHMARKS=ON
 	cmake --build build -j --target benchmarks
 
+# Run all Google Benchmark binaries with full repetitions. JSON output
+# lands under build/benchmarks/results/ keyed by binary name.
 run-bench: bench-cpp
 	mkdir -p build/benchmarks/results
-	sh -c 'set -eu; \
-	bins=$$(find build -maxdepth 4 -type f \( -path "*/benchmarks/*" -o -name "*bench*" \) -perm -111 | sort); \
-	if [ -z "$$bins" ]; then echo "No benchmark binaries found under build/."; exit 1; fi; \
-	for bin in $$bins; do \
-		name=$$(basename "$$bin"); \
-		out="build/benchmarks/results/$${name}.json"; \
+	@sh -c 'set -eu; \
+	for name in $(BENCH_TARGETS); do \
+		bin=$$(find build/benchmarks -type f \( -name "$$name" -o -name "$$name.exe" \) | head -n 1); \
+		if [ -z "$$bin" ]; then echo "Missing benchmark binary: $$name"; exit 1; fi; \
+		out="build/benchmarks/results/$$name.json"; \
 		echo "Running $$bin -> $$out"; \
 		"$$bin" --benchmark_repetitions=5 --benchmark_min_time=0.1 --benchmark_out="$$out" --benchmark_out_format=json; \
 	done'
 
+# Quick smoke pass: run every Google Benchmark binary once with a
+# 20ms min_time so the suite finishes in seconds.
 bench-smoke: bench-cpp
 	mkdir -p build/benchmarks/results
-	sh -c 'set -eu; \
-	first=$$(find build -maxdepth 4 -type f \( -path "*/benchmarks/*" -o -name "*bench*" \) -perm -111 | sort | head -n 1); \
-	if [ -z "$$first" ]; then echo "No benchmark binaries found under build/."; exit 1; fi; \
-	name=$$(basename "$$first"); \
-	out="build/benchmarks/results/$${name}.smoke.json"; \
-	echo "Running smoke benchmark $$first -> $$out"; \
-	"$$first" --benchmark_filter='.' --benchmark_min_time=0.02 --benchmark_repetitions=1 --benchmark_out="$$out" --benchmark_out_format=json'
+	@sh -c 'set -eu; \
+	for name in $(BENCH_TARGETS); do \
+		bin=$$(find build/benchmarks -type f \( -name "$$name" -o -name "$$name.exe" \) | head -n 1); \
+		if [ -z "$$bin" ]; then echo "Missing benchmark binary: $$name"; exit 1; fi; \
+		out="build/benchmarks/results/$$name.smoke.json"; \
+		echo "Smoke $$bin -> $$out"; \
+		"$$bin" --benchmark_filter=. --benchmark_min_time=0.02 --benchmark_repetitions=1 --benchmark_out="$$out" --benchmark_out_format=json; \
+	done'
 
 py-install:
 	cd python && python -m venv .venv && . .venv/bin/activate && pip install -e .
@@ -50,8 +56,16 @@ clean:
 	rm -rf python/.pytest_cache python/.mypy_cache python/.ruff_cache
 	find python -type d -name '__pycache__' -prune -exec rm -rf {} +
 
-
+# Run the viewer bench against the typical scene fixture and check the
+# result against the committed baseline (15% tolerance).
 bench-viewer: build-cpp
-	mkdir -p build/bench
-	./build/src/viewer/xushi2_viewer --replay data/replays/golden_phase0_basic.txt --json-out build/bench/viewer_bench.json
-	python python/scripts/check_viewer_bench.py --result build/bench/viewer_bench.json --baseline data/bench/viewer_baseline.json --tolerance-pct 15
+	mkdir -p build/benchmarks/viewer
+	./build/src/viewer/xushi2_viewer_bench \
+	    --replay data/benchmarks/viewer/typical_match_scene.replay \
+	    --mode render \
+	    --warmup 120 --frames 600 \
+	    --json-out build/benchmarks/viewer/result.json
+	python python/scripts/check_viewer_bench.py \
+	    --result build/benchmarks/viewer/result.json \
+	    --baseline data/benchmarks/viewer/baseline.json \
+	    --tolerance-pct 15

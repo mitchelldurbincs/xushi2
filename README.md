@@ -111,15 +111,39 @@ Run a local viewer benchmark and regression check:
 make bench-viewer
 ```
 
-This target emits `build/bench/viewer_bench.json` from `xushi2_viewer --json-out ...` and compares it to `data/bench/viewer_baseline.json` using a default **15% tolerance band** for frame-time metrics (`avg/p50/p95/p99`) and FPS.
+This target builds the `xushi2_viewer_bench` binary, runs it against `data/benchmarks/viewer/typical_match_scene.replay` (120 warmup + 600 measured frames), writes the result to `build/benchmarks/viewer/result.json`, and compares against `data/benchmarks/viewer/baseline.json` using a default **15% tolerance band** for frame-time metrics (`avg/p50/p95/p99`) and FPS.
 
-Intentionally refresh baselines (for expected performance shifts):
+Fixtures live in `data/benchmarks/viewer/` — see that directory's README for what each replay exercises (minimal / typical / stress scenes).
+
+Intentionally refresh the baseline (for expected performance shifts):
 
 ```bash
-./build/src/viewer/xushi2_viewer --replay data/replays/golden_phase0_basic.txt --json-out data/bench/viewer_baseline.json
+./build/src/viewer/xushi2_viewer_bench \
+    --replay data/benchmarks/viewer/typical_match_scene.replay \
+    --mode render --warmup 120 --frames 600 \
+    --json-out data/benchmarks/viewer/baseline.json
 ```
 
 Hardware variance guidance:
 - Keep tolerance in the **10-20%** range across developer machines.
 - Prefer collecting baselines on a stable, low-background-load machine.
 - If CI hardware differs significantly from local hardware, maintain separate baseline files per environment.
+
+## Python training benchmark
+
+`xushi2-bench` (installed by `make py-install`) measures rollout and update throughput for the recurrent PPO / MAPPO trainers against a phase config:
+
+```bash
+# MAPPO end-to-end (rollout + update) on the phase 4 smoke config
+xushi2-bench --target mappo \
+    --config experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml \
+    --warmup-iterations 2 --measured-iterations 10 \
+    --output json
+```
+
+Targets:
+- `mappo` / `ppo_recurrent` — full rollout + update path
+- `env_step_only` — bills only environment stepping (isolate the env)
+- `update_only` — bills only the policy update (isolate the learner)
+
+JSON output captures Python/torch versions, CPU count, and git SHA so results are comparable across runs.
