@@ -20,8 +20,9 @@ from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
 from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.wandb_logger import make_logger
-from xushi2.mappo_eval_gate import check_eval_gate
-from xushi2.mappo_matrix_gate import check_matrix_gate
+from train.mappo_eval_gate_io import EvalGateConfig, read_json_artifact, run_eval_gate, write_json_artifact
+from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
+from train.mappo_matrix_eval import CheckpointEnvConfig, MatrixEvalConfig, matrix_gate_label, matrix_retention_summary, run_mappo_matrix_eval
 from xushi2.snapshot_retention import SnapshotRetention
 
 
@@ -122,7 +123,7 @@ def _eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
     }
 
 
-def _run_eval_gate(
+def run_eval_gate(
     *,
     phase_label: str,
     stats: MappoEvalStats,
@@ -216,7 +217,7 @@ def _matrix_gate_label(value: bool | None) -> str:
     return "pass" if bool(value) else "fail"
 
 
-def _run_mappo_matrix_eval(
+def run_mappo_matrix_eval(
     *,
     model: MappoActorCritic,
     phase: int,
@@ -471,7 +472,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 flush=True,
             )
             wandb_logger.log(
-                {f"bc_eval/{k}": float(v) for k, v in _eval_stats_dict(eval_stats).items()},
+                {f"bc_eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
                 step=0,
             )
         for update_idx in range(1, total_updates + 1):
@@ -543,17 +544,17 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     flush=True,
                 )
                 wandb_logger.log(
-                    {f"eval/{k}": float(v) for k, v in _eval_stats_dict(eval_stats).items()},
+                    {f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
                     step=update_idx,
                 )
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())
                 if run_cfg.get("eval_gate"):
-                    _run_eval_gate(
+                    run_eval_gate(
                         phase_label=phase_label,
                         stats=eval_stats,
-                        gate_cfg=dict(run_cfg.get("eval_gate", {})),
+                        gate_cfg=EvalGateConfig.from_dict(dict(run_cfg.get("eval_gate", {}))),
                         output_dir=output_dir,
                     )
             if update_idx % checkpoint_every == 0 or update_idx == total_updates:
@@ -597,11 +598,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         matrix_model = MappoActorCritic(cfg)
         matrix_model.load_state_dict(final_state)
         matrix_model.eval()
-        rows = _run_mappo_matrix_eval(
+        rows = run_mappo_matrix_eval(
             model=matrix_model,
             phase=phase,
-            ckpt_env_cfg=ckpt_env_cfg,
-            matrix_cfg=dict(run_cfg.get("matrix_eval", {})),
+            ckpt_env_cfg=CheckpointEnvConfig(ckpt_env_cfg),
+            matrix_cfg=MatrixEvalConfig.from_dict(dict(run_cfg.get("matrix_eval", {}))),
             output_dir=output_dir,
             seed=seed_base,
         )
@@ -610,8 +611,8 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             matrix_cfg = dict(run_cfg.get("matrix_eval", {}))
             if matrix_cfg.get("gate"):
                 gate_path = output_dir / str(matrix_cfg.get("gate_output", "matrix_gate.json"))
-                gate = json.loads(gate_path.read_text(encoding="utf-8"))
-            summary = _matrix_retention_summary(rows, gate)
+                gate = read_json_artifact(gate_path)
+            summary = matrix_retention_summary(rows, gate)
             manifest = retention.record_checkpoint(
                 output_dir / "ckpt_final.pt",
                 update=total_updates,
@@ -634,3 +635,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 flush=True,
             )
     return {"mappo": best_eval if best_eval > float("-inf") else last_eval}
+
+
+# Compatibility re-exports (temporary)
+_eval_stats_dict = eval_stats_dict
+_run_eval_gate = run_eval_gate
+_run_mappo_matrix_eval = run_mappo_matrix_eval
+_matrix_retention_summary = matrix_retention_summary
+_matrix_gate_label = matrix_gate_label

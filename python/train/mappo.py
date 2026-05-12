@@ -5,18 +5,18 @@ from train.mappo_bc_pretrain import (
     _walk_to_objective_targets,
     bc_pretrain_walk_to_objective,
 )
-from train.mappo_eval_checkpoint import (
-    _eval_stats_dict,
-    _mappo_matrix_row,
-    _matrix_gate_label,
-    _matrix_native_bot_env_fn,
-    _matrix_retention_summary,
-    _matrix_snapshot_env_fn,
-    _run_eval_gate,
-    _run_mappo_matrix_eval,
-    evaluate_mappo,
-    train_phase4_from_config,
+from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
+from train.mappo_eval_gate_io import run_eval_gate
+from train.mappo_matrix_eval import (
+    mappo_matrix_row,
+    matrix_gate_label,
+    matrix_native_bot_env_fn,
+    matrix_retention_summary,
+    matrix_snapshot_env_fn,
+    run_mappo_matrix_eval,
 )
+from train.mappo_eval_checkpoint import train_phase4_from_config
+
 from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
@@ -34,14 +34,14 @@ __all__ = [
     "MappoTrainer",
     "_collect_walk_bc_sequence",
     "_eval_outcome_counts",
-    "_eval_stats_dict",
-    "_mappo_matrix_row",
-    "_matrix_gate_label",
-    "_matrix_native_bot_env_fn",
-    "_matrix_retention_summary",
-    "_matrix_snapshot_env_fn",
-    "_run_eval_gate",
-    "_run_mappo_matrix_eval",
+    "eval_stats_dict",
+    "mappo_matrix_row",
+    "matrix_gate_label",
+    "matrix_native_bot_env_fn",
+    "matrix_retention_summary",
+    "matrix_snapshot_env_fn",
+    "run_eval_gate",
+    "run_mappo_matrix_eval",
     "_walk_to_objective_targets",
     "bc_pretrain_walk_to_objective",
     "compute_team_spirit",
