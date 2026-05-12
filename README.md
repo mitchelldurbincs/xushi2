@@ -64,6 +64,27 @@ python -m train.train --config ../experiments/configs/phase11/probe/phase11_curr
 python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
 ```
 
+
+### Benchmark command (CI-friendly)
+
+Build and run the simulation benchmark with machine-readable output:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j --target benchmark_sim
+./build/src/sim/tools/benchmark_sim --json
+```
+
+Or use the helper script to write artifacts (no pass/fail thresholds):
+
+```bash
+python python/scripts/run_sim_benchmark.py --build-dir build --artifact-dir artifacts/benchmarks
+```
+
+Artifacts:
+- `artifacts/benchmarks/sim_benchmark.json`
+- `artifacts/benchmarks/sim_benchmark.csv`
+
 ### Python quality tools
 
 ```bash
