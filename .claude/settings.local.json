@@ -15,7 +15,8 @@
       "Bash(Select-Object Name)",
       "Bash(cmake --build build --target test_golden_replay --config Release)",
       "Bash(XUSHI2_DUMP_GOLDEN=1 ./build/tests/Release/test_golden_replay.exe)",
-      "Bash(Select-String \"codex/investigate-test_phase9\")"
+      "Bash(Select-String \"codex/investigate-test_phase9\")",
+      "WebSearch"
     ]
   }
 }
