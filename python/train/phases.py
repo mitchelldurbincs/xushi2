@@ -28,7 +28,7 @@ def _make_phase3_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs.phase3_ranger import Phase3RangerEnv
+    from envs import Phase3RangerEnv
 
     return Phase3RangerEnv(
         sim_cfg,
@@ -44,7 +44,7 @@ def _make_phase4_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs.phase4_mappo import Phase4MappoEnv
+    from envs import Phase4MappoEnv
 
     return Phase4MappoEnv(
         sim_cfg,
@@ -60,7 +60,7 @@ def _make_phase5_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs.phase5_entity_mappo import Phase5EntityMappoEnv
+    from envs import Phase5EntityMappoEnv
 
     return Phase5EntityMappoEnv(
         sim_cfg,
@@ -76,7 +76,7 @@ def _make_phase6_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs.phase6_grid_mappo import Phase6GridMappoEnv
+    from envs import Phase6GridMappoEnv
 
     return Phase6GridMappoEnv(
         sim_cfg,
@@ -94,7 +94,7 @@ def _make_phase7_env(
     fog_mode: str,
     visible_radius: float,
 ):
-    from envs.phase7_fog_mappo import Phase7FogMappoEnv
+    from envs import Phase7FogMappoEnv
 
     return Phase7FogMappoEnv(
         sim_cfg,
@@ -115,7 +115,7 @@ def _make_phase8_env(
     visible_radius: float,
     map_randomization: dict,
 ):
-    from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+    from envs import Phase8RandomMapMappoEnv
 
     return Phase8RandomMapMappoEnv(
         sim_cfg,
@@ -139,7 +139,7 @@ def _make_phase9_env(
     snapshot_paths: tuple[str, ...],
     snapshot_league: dict,
 ):
-    from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
+    from envs import Phase9SnapshotMappoEnv
 
     return Phase9SnapshotMappoEnv(
         sim_cfg,
@@ -163,7 +163,7 @@ def _make_phase10_env(
     visible_radius: float,
     map_randomization: dict,
 ):
-    from envs.phase10_target_slot_mappo import Phase10TargetSlotMappoEnv
+    from envs import Phase10TargetSlotMappoEnv
 
     return Phase10TargetSlotMappoEnv(
         sim_cfg,
@@ -185,7 +185,7 @@ def _make_phase11_env(
     self_play_schedule: dict | None,
     snapshot_league: dict,
 ):
-    from envs.phase11_current_selfplay_mappo import Phase11CurrentSelfplayMappoEnv
+    from envs import Phase11CurrentSelfplayMappoEnv
 
     return Phase11CurrentSelfplayMappoEnv(
         sim_cfg,
