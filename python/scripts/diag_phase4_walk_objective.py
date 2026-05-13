@@ -16,7 +16,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from envs.phase4_mappo import Phase4MappoEnv
+from envs import Phase4MappoEnv
 from xushi2.obs_manifest import actor_field_slice
 
 
