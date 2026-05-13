@@ -1,9 +1,23 @@
-.PHONY: build-cpp test-cpp bench-cpp run-bench bench-smoke py-install train-smoke format lint clean bench-viewer
+.PHONY: build-cpp build-cpp-headless test-cpp bench-cpp run-bench bench-smoke py-install train-smoke format lint clean bench-viewer
+
+# Override on platforms where the system Python interpreter is named `python`
+# (Windows, some macOS setups). Default matches Linux convention where
+# `python` may not exist (e.g. stock Ubuntu without `python-is-python3`).
+PYTHON ?= python3
+VENV := python/.venv
+VENV_PY := $(CURDIR)/$(VENV)/bin/python
+VENV_RUFF := $(CURDIR)/$(VENV)/bin/ruff
 
 BENCH_TARGETS := bench_sim_tick bench_obs_build bench_bot_decision
 
 build-cpp:
 	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+	cmake --build build -j
+
+# Headless variant for servers/containers without X11 dev headers (skips the
+# raylib viewer). Use this on the training executor box.
+build-cpp-headless:
+	cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DXUSHI2_BUILD_VIEWER=OFF
 	cmake --build build -j
 
 test-cpp: build-cpp
@@ -40,16 +54,16 @@ bench-smoke: bench-cpp
 	done'
 
 py-install:
-	cd python && python -m venv .venv && . .venv/bin/activate && pip install -e .
+	cd python && $(PYTHON) -m venv .venv && .venv/bin/pip install -e .
 
 train-smoke:
-	cd python && python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
+	cd python && $(VENV_PY) -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
 format:
-	cd python && ruff format .
+	cd python && $(VENV_RUFF) format .
 
 lint:
-	cd python && ruff check .
+	cd python && $(VENV_RUFF) check .
 
 clean:
 	rm -rf build
@@ -65,7 +79,7 @@ bench-viewer: build-cpp
 	    --mode render \
 	    --warmup 120 --frames 600 \
 	    --json-out build/benchmarks/viewer/result.json
-	python python/scripts/check_viewer_bench.py \
+	$(VENV_PY) python/scripts/check_viewer_bench.py \
 	    --result build/benchmarks/viewer/result.json \
 	    --baseline data/benchmarks/viewer/baseline.json \
 	    --tolerance-pct 15
