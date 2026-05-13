@@ -1,6 +1,14 @@
 phase: 11
+metadata:
+  phase: phase11
+  purpose: probe
+  status: active
+  expected_runtime: medium
+  gate_relevance:
+  - league_probe
+  lineage: Mixed-league probe for cross-opponent Phase 11 diagnostics.
 env:
-  seed_base: 0xC011E611
+  seed_base: 3222398481
   fog_mode: team_shared
   visible_radius: 0.65
   self_play_schedule:
@@ -11,11 +19,11 @@ env:
     anchor_bot: noop
   snapshot_league:
     latest:
-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+    - runs/phase8_random_map_probe/mappo/ckpt_final.pt
     historical:
-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+    - runs/phase8_random_map_probe/mappo/ckpt_final.pt
     anchor:
-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+    - runs/phase8_random_map_probe/mappo/ckpt_final.pt
     weights:
       latest: 0.7
       historical: 0.2
@@ -31,7 +39,7 @@ env:
     round_length_seconds: 20
     fog_of_war_enabled: false
     randomize_map: true
-    seed: 0xC011E611
+    seed: 3222398481
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -55,7 +63,7 @@ ppo:
   rollout_len: 16
   num_epochs: 1
   minibatch_size: 1
-  learning_rate: 1.0e-5
+  learning_rate: 1.0e-05
   value_normalization: true
   value_per_agent: true
   vector_env: sync
@@ -80,9 +88,9 @@ run:
     episodes: 1
     current_selfplay: true
     anchor_bots:
-      - noop
+    - noop
     opponent_checkpoints:
-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+    - runs/phase8_random_map_probe/mappo/ckpt_final.pt
     output: matrix_eval.json
   bc_pretrain_steps: 0
   output_dir: runs/phase11_mixed_league_probe

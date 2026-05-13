@@ -1,13 +1,21 @@
 phase: 3
+metadata:
+  phase: phase3
+  purpose: smoke
+  status: active
+  expected_runtime: short
+  gate_relevance:
+  - preflight
+  lineage: Fast sanity check derived from Phase 3 recurrent baseline.
 env:
-  seed_base: 0xD1CEDA7A
+  seed_base: 3519994490
   opponent_bot: basic
   learner_team: A
   sim:
     round_length_seconds: 1
     fog_of_war_enabled: false
     randomize_map: false
-    seed: 0xD1CEDA7A
+    seed: 3519994490
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -25,7 +33,7 @@ ppo:
   rollout_len: 64
   num_epochs: 1
   minibatch_size: 1
-  learning_rate: 3.0e-4
+  learning_rate: 0.0003
   value_normalization: true
   vector_env: async
   torch_num_threads: 1

@@ -8,21 +8,15 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from envs.mappo_phase_common import RandomizedMapMixin
 from envs.phase7_fog_mappo import Phase7FogMappoEnv
 from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-from xushi2.map_randomization import (
-    map_layout_hash,
-    randomized_cover_markers,
-    randomized_map_bounds,
-    randomized_wall_segments,
-    sim_cfg_with_map_bounds,
-)
 from xushi2.obs_manifest import CRITIC_DIM
 
 __all__ = ["Phase8RandomMapMappoEnv"]
 
 
-class Phase8RandomMapMappoEnv(gym.Env):
+class Phase8RandomMapMappoEnv(RandomizedMapMixin, gym.Env):
     """Phase-7 observation stack with deterministic randomized map bounds."""
 
     metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
@@ -44,18 +38,13 @@ class Phase8RandomMapMappoEnv(gym.Env):
         map_randomization: dict[str, Any] | None = None,
     ) -> None:
         super().__init__()
-        self._base_sim_cfg = dict(sim_cfg)
+        self._init_map_randomization(sim_cfg, map_randomization)
         self._opponent_bot = opponent_bot
         self._learner_team = learner_team
         self._reward_cfg = dict(reward_cfg or {})
         self._fog_mode = fog_mode
         self._visible_radius = float(visible_radius)
-        self._map_randomization = dict(map_randomization or {})
         self._env: Phase7FogMappoEnv | None = None
-        self._last_map_bounds: dict[str, float] | None = None
-        self._last_cover_markers: list[dict[str, float]] = []
-        self._last_wall_segments: list[dict[str, float]] = []
-        self._last_layout_hash: str | None = None
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -93,20 +82,10 @@ class Phase8RandomMapMappoEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         seed_int = 0 if seed is None else int(seed)
-        bounds = randomized_map_bounds(seed_int, self._map_randomization)
-        covers = randomized_cover_markers(seed_int, self._map_randomization)
-        walls = randomized_wall_segments(seed_int, self._map_randomization)
-        layout_hash = map_layout_hash(bounds, covers, walls)
-        self._last_map_bounds = bounds
-        self._last_cover_markers = covers
-        self._last_wall_segments = walls
-        self._last_layout_hash = layout_hash
+        bounds, covers, walls, layout_hash = self._sample_map(seed_int)
         if self._env is not None:
             self._env.close()
-        sim_cfg = sim_cfg_with_map_bounds(self._base_sim_cfg, bounds)
-        sim_cfg["randomize_map"] = True
-        sim_cfg["cover_circles"] = [dict(marker) for marker in covers]
-        sim_cfg["wall_segments"] = [dict(wall) for wall in walls]
+        sim_cfg = self._randomized_sim_cfg(bounds, covers, walls)
         self._env = Phase7FogMappoEnv(
             sim_cfg,
             opponent_bot=self._opponent_bot,
@@ -117,10 +96,7 @@ class Phase8RandomMapMappoEnv(gym.Env):
         )
         obs, info = self._env.reset(seed=seed, options=options)
         info = dict(info)
-        info["map_bounds"] = dict(bounds)
-        info["cover_markers"] = [dict(marker) for marker in covers]
-        info["wall_segments"] = [dict(wall) for wall in walls]
-        info["map_layout_hash"] = layout_hash
+        info.update(self._map_info())
         return obs, info
 
     def step(self, action: np.ndarray):
@@ -129,10 +105,7 @@ class Phase8RandomMapMappoEnv(gym.Env):
         obs, reward, terminated, truncated, info = self._env.step(action)
         info = dict(info)
         if self._last_map_bounds is not None:
-            info["map_bounds"] = dict(self._last_map_bounds)
-            info["cover_markers"] = [dict(marker) for marker in self._last_cover_markers]
-            info["wall_segments"] = [dict(wall) for wall in self._last_wall_segments]
-            info["map_layout_hash"] = self._last_layout_hash
+            info.update(self._map_info())
         return obs, reward, terminated, truncated, info
 
     def build_critic_obs(self, out: np.ndarray) -> None:
