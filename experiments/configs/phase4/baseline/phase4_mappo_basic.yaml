@@ -1,6 +1,14 @@
 phase: 4
+metadata:
+  phase: phase4
+  purpose: baseline
+  status: active
+  expected_runtime: long
+  gate_relevance:
+  - phase4_primary
+  lineage: Canonical Phase 4 MAPPO baseline against basic bot.
 env:
-  seed_base: 0xD1CEDA7A
+  seed_base: 3519994490
   opponent_bot: basic
   learner_team: A
   reward:
@@ -9,7 +17,7 @@ env:
     round_length_seconds: 30
     fog_of_war_enabled: false
     randomize_map: false
-    seed: 0xD1CEDA7A
+    seed: 3519994490
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -27,7 +35,7 @@ ppo:
   rollout_len: 128
   num_epochs: 2
   minibatch_size: 4
-  learning_rate: 3.0e-4
+  learning_rate: 0.0003
   value_normalization: true
   vector_env: sync
   torch_num_threads: 1
@@ -41,9 +49,6 @@ ppo:
   entropy_coef: 0.01
   value_coef: 0.5
   max_grad_norm: 0.5
-  # OAI Five-style team_spirit ramp (rl_design §5): start with mostly per-agent
-  # individual rewards, ramp linearly to pure team-mean over the first 30% of
-  # training so coordination becomes the dominant signal late.
   team_spirit_initial: 0.3
   team_spirit_final: 1.0
   team_spirit_ramp_fraction: 0.3

@@ -1,6 +1,14 @@
 phase: 11
+metadata:
+  phase: phase11
+  purpose: probe
+  status: active
+  expected_runtime: medium
+  gate_relevance:
+  - league_probe
+  lineage: Current-selfplay probe used to validate Phase 11 league behavior.
 env:
-  seed_base: 0xC011EC7
+  seed_base: 201400007
   fog_mode: team_shared
   visible_radius: 0.65
   map_randomization:
@@ -14,7 +22,7 @@ env:
     round_length_seconds: 20
     fog_of_war_enabled: false
     randomize_map: true
-    seed: 0xC011EC7
+    seed: 201400007
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -38,7 +46,7 @@ ppo:
   rollout_len: 16
   num_epochs: 1
   minibatch_size: 1
-  learning_rate: 1.0e-5
+  learning_rate: 1.0e-05
   value_normalization: true
   value_per_agent: true
   vector_env: sync
