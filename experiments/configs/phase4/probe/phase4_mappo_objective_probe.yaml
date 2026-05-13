@@ -1,18 +1,24 @@
 phase: 4
+metadata:
+  phase: phase4
+  purpose: probe
+  status: active
+  expected_runtime: short
+  gate_relevance:
+  - objective_control
+  lineage: Objective-control probe for Phase 4 policy behavior checks.
 env:
-  seed_base: 0xD1CEDA7A
+  seed_base: 3519994490
   opponent_bot: noop
   learner_team: A
   reward:
-    # Diagnostic shaping for a short Phase-4 objective-path probe.
-    # This is not a gate-clear config; it is a quick sanity run.
     distance_shaping_coef: 0.05
     on_point_shaping_coef: 0.02
   sim:
     round_length_seconds: 30
     fog_of_war_enabled: false
     randomize_map: false
-    seed: 0xD1CEDA7A
+    seed: 3519994490
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -30,7 +36,7 @@ ppo:
   rollout_len: 32
   num_epochs: 1
   minibatch_size: 1
-  learning_rate: 1.0e-5
+  learning_rate: 1.0e-05
   value_normalization: true
   vector_env: sync
   torch_num_threads: 1
@@ -52,5 +58,5 @@ run:
   log_every: 1
   bc_pretrain_steps: 200
   bc_batch_size: 192
-  bc_learning_rate: 1.0e-3
+  bc_learning_rate: 0.001
   output_dir: runs/phase4_mappo_objective_probe

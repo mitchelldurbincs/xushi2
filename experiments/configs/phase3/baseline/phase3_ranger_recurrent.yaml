@@ -1,18 +1,23 @@
 phase: 3
+metadata:
+  phase: phase3
+  purpose: baseline
+  status: active
+  expected_runtime: long
+  gate_relevance:
+  - phase3_progression
+  lineage: Canonical Phase 3 recurrent MAPPO baseline.
 env:
-  seed_base: 0xD1CEDA7A
+  seed_base: 3519994490
   opponent_bot: basic
   learner_team: A
   reward:
-    # Dense per-decision gradient toward cap; half the probe's 0.01 since
-    # basic contests actively. kill_bonus and score_per_second stay at
-    # rl_design.md §5 defaults (0.25 and 0.01 respectively).
     distance_shaping_coef: 0.005
   sim:
     round_length_seconds: 30
     fog_of_war_enabled: false
     randomize_map: false
-    seed: 0xD1CEDA7A
+    seed: 3519994490
     action_repeat: 3
     mechanics:
       revolver_damage_centi_hp: 7500
@@ -30,7 +35,7 @@ ppo:
   rollout_len: 256
   num_epochs: 4
   minibatch_size: 4
-  learning_rate: 3.0e-4
+  learning_rate: 0.0003
   value_normalization: true
   vector_env: async
   torch_num_threads: 1

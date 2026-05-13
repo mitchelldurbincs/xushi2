@@ -43,3 +43,17 @@ Historical snapshots and superseded iteration configs (for example warm-start br
 - `experiments/configs/<phase>/legacy/`
 
 For phase-specific move history and old-name path mapping, see each phase's legacy README (for example `phase4/legacy/README.md`).
+
+
+## Config metadata schema
+
+Each actively maintained config should include a top-level `metadata` mapping:
+
+- `phase`: phase identifier (`phase3`, `phase4`, etc.)
+- `purpose`: run intent (`baseline`, `smoke`, `probe`, `legacy`)
+- `status`: lifecycle state (`active`, `deprecated`, `diagnostic`)
+- `expected_runtime`: coarse runtime class (`short`, `medium`, `long`, `extended`)
+- `gate_relevance`: list of gate tags this config informs
+- `lineage`: short free-text provenance summary
+
+Use `python/scripts/list_configs.py` to discover and filter configs from metadata and print canonical train commands.
