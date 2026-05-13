@@ -22,6 +22,10 @@ This index groups project documentation by purpose.
 - [`coding_philosophy.md`](./coding_philosophy.md): Coding principles used across the repo.
 - [`memory_toy.md`](./memory_toy.md): Memory toy environment rationale and behavior.
 
+## Architecture
+
+- [`architecture/python_layers.md`](./architecture/python_layers.md): Python package layering contract (`xushi2` → `envs` → `train`) and import-direction rules; enforced by `python/scripts/check_import_boundaries.py`.
+
 ## Standards
 
 - [`standards/cpp_determinism_checklist.md`](./standards/cpp_determinism_checklist.md): C++ determinism checklist for simulator/runtime changes.
@@ -34,14 +38,21 @@ This index groups project documentation by purpose.
 
 ### Active (Phase 4 execution and adjacent phases)
 
+`plans/README.md` lists the small set of canonical drivers; the entries below are the full set of active plan files for discoverability.
+
+- [`plans/active/2026-04-21-memory-toy-plan.md`](./plans/active/2026-04-21-memory-toy-plan.md): Memory toy environment plan.
+- [`plans/active/2026-04-22-ppo-recurrent-split.md`](./plans/active/2026-04-22-ppo-recurrent-split.md): Recurrent PPO module split plan.
+- [`plans/active/2026-04-22-sim-cpp-modularization.md`](./plans/active/2026-04-22-sim-cpp-modularization.md): C++ sim modularization plan.
 - [`plans/active/2026-04-24-phase3-to-phase4-cleanup.md`](./plans/active/2026-04-24-phase3-to-phase4-cleanup.md): Phase boundary cleanup before Phase 4 work.
 - [`plans/active/2026-04-24-phase4-prep.md`](./plans/active/2026-04-24-phase4-prep.md): Phase 4 preparation checklist and sequencing.
+- [`plans/active/2026-04-24-spec-drift-audit.md`](./plans/active/2026-04-24-spec-drift-audit.md): Spec-vs-implementation drift audit.
 - [`plans/active/2026-05-07-phase4-mappo-env-design.md`](./plans/active/2026-05-07-phase4-mappo-env-design.md): Phase 4 MAPPO environment design plan.
 - [`plans/active/2026-05-07-phase4-mappo-env-implementation.md`](./plans/active/2026-05-07-phase4-mappo-env-implementation.md): Phase 4 MAPPO environment implementation plan.
 - [`plans/active/2026-05-07-phase4-critic-obs-design.md`](./plans/active/2026-05-07-phase4-critic-obs-design.md): Phase 4 critic-observation design plan.
 - [`plans/active/2026-05-07-phase4-critic-obs-implementation.md`](./plans/active/2026-05-07-phase4-critic-obs-implementation.md): Phase 4 critic-observation implementation plan.
 - [`plans/active/2026-05-08-phase4-cap-training-escalation-design.md`](./plans/active/2026-05-08-phase4-cap-training-escalation-design.md): Phase 4 curriculum/cap escalation design.
 - [`plans/active/2026-05-08-phase4-cap-training-escalation.md`](./plans/active/2026-05-08-phase4-cap-training-escalation.md): Phase 4 curriculum/cap escalation execution plan.
+- [`plans/active/2026-05-08-team-spirit-per-agent-rewards.md`](./plans/active/2026-05-08-team-spirit-per-agent-rewards.md): Team-spirit / per-agent reward shaping plan.
 
 ## Results
 
