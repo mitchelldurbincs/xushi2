@@ -93,3 +93,25 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Stopped at update ~225. No sign of breakthrough.** Mean_reward flat at -11.000 for 4 consecutive evals. Continuing would waste ~90 minutes with no evidence of improvement.
 
 **Next approach: BC pretrain on top of warm-start.** The existing `bc_pretrain_walk_to_objective` re-trains cap-walking behavior in seconds. Running it AFTER warm-start but BEFORE PPO should give a stronger behavioral prior than warm-start weights alone. entropy_coef=0.005 should preserve the BC structure through early PPO updates. If BC + PPO still fails within 200 updates, the jump from "no-fire" to "cap-fighting" may simply be too large for this architecture/curriculum — need a different strategy entirely (e.g., even lower damage, different opponent, or architectural changes).
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc (stopped at update 200)
+
+**BC pretrain converged (loss 0.23 → 0.0004) but agents still slaughtered 50/50 by basic bot at 2500 damage.**
+
+**BC phase:** 500 steps, loss dropped from 0.2325 to 0.0004. BC successfully re-anchored cap-walking behavior.
+
+**BC eval (before PPO):** 0/50 wins, 50/50 losses, score 0.00/7.00, mean_reward -11.000. Even a pure walk-to-cap policy gets massacred.
+
+**PPO evals (updates 50-200):**
+- Update 50: 0/50 wins, 50/50 losses, score 0/7.00, kills 0.0/27.0, onpt 0.091, dist 0.357, mean_reward -11.000, bin=0.000
+- Update 100: same — 0/50 wins, 50/50 losses, score 0/7.00, kills 0.0/27.0, onpt 0.099, dist 0.451, mean_reward -11.000, bin=0.000
+- Update 150: same — flatlined, onpt 0.048, dist 0.409, mean_reward -11.000, bin=0.000
+- Update 200: same — 0/50 wins, 50/50 losses, score 0/7.00, kills 0.0/27.0, onpt 0.072, dist 0.385, mean_reward -11.000, bin=0.001
+
+**Agents walk to cap but never fire.** `move=0.82-0.94`, `dist~0.38`, `onpt~0.10` confirms BC re-anchored locomotion. But `bin=0.000-0.001` — the fire action is completely unused. Agents reach cap, basic bot is already there, they die in ~4 hits. No survival window to discover firing.
+
+**2500 damage is still too lethal for a policy with zero combat skill.** The problem isn't warm-start or reward shaping — it's that the gap between "walk to cap" and "cap + shoot back" is too large. Agents need to survive 8-10+ hits to learn combat through trial and error.
+
+**Stopped at update 200 per gate criteria.** No sign of breakthrough across 4 consecutive evals. Mean_reward flat at -11.000.
+
+**Next approach: much lower damage (500 centi-HP = 5 HP per shot, ~20 hits to die).** This should give agents enough survival time on cap to discover the fire action exists, learn that shooting back reduces deaths, and eventually hold cap + shoot = score. If 500 damage also fails, the problem is not damage magnitude — need architectural changes or a completely different curriculum strategy.
