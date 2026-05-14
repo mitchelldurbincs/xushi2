@@ -50,7 +50,8 @@ model:
   head_hidden: 64
   action_log_std_init: -1.0
 ppo:
-  num_envs: 16
+  num_envs: 4
+  # Matched to physical CPU cores (4) to reduce contention and context switching.
   rollout_len: 256
   num_epochs: 4
   minibatch_size: 4
