@@ -64,8 +64,9 @@ class MappoTrainer:
             seed_base=self.seed,
             backend=cfg.vector_env,
         )
-        obs, _critic_obs, _infos = self.vec_env.reset(seed=self.seed)
+        obs, initial_critic_obs, _infos = self.vec_env.reset(seed=self.seed)
         self.last_obs = torch.as_tensor(obs, dtype=torch.float32)
+        self.last_critic_obs = self._critic_obs_from_np(initial_critic_obs)
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
         self.model = MappoActorCritic(cfg)
@@ -121,8 +122,8 @@ class MappoTrainer:
                 total_sq += float(p.grad.detach().pow(2).sum().item())
         return float(total_sq**0.5)
 
-    def _critic_obs(self) -> torch.Tensor:
-        critic_obs = torch.as_tensor(self.vec_env.critic_obs(), dtype=torch.float32)
+    def _critic_obs_from_np(self, critic_obs_np: np.ndarray) -> torch.Tensor:
+        critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32)
         if self.cfg.value_per_agent:
             return critic_obs.view(self.cfg.num_envs, self.cfg.n_agents, self.cfg.critic_obs_dim)
         return critic_obs
@@ -132,8 +133,8 @@ class MappoTrainer:
         rollout = MappoRollout(cfg)
         obs = self.last_obs
         h = self.h
+        critic_obs = self.last_critic_obs
         for t in range(cfg.rollout_len):
-            critic_obs = self._critic_obs()
             flat_obs = obs.reshape(cfg.num_envs * cfg.n_agents, cfg.obs_dim)
             flat_h = h.reshape(cfg.num_envs * cfg.n_agents, cfg.gru_hidden)
             with torch.no_grad():
@@ -152,7 +153,7 @@ class MappoTrainer:
                     value = self.model.value(critic_obs)
             action_3d = action.view(cfg.num_envs, cfg.n_agents, cfg.action_dim)
             action_np = action_3d.cpu().numpy()
-            next_obs_np, reward_np, terminated, truncated, _next_critic_obs, _infos = (
+            next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, _infos = (
                 self.vec_env.step(action_np)
             )
             done_np = np.logical_or(terminated, truncated)
@@ -176,8 +177,8 @@ class MappoTrainer:
                 if bool(done):
                     h[e] = 0.0
             obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
+            critic_obs = self._critic_obs_from_np(next_critic_obs_np)
         with torch.no_grad():
-            critic_obs = self._critic_obs()
             if cfg.value_per_agent:
                 rollout.last_value = self.model.value(
                     critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
@@ -186,6 +187,7 @@ class MappoTrainer:
                 rollout.last_value = self.model.value(critic_obs)
         rollout.last_done = rollout.done[:, -1].clone()
         self.last_obs = obs
+        self.last_critic_obs = critic_obs
         self.h = h
         return rollout
 
