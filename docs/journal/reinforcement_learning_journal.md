@@ -41,3 +41,35 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Warm-start checkpoint is valid and ready.** `ckpt_final.pt` (186KB) saved at `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`. The next curriculum stage, `v7_holdshoot`, is already queued and warm-starting from this checkpoint. If v7 also fails to produce wins, the bottleneck is likely the transition from "reach cap" to "kill enemy then score" — which is exactly what the `hold_and_shoot` intermediate stage was designed to bridge.
 
 **Key open question: does the earlier v6.5 win-breakthrough require a different seed, a different eval schedule, or was it a transient best-eval that `ckpt_final.pt` missed?** The prior journal entry says best-eval logic preserves the winner, but our run's `ckpt_final.pt` corresponds to the final update (-0.387), not a best-eval checkpoint. If the trainer's `best_eval` logic was working, there might be a `ckpt_best.pt` or similar — none was found in the run dir.
+
+## 2026-05-14 — Phase 4 v7_holdshoot run (stopped early at ~update 825)
+
+**Warm-started v6_5 cap-holder into `hold_and_shoot` opponent. Agents abandoned the cap and learned to run away.** User stopped the run after observing eval trends.
+
+**Metrics trajectory (evals every 50 updates):**
+- `onpt` dropped from 0.041 → 0.000 by update 500 — agents stopped touching the cap
+- `dist` (distance to objective) rose from 0.30 → 0.66 by update 500, then fell back to 0.35 by update 800 — agents first retreated, then found a "safe corner"
+- Opponent kills fell from 16/50 → 0/50 — agents got excellent at NOT dying (by avoiding combat entirely)
+- Our kills stayed 0.0 throughout — never learned to fire back
+- All 50/50 draws (timeouts), 0 wins, 0 losses, score 0/0
+- `mean_reward` rose to +1.000 — the "run away" strategy is being positively reinforced
+
+**Root cause: reward structure makes "avoid cap + avoid death + timeout" the optimal policy.**
+- `hold_and_shoot` opponent never moves and never contests the cap. It only fires at nearest enemy from spawn.
+- `on_point_shaping_coef: 0.0` — no direct reward for being on the cap
+- `distance_shaping_coef: 0.01` rewards Team A when closer to cap than Team B. Since the opponent stays at spawn (far from cap), the learner can retreat to a mid-distance and still satisfy this differential, collecting positive shaping while avoiding deaths.
+- `score_per_second: 0.10` only triggers when actually scoring, which requires capping. With no on-point pressure, agents never cap.
+- `kill_bonus: 0.25` requires firing back, which requires being in line-of-fire, which gets you killed. Death penalty dominates.
+- `time_penalty_per_second: 0.05` is too weak to break the timeout equilibrium (and may be undercharged by `action_repeat: 3`).
+
+**Codex audit conclusion: the v7 config design was flawed.** The assumption was "hold_and_shoot lets agents score unopposed while learning to survive fire." In practice, PPO discovered that NOT scoring, NOT fighting, and NOT dying yields the highest stable reward. The cap-holding behavior from v6_5 was actively unlearned because it correlated with deaths.
+
+**Recommended fixes (ranked):**
+1. **Set `on_point_shaping_coef: 0.02`** (config-only, highest impact). This was the coef used in working Phase 4 probe configs. It directly rewards cap contact and prevents the "hover safely at mid-distance" basin.
+2. **Increase `distance_shaping_coef` to 0.05** or replace differential shaping with absolute "distance to cap" penalty. Differential shaping is exploitable when the opponent never approaches the cap.
+3. **Verify/fix `time_penalty_per_second` scaling under `action_repeat: 3`**. The penalty may be 3× weaker than intended because reward is computed per env step, not per sim tick.
+4. **Use a harder opponent** — e.g. `basic` with reduced damage, or a `walk_and_shoot` that slowly approaches cap while firing. Pure stationary shooter creates no score-pressure for the learner to ever cap.
+5. **Do NOT raise `kill_bonus` alone** — the learner has 0 kills. It cannot bootstrap combat from zero. Need on-point pressure first, then combat emerges as a side effect of defending the cap.
+6. **Consider re-warming from a stronger cap-holding checkpoint** or adding a brief BC pretrain toward cap-hold before PPO resumes under fire.
+
+**Next experiment:** create `phase4_mappo_basic_v7_holdshoot_v2.yaml` with `on_point_shaping_coef: 0.02`, `distance_shaping_coef: 0.05`, and keep `hold_and_shoot` opponent. Judge success by `onpt > 0.1` and `score > 0` within first 100 updates, not by mean_reward.

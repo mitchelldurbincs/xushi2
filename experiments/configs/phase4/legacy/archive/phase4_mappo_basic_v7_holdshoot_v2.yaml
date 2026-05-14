@@ -1,0 +1,81 @@
+phase: 4
+env:
+  # v7-holdshoot-v2 — FIX for v7_holdshoot reward exploit.
+  #
+  # v7_holdshoot (warm-started from v6_5, opponent=hold_and_shoot) failed:
+  # agents abandoned the cap, retreated to a "safe corner", and learned
+  # to survive by never fighting or scoring. PPO found the basin:
+  # "avoid cap + avoid death + timeout" because:
+  #   - on_point_shaping_coef was 0.0 → no direct reward for capping
+  #   - distance_shaping_coef 0.01 was differential vs enemy → exploitable
+  #     since hold_and_shoot never moves; retreating still "wins" the diff
+  #   - time_penalty too weak to break timeout equilibrium
+  #
+  # Changes from v7_holdshoot:
+  #   - distance_shaping_coef: 0.01 → 0.05 (stronger cap proximity pressure)
+  #   - on_point_shaping_coef: 0.0 → 0.02 (direct reward for cap contact,
+  #     same coef used in working phase4 objective/noop probes)
+  #
+  # We still warm-start from v6_5 ckpt_final.pt because v6_5 had solid
+  # cap-reaching behavior (onpt ~0.52, dist ~0.13). With on_point shaping
+  # restored, that cap-holding behavior should re-emerge under fire.
+  #
+  # Success criterion (first 100 updates): onpt > 0.1 and score > 0 in eval,
+  # not just mean_reward. If agents still retreat, escalate to harder
+  # opponent or BC pretrain.
+  seed_base: 0xD1CEDA7A
+  opponent_bot: hold_and_shoot
+  learner_team: A
+  reward:
+    score_per_second: 0.10
+    kill_bonus: 0.25
+    distance_shaping_coef: 0.05
+    on_point_shaping_coef: 0.02
+    time_penalty_per_second: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 0xD1CEDA7A
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 7500
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 16
+  rollout_len: 256
+  num_epochs: 4
+  minibatch_size: 4
+  learning_rate: 5.0e-5
+  value_normalization: true
+  vector_env: async
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.15
+  value_clip_ratio: 0.15
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.005
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+run:
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  total_updates: 1500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 100
+  log_every: 25
+  output_dir: runs/phase4_mappo_basic_v7_holdshoot_v2
