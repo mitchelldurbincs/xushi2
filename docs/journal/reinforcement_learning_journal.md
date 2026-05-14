@@ -141,3 +141,29 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Next approach: BC pretrain that explicitly includes firing.** Modify the BC target generator to set `primary_fire=1` when enemies are visible, and aim toward them. This initializes the binary action head away from zero before PPO even starts. Combined with 500 damage (survivable), PPO can then reinforce actual kills once they happen.
 
 **Also added:** `docs/reports/v7_500dmg_stalemate_analysis.md` — full Codex analysis of why neither extreme (2500 slaughter vs 500 stalemate) works, and ranked recommendations including the BC-with-firing approach.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v3 (BC with firing + 500 damage, stopped at update 425)
+
+**BC-with-firing pretrain WORKED: binary head initialized away from zero (bin~0.33). But 500 damage was too low — pillow-fight stalemate.**
+
+**BC phase:** 500 steps, loss 0.4239 → 0.0005. `walk_and_shoot` variant successfully taught firing.
+
+**BC eval:** 0/50 wins, 0/50 losses, **50/50 draws**, score 0.00/0.00, mean_reward -0.626. Agents held cap and fired, but nobody could kill anyone.
+
+**PPO evals (updates 50-400):**
+- Update 50: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, kills 0.0/3.0, onpt 0.572, dist 0.165, mean_reward -1.000, **bin=0.333**
+- Update 100: same — 50/50 draws, score 0/0, kills 0.0/6.0, onpt 0.443, mean_reward -1.000, **bin=0.333**
+- Update 150: same — 50/50 draws, score 0/0, kills 3.0/2.0, onpt 0.797, mean_reward -1.000, **bin=0.330**
+- Update 200: same — 50/50 draws, score 0/0, kills 3.0/4.0, onpt 0.628, mean_reward -0.871, **bin=0.329**
+- Update 250: same — 50/50 draws, score 0/0, kills 2.0/3.0, onpt 0.556, mean_reward -0.709, **bin=0.333**
+- Update 300: same — 50/50 draws, score 0/0, kills 0.0/6.0, onpt 0.731, mean_reward -1.000, **bin=0.325**
+- Update 350: same — 50/50 draws, score 0/0, kills 0.0/6.0, onpt 0.670, mean_reward -1.000, **bin=0.329**
+- Update 400: same — 50/50 draws, score 0/0, kills 0.0/3.0, onpt 0.680, mean_reward -1.000, **bin=0.323**
+
+**Binary head is ALIVE but combat produces no wins.** `bin=0.323-0.333` throughout all 425 updates — the BC firing initialization was preserved by PPO. But 500 damage means everyone fires ineffectually for 30 seconds and times out. Kills stayed at 0-3 per 50 episodes with no upward trend.
+
+**500 damage removed all lethality.** Both teams walk to cap, shoot at each other, tank 20+ hits, and timeout. No score, no wins, no losses. PPO receives almost no terminal gradient (all draws, score=0, kills≈0).
+
+**Key insight: the problem was never "agents don't know how to fire" — it was "damage is at an extreme that prevents combat from producing decisive outcomes."** 2500 = too lethal (instant death, no learning). 500 = too soft (pillow fight, no pressure). Need Goldilocks damage where kills happen consistently but agents survive long enough to learn.
+
+**Next approach: 1000 centi-HP damage (~10 hits to die, 10 HP per shot).** Middle ground between slaughter and stalemate. BC-with-firing is already working — just need lethality that makes combat matter.
