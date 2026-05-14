@@ -167,3 +167,27 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Key insight: the problem was never "agents don't know how to fire" — it was "damage is at an extreme that prevents combat from producing decisive outcomes."** 2500 = too lethal (instant death, no learning). 500 = too soft (pillow fight, no pressure). Need Goldilocks damage where kills happen consistently but agents survive long enough to learn.
 
 **Next approach: 1000 centi-HP damage (~10 hits to die, 10 HP per shot).** Middle ground between slaughter and stalemate. BC-with-firing is already working — just need lethality that makes combat matter.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v4 (BC with firing + 1000 damage, stopped at update 200)
+
+**SMOKING GUN: BC policy alone produces draws at 1000 damage. But PPO breaks it into losses within 50 updates.**
+
+**BC phase:** 500 steps, loss 0.4095 → 0.0008. `walk_and_shoot` variant successfully taught firing (binary_loss 0.71 → 0.0008).
+
+**BC eval (before PPO):** 0/50 wins, 0/50 losses, **50/50 draws**, score 0.00/0.00, mean_reward -0.686. The BC policy ALONE is viable — agents walk to cap, fire at enemies, and survive. Neither team scores. This is a **working starting point**.
+
+**PPO evals (updates 50-200):**
+- Update 50: 0/50 wins, **50/50 losses**, score 0.00/6.03, kills 0.0/15.0, mean_reward **-11.000**, bin=0.333
+- Update 100: same — 50/50 losses, score 0.00/2.30, kills 0.0/12.0, mean_reward -11.000, bin=0.334
+- Update 150: same — 50/50 losses, score 0.00/3.30, kills 0.0/12.0, mean_reward -11.000, bin=0.333
+- Update 200: same — 50/50 losses, score 0.00/5.93, kills 0.0/15.0, mean_reward -11.000, bin=0.333
+
+**PPO actively unlearned a draw-producing BC policy into a losing one.** `bin=0.333` maintained throughout — firing wasn't lost. But eval shows `term=50` (all episodes end by enemy scoring). Training metrics show `onpt` climbing (0.123 → 0.361 by update 150) — agents go to cap during training. But the eval opponent consistently scores 2-6 points while we score 0.
+
+**Root cause: PPO LR (5e-5) is too aggressive for this adversarial jump.** The BC policy sits near a local optimum (draws). Large policy steps break the delicate aim+fire balance and fall into a losing basin. Low entropy (0.005) prevents recovery once collapsed.
+
+**1000 damage IS the Goldilocks zone for the BC policy, but PPO cannot improve from it.** At 500 damage, PPO had no gradient (all draws, no score pressure). At 1000 damage, PPO has negative gradient (we're losing) but takes steps so large it makes things worse instead of finding the winning strategy.
+
+**Key insight: the problem is NOT damage, NOT firing initialization, NOT warm-start. It's PPO's step size in an adversarial environment where the BC policy is already near-optimal.** Need conservative PPO that barely moves the BC policy, preserving draws while allowing tiny refinements toward wins.
+
+**Next approach: dramatically lower LR (1e-6) + higher entropy (0.02).** Make PPO extremely conservative. Preserve the BC draw-producing behavior. If even a single win appears in 50 evals, the minuscule positive gradient at LR 1e-6 will slowly amplify it. Entropy 0.02 prevents collapse into a deterministic losing strategy.
