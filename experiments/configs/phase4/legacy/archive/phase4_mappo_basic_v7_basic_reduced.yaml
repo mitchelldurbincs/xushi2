@@ -1,0 +1,77 @@
+phase: 4
+env:
+  # v7-basic-reduced — adversarial opponent with reduced damage.
+  #
+  # Three v7_holdshoot runs failed because hold_and_shoot never contests
+  # the cap — agents retreated and learned "timeout = draw = +1.0 reward".
+  #
+  # This config uses `basic` opponent, which walks to the cap AND fires at
+  # enemies. This creates genuine objective pressure: retreat means the
+  # enemy caps. Unlike hold_and_shoot, timeout is NOT a stable equilibrium
+  # — the opponent will score if uncontested.
+  #
+  # Damage reduced from 7500 to 2500 centi-HP (25 HP per shot, ~4 hits
+  # to die instead of ~1.3). This softens the jump from v6_5 so agents
+  # don't die instantly when they try to hold the cap.
+  #
+  # Warm-start from v6_5 ckpt_final.pt (cap-reaching behavior).
+  # Success: nonzero score, onpt > 0.1, and opponent kills < team score
+  # within first 100 updates. If agents still can't survive on cap, need
+  # BC pretrain or even lower damage.
+  seed_base: 0xD1CEDA7A
+  opponent_bot: basic
+  learner_team: A
+  reward:
+    score_per_second: 0.10
+    kill_bonus: 0.25
+    distance_shaping_coef: 0.05
+    on_point_shaping_coef: 0.02
+    time_penalty_per_second: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 0xD1CEDA7A
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 2500
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+ppo:
+  num_envs: 4
+  # Matched to physical CPU cores (4) to reduce contention and context switching.
+  rollout_len: 256
+  num_epochs: 4
+  minibatch_size: 4
+  learning_rate: 5.0e-5
+  value_normalization: true
+  vector_env: async
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.15
+  value_clip_ratio: 0.15
+  gamma: 0.99
+  gae_lambda: 0.95
+  entropy_coef: 0.005
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+run:
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  total_updates: 1500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 100
+  log_every: 25
+  output_dir: runs/phase4_mappo_basic_v7_basic_reduced
