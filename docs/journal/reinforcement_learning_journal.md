@@ -115,3 +115,29 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Stopped at update 200 per gate criteria.** No sign of breakthrough across 4 consecutive evals. Mean_reward flat at -11.000.
 
 **Next approach: much lower damage (500 centi-HP = 5 HP per shot, ~20 hits to die).** This should give agents enough survival time on cap to discover the fire action exists, learn that shooting back reduces deaths, and eventually hold cap + shoot = score. If 500 damage also fails, the problem is not damage magnitude — need architectural changes or a completely different curriculum strategy.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v2 (500 damage, stopped at update 200)
+
+**500 damage converted slaughter into stalemate — neither team can kill the other.**
+
+**BC phase:** 500 steps, loss 0.1697 → 0.0005. BC re-anchored cap-walking.
+
+**BC eval:** 0/50 wins, 0/50 losses, 50/50 **draws**, score 0.00/0.00, mean_reward -1.000. Even with walk-to-cap only, the basic bot at 500 damage couldn't kill our agents reliably.
+
+**PPO evals (updates 50-200):**
+- Update 50: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, kills 0.0/6.0, onpt 0.580, dist 0.157, mean_reward -1.000, **bin=0.000**
+- Update 100: same — 50/50 draws, score 0/0, kills 0.0/6.0, onpt 0.674, dist 0.140, mean_reward -1.000, **bin=0.000**
+- Update 150: same — 50/50 draws, score 0/0, kills 0.0/0.0, onpt 0.604, dist 0.163, mean_reward -1.000, **bin=0.000**
+- Update 200: same — 50/50 draws, score 0/0, kills 0.0/3.0, onpt 0.622, dist 0.160, mean_reward -1.000, **bin=0.001**
+
+**Agents hold cap beautifully but still never fire.** `onpt=0.58-0.67`, `dist=0.14-0.18` — locomotion is excellent. But `bin=0.000` throughout. The policy never discovers the fire action exists.
+
+**500 damage removed ALL combat pressure.** The basic bot walks to cap and shoots, but at 5 HP per shot it can't reliably kill in a 30-second round. Our agents sit on cap, tank damage, and timeout. Bot kills dropped from 27/50 (at 2500 damage) to 0-6/50. Neither team scores. No wins, no losses, just draws.
+
+**The reward signal is just time_penalty + minor shaping.** With 50/50 draws, terminal reward = 0. Score = 0. Kills ≈ 0. PPO optimizes inside a low-information draw basin with no gradient pushing toward combat.
+
+**Key insight: the problem is not damage magnitude — it's that agents NEVER discover firing.** At 2500 damage, they die before discovering it. At 500 damage, there's no reason to discover it. We need to explicitly teach firing, not just hope PPO stumbles upon it.
+
+**Next approach: BC pretrain that explicitly includes firing.** Modify the BC target generator to set `primary_fire=1` when enemies are visible, and aim toward them. This initializes the binary action head away from zero before PPO even starts. Combined with 500 damage (survivable), PPO can then reinforce actual kills once they happen.
+
+**Also added:** `docs/reports/v7_500dmg_stalemate_analysis.md` — full Codex analysis of why neither extreme (2500 slaughter vs 500 stalemate) works, and ranked recommendations including the BC-with-firing approach.

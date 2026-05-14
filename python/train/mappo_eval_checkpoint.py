@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-from train.mappo_bc_pretrain import bc_pretrain_walk_to_objective
+from train.mappo_bc_pretrain import bc_pretrain_walk_and_shoot_to_objective, bc_pretrain_walk_to_objective
 from train.mappo_model import compute_team_spirit
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
@@ -91,7 +91,9 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     try:
         bc_steps = int(run_cfg.get("bc_pretrain_steps", 0))
         if bc_steps > 0:
-            bc_pretrain_walk_to_objective(
+            bc_variant = str(run_cfg.get("bc_pretrain_variant", "walk_to_objective"))
+            bc_fn = bc_pretrain_walk_and_shoot_to_objective if bc_variant == "walk_and_shoot" else bc_pretrain_walk_to_objective
+            bc_fn(
                 trainer.model,
                 env_fn,
                 cfg,
