@@ -218,3 +218,26 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Key insight: we have a VIABLE STARTING POINT (BC draws at 1000 damage). The problem is not PPO breaking it — it's that the game dynamics at 30s/1000dmg produce a genuine Nash equilibrium where neither side can win.** Need to change the game dynamics (longer rounds or slightly more lethal) to break the symmetry.
 
 **Next approach: 60-second rounds + LR 2e-6.** Double the round time for sustained combat to produce decisive kill advantages. Slightly higher LR (still conservative, 2×) to escape the draw basin faster. Keep entropy 0.02 to prevent collapse.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v6 (60s rounds + LR 2e-6 + 1000 damage, stopped at update 250)
+
+**60s rounds was CATASTROPHIC — the exact wrong direction. BC policy alone LOST at 60s rounds (score 0/7.53). PPO made it worse: bot score 7.50 → 25.33, our kills 4.0 → 0.0.**
+
+**BC phase:** 500 steps, loss 0.3852 → 0.0006. `walk_and_shoot` variant. BC eval: 0/50 wins, 0/50 losses, **0/50 draws**, score 0.00/7.53, mean_reward **-11.000**. At 30s the same BC policy produced draws. At 60s the bot dominates.
+
+**PPO evals (updates 50-250):**
+- Update 50: 0/50 wins, **50/50 losses**, score 0.00/7.50, kills 4.0/12.0, mean_reward -11.000, bin=0.333
+- Update 100: same — 50/50 losses, score 0.00/18.63, kills 2.0/15.0, mean_reward -11.000, bin=0.334
+- Update 150: same — 50/50 losses, score 0.00/22.47, kills 2.0/21.0, mean_reward -11.000, bin=0.333
+- Update 200: same — 50/50 losses, score 0.00/24.67, kills 0.0/29.0, mean_reward -11.000, bin=0.333
+- Update 250: same — 50/50 losses, score 0.00/25.33, kills 0.0/30.0, mean_reward -11.000, bin=0.334
+
+**Longer rounds favor the stronger combatant (the basic bot), not the learner.** The bot walks to cap AND fires more accurately. In a 30s skirmish, neither team can score decisively before time runs out. In 60s sustained combat, the bot's superior aim accumulates kills, takes the cap, and racks up 25+ points per 50-episode eval. Our agents' BC aim is too poor to compete in extended gunfights.
+
+**PPO at LR 2e-6 actively worsened a losing BC policy.** Bot score climbed steadily while our kills dropped to zero. The policy was not preserving anything — it was sliding deeper into a losing basin.
+
+**Key insight: the lever is NOT round length — it's making the bot WORSE at combat to create an exploitable asymmetry.** Our BC policy fires at bin=0.33. If the bot fires half as often (cooldown 30 instead of 15), we have a 2:1 DPS advantage. On equal aim quality, we should win the DPS race and produce kills that translate to score.
+
+**The draw equilibrium at 30s/1000dmg/15cooldown exists because both teams trade ineffectually with equal fire rate.** Break the symmetry by nerfing the bot's fire rate, and our higher DPS should produce decisive outcomes.
+
+**Next approach: 30s rounds + revolver_fire_cooldown_ticks: 30 (bot fires half as often) + LR 2e-6 + entropy 0.02.** Same 1000 damage. BC walk_and_shoot warm-start. Creates a natural DPS asymmetry: our BC policy fires twice as often as the bot, which should translate to more kills, cap-holding, and score.
