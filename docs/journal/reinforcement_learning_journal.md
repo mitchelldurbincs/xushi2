@@ -73,3 +73,23 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 6. **Consider re-warming from a stronger cap-holding checkpoint** or adding a brief BC pretrain toward cap-hold before PPO resumes under fire.
 
 **Next experiment:** create `phase4_mappo_basic_v7_holdshoot_v2.yaml` with `on_point_shaping_coef: 0.02`, `distance_shaping_coef: 0.05`, and keep `hold_and_shoot` opponent. Judge success by `onpt > 0.1` and `score > 0` within first 100 updates, not by mean_reward.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced (stopped at update ~225)
+
+**Warm-started v6_5 into `basic` opponent with 2500 centi-HP damage. Agents were slaughtered 50/50 for 200+ updates with zero improvement.**
+
+**Metrics (evals every 50 updates):**
+- Update 50: 0/50 wins, 50/50 losses, score 0.00/7.00, kills 0.0/27.0, onpt 0.021, mean_reward -11.000
+- Update 100: same — 0/50 wins, 50/50 losses, score 0.00/7.00, kills 0.0/27.0, onpt 0.002, mean_reward -11.000
+- Update 150: same — flatlined at total annihilation
+- Update 200: same — 0/50 wins, 50/50 losses, score 0.00/7.00, kills 0.0/27.0, onpt 0.049, mean_reward -11.000
+
+**Slight behavioral drift but no functional improvement:** `onpt` slowly crept up from 0.002 → 0.049 and `dist` dropped from 0.540 → 0.394 across 200 updates. Agents were slowly re-learning to approach the cap, but dying before achieving anything. The basic bot consistently scored ~7 points and got ~27 kills per 50-episode eval. Our agents: 0 kills, 0 score.
+
+**Warm-start from v6_5 is actively harmful against a firing opponent that contests the cap.** v6_5 agents know "walk to cap + stand still." Against `basic`, that means marching directly into a bot that walks to cap AND shoots. Cap = instant death. PPO unlearns the warm-start faster than combat can emerge.
+
+**Reduced damage (2500 centi-HP, ~4 hits to die) was not enough.** The problem isn't damage magnitude — it's that the policy has zero combat skill and zero reason to fire back. Even surviving 4 hits on cap is irrelevant if the policy doesn't know how to shoot.
+
+**Stopped at update ~225. No sign of breakthrough.** Mean_reward flat at -11.000 for 4 consecutive evals. Continuing would waste ~90 minutes with no evidence of improvement.
+
+**Next approach: BC pretrain on top of warm-start.** The existing `bc_pretrain_walk_to_objective` re-trains cap-walking behavior in seconds. Running it AFTER warm-start but BEFORE PPO should give a stronger behavioral prior than warm-start weights alone. entropy_coef=0.005 should preserve the BC structure through early PPO updates. If BC + PPO still fails within 200 updates, the jump from "no-fire" to "cap-fighting" may simply be too large for this architecture/curriculum — need a different strategy entirely (e.g., even lower damage, different opponent, or architectural changes).
