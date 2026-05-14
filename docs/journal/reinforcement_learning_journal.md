@@ -191,3 +191,30 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Key insight: the problem is NOT damage, NOT firing initialization, NOT warm-start. It's PPO's step size in an adversarial environment where the BC policy is already near-optimal.** Need conservative PPO that barely moves the BC policy, preserving draws while allowing tiny refinements toward wins.
 
 **Next approach: dramatically lower LR (1e-6) + higher entropy (0.02).** Make PPO extremely conservative. Preserve the BC draw-producing behavior. If even a single win appears in 50 evals, the minuscule positive gradient at LR 1e-6 will slowly amplify it. Entropy 0.02 prevents collapse into a deterministic losing strategy.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v5 (conservative PPO: LR 1e-6 + entropy 0.02 + 1000 damage, ran 450 updates)
+
+**Conservative PPO SUCCESSFULLY PRESERVED the BC draw policy — ZERO losses across 450 updates.** But also ZERO wins, ZERO score. The draw equilibrium is real and stable.
+
+**BC phase:** 500 steps, loss 0.4095 → 0.0008. `walk_and_shoot` variant. BC eval: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, mean_reward -0.686.
+
+**PPO evals (updates 50-450):**
+- Update 50: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, kills 4.0/7.0, mean_reward -0.898, **bin=0.333**
+- Update 100: same — 50/50 draws, score 0/0, kills 2.0/8.0, mean_reward -1.000, bin=0.334
+- Update 150: same — 50/50 draws, score 0/0, kills 4.0/7.0, mean_reward -0.906, bin=0.331
+- Update 200: same — 50/50 draws, score 0/0, kills 2.0/8.0, mean_reward -1.000, bin=0.333
+- Update 250: same — 50/50 draws, score 0/0, kills 4.0/6.0, mean_reward -0.614, bin=0.333
+- Update 300: same — 50/50 draws, score 0/0, kills 4.0/6.0, mean_reward -0.648, bin=0.333
+- Update 350: same — 50/50 draws, score 0/0, kills 4.0/7.0, mean_reward -0.828, bin=0.333
+- Update 400: same — 50/50 draws, score 0/0, kills 4.0/6.0, mean_reward -0.636, bin=0.333
+- Update 450: same — 50/50 draws, score 0/0, kills 4.0/6.0, mean_reward -0.629, bin=0.333
+
+**Perfect preservation of the draw basin.** `term=0`, `trunc=50` across all evals — all episodes timeout. Neither team scores. Kills trade at a steady 2-8 per 50 episodes but never convert to score within 30-second rounds. `bin=0.324-0.334`, `onpt=0.23-0.46`, `dist=0.15-0.26` — combat + cap behavior fully intact.
+
+**The conservative PPO strategy worked exactly as designed.** It avoided the catastrophic collapse to losses that destroyed v4. But at LR 1e-6, the policy barely moves from the BC starting point. There is no gradient pushing it out of the draw basin because all outcomes are identical (draw, score 0, no terminal reward difference).
+
+**30-second rounds are too short for 1000-damage combat to produce decisive outcomes.** Both teams walk to cap, trade shots, tank ~10 hits each, and timeout. No time for a kill advantage to translate into sustained cap-holding + score.
+
+**Key insight: we have a VIABLE STARTING POINT (BC draws at 1000 damage). The problem is not PPO breaking it — it's that the game dynamics at 30s/1000dmg produce a genuine Nash equilibrium where neither side can win.** Need to change the game dynamics (longer rounds or slightly more lethal) to break the symmetry.
+
+**Next approach: 60-second rounds + LR 2e-6.** Double the round time for sustained combat to produce decisive kill advantages. Slightly higher LR (still conservative, 2×) to escape the draw basin faster. Keep entropy 0.02 to prevent collapse.
