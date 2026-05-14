@@ -241,3 +241,52 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **The draw equilibrium at 30s/1000dmg/15cooldown exists because both teams trade ineffectually with equal fire rate.** Break the symmetry by nerfing the bot's fire rate, and our higher DPS should produce decisive outcomes.
 
 **Next approach: 30s rounds + revolver_fire_cooldown_ticks: 30 (bot fires half as often) + LR 2e-6 + entropy 0.02.** Same 1000 damage. BC walk_and_shoot warm-start. Creates a natural DPS asymmetry: our BC policy fires twice as often as the bot, which should translate to more kills, cap-holding, and score.
+
+## 2026-05-14 — Phase 4 v7_basic_reduced_bc_v7 (bot fire cooldown 30 + 30s + LR 2e-6, stopped at update ~325)
+
+**The draw equilibrium is ROBUST against fire-rate changes. Even with 10:1 theoretical DPS advantage, bot aim > our aim.**
+
+**BC phase:** 500 steps, loss 0.4386 → 0.0004. `walk_and_shoot` variant. BC eval: 0/50 wins, 0/50 losses, **50/50 draws**, score 0.00/0.00, mean_reward **-0.375**. Same draw as v5 (equal fire rate).
+
+**PPO evals (updates 50-300):**
+- Update 50: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, kills **0.0/12.0**, mean_reward -1.000, bin=0.333, onpt=0.485
+- Update 100: same — 50/50 draws, score 0/0, kills **0.0/9.0**, mean_reward -1.000, bin=0.332
+- Update 150: same — 50/50 draws, score 0/0, kills **0.0/12.0**, mean_reward -1.000, bin=0.333
+- Update 200: same — 50/50 draws, score 0/0, kills **0.0/9.0**, mean_reward -1.000, bin=0.333
+- Update 250: same — 50/50 draws, score 0/0, kills **2.0/7.0**, mean_reward -0.782, bin=0.333
+- Update 300: same — 50/50 draws, score 0/0, kills **2.0/7.0**, mean_reward -0.865, bin=0.332
+
+**Bot consistently gets 7-12 kills per 50 episodes; our agents get 0-2.** Despite firing at ~10× the bot's rate (bin=0.33 vs bot cooldown=60 ticks = ~0.017 shots/tick), our BC heuristic aim is too crude to hit moving targets. The bot's scripted aim compensates for lower fire rate with significantly higher accuracy.
+
+**The bottleneck is AIM QUALITY, not fire rate, damage, or PPO step size.** No amount of fire-rate asymmetry at 1000 damage / 30s rounds can overcome the aim gap.
+
+**All 10+ variants tested have converged on the same conclusion:**
+- 2500 damage → slaughter (instant death, no learning window)
+- 500 damage → pillow fight (nobody can kill anyone, no combat pressure)
+- 1000 damage equal fire → draw (equal miss rate, timeout)
+- 1000 damage bot at half fire rate → draw (bot aim compensates for lower DPS)
+- 60s rounds → bot wins (longer rounds favor better aim)
+- Conservative PPO → preserves draw but cannot improve
+- Aggressive PPO → breaks draw into losses
+
+**The ONLY untested path is explicit AIM TRAINING.** Our BC pretrain fires (bin=0.33) but aims heuristically at enemy's current position. In a real game, enemies move, and leading shots / tracking matters. The neural network has the capacity to learn this, but 3v3 objective complexity swamps the combat signal.
+
+**This stage isolates combat learning:**
+- `hold_and_shoot` opponent (stationary at spawn — easiest target possible)
+- `revolver_damage_centi_hp: 250` (2.5 HP per shot, ~40 hits to die — massive survival window)
+- `revolver_fire_cooldown_ticks: 60` (bot fires once per 2 seconds — minimal return fire)
+- `death_penalty: 0` (no punishment for dying — encourage aggression)
+- `kill_bonus: 1.0` (strong positive reward for kills)
+- `damage_dealt_per_second: 0.2` (reward for damage — reinforces near-misses)
+- `score_per_second: 0`, `time_penalty_per_second: 0` (no cap/timeout pressure)
+- `distance_shaping_coef: 0`, `on_point_shaping_coef: 0` (no cap reward — purely combat)
+- 60s rounds for extended combat practice
+- LR 5e-5 (more aggressive — no delicate equilibrium to preserve)
+
+**Success criteria:**
+- Team A kills > bot kills consistently by update 500
+- Upward-trending kill ratio (ours vs bot)
+- `bin` maintained > 0.25
+- Optional: replay inspection showing tracking/leading behavior
+
+**Next stage after success:** warm-start the combat-capable checkpoint into 3v3 objective control with `basic` opponent and normal objective rewards. The policy should now have both cap-holding (from v6_5 warm-start) AND aim quality (from this combat stage).
