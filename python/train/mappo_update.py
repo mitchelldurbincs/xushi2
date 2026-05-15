@@ -77,15 +77,27 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
     nn.utils.clip_grad_norm_(trainer.model.parameters(), cfg.max_grad_norm)
     trainer.optimizer.step()
 
-    return {
-        "policy_loss": float(loss.policy_loss.item()),
-        "value_loss": float(loss.value_loss.item()),
-        "entropy": float(loss.entropy.item()),
-        "approx_kl": float(loss.approx_kl.item()),
-        "clip_fraction": float(loss.clip_fraction.item()),
-        "total_loss": float(loss.total_loss.item()),
-        "actor_grad_norm": actor_grad_norm,
-        "critic_grad_norm": critic_grad_norm,
-        "trunk_grad_norm": trunk_grad_norm,
-        "lr": trainer.current_learning_rate,
-    }
+    scalar_keys = (
+        "policy_loss",
+        "value_loss",
+        "entropy",
+        "approx_kl",
+        "clip_fraction",
+        "total_loss",
+    )
+    scalars = torch.stack(
+        [
+            loss.policy_loss,
+            loss.value_loss,
+            loss.entropy,
+            loss.approx_kl,
+            loss.clip_fraction,
+            loss.total_loss,
+        ]
+    ).detach().cpu().tolist()
+    out = {k: float(v) for k, v in zip(scalar_keys, scalars, strict=False)}
+    out["actor_grad_norm"] = actor_grad_norm
+    out["critic_grad_norm"] = critic_grad_norm
+    out["trunk_grad_norm"] = trunk_grad_norm
+    out["lr"] = trainer.current_learning_rate
+    return out

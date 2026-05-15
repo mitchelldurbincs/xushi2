@@ -103,11 +103,14 @@ def bc_pretrain_walk_to_objective(
 ) -> None:
     if steps <= 0:
         return
+    device = next(model.parameters()).device
     opt = torch.optim.Adam(model.parameters(), lr=float(learning_rate))
     for step in range(1, int(steps) + 1):
         obs_seq, target_seq = _collect_walk_bc_sequence(
             env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step
         )
+        obs_seq = obs_seq.to(device)
+        target_seq = target_seq.to(device)
         h = model.init_hidden(cfg.n_agents)
         cont_losses = []
         binary_losses = []
@@ -159,12 +162,15 @@ def bc_pretrain_walk_and_shoot_to_objective(
     """BC pretrain that walks to cap, aims at enemies, and fires when visible."""
     if steps <= 0:
         return
+    device = next(model.parameters()).device
     opt = torch.optim.Adam(model.parameters(), lr=float(learning_rate))
     for step in range(1, int(steps) + 1):
         obs_seq, target_seq = _collect_walk_bc_sequence(
             env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step,
             target_fn=_walk_and_shoot_to_objective_targets,
         )
+        obs_seq = obs_seq.to(device)
+        target_seq = target_seq.to(device)
         h = model.init_hidden(cfg.n_agents)
         cont_losses = []
         binary_losses = []

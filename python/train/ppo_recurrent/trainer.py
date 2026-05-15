@@ -12,6 +12,7 @@ import gymnasium as gym
 import torch
 from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv
 
+from train.device import resolve_device
 from train.models import ActorCritic, build_model
 from train.ppo_recurrent import ppo_updater, rollout_collector
 from train.ppo_recurrent.config import PPOConfig
@@ -35,6 +36,7 @@ class PPOTrainer:
     ) -> None:
         self.config = config
         self.seed = int(seed)
+        self.device = resolve_device(config.device)
 
         # Optional: pin PyTorch's intra-op thread count. With 16x small
         # tensors the BLAS-threading overhead dominates useful work; set
@@ -55,7 +57,7 @@ class PPOTrainer:
         vec_cls: type = AsyncVectorEnv if config.vector_env == "async" else SyncVectorEnv
         self.envs = vec_cls([env_fn for _ in range(config.num_envs)])
         obs, _ = self.envs.reset(seed=self.seed)
-        self._last_obs = torch.as_tensor(obs, dtype=torch.float32)
+        self._last_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
 
         # --- Re-seed torch AFTER env construction. Gymnasium's env and
         # space initialization consume an unspecified amount of torch RNG
@@ -79,7 +81,7 @@ class PPOTrainer:
             gru_hidden=config.gru_hidden,
             head_hidden=config.head_hidden,
             action_log_std_init=config.action_log_std_init,
-        )
+        ).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=config.learning_rate)
         self.set_learning_rate(config.learning_rate)
 
@@ -152,7 +154,7 @@ class PPOTrainer:
             gru_hidden=cfg.gru_hidden,
             gamma=cfg.gamma,
             gae_lambda=cfg.gae_lambda,
-            device="cpu",
+            device=self.device,
         )
 
     def collect_rollout(self) -> RolloutBuffer:

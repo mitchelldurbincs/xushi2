@@ -29,12 +29,15 @@ def get_optimizer_learning_rate(optimizer: torch.optim.Optimizer) -> float:
 
 
 def grad_group_norm(params: list[torch.nn.Parameter]) -> float:
-    """L2 norm across gradients for a parameter group."""
-    total_sq = 0.0
-    for param in params:
-        if param.grad is not None:
-            total_sq += float(param.grad.detach().pow(2).sum().item())
-    return float(total_sq**0.5)
+    """L2 norm across gradients for a parameter group.
+
+    Stacks per-parameter squared sums so we incur a single device->host
+    sync at the end instead of one per parameter — matters on GPU.
+    """
+    sums = [param.grad.detach().pow(2).sum() for param in params if param.grad is not None]
+    if not sums:
+        return 0.0
+    return float(torch.stack(sums).sum().sqrt().item())
 
 
 @dataclass(frozen=True)

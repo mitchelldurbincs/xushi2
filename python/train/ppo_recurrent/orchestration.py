@@ -55,7 +55,9 @@ def _phase_task_spec(config: dict) -> dict:
 def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
+    run_cfg = config.get("run", {})
     task_spec = _phase_task_spec(config)
+    device = str(run_cfg.get("device", ppo_cfg.get("device", "cpu")))
     return PPOConfig(
         num_envs=int(ppo_cfg["num_envs"]),
         rollout_len=int(ppo_cfg["rollout_len"]),
@@ -84,6 +86,7 @@ def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
         binary_action_dim=int(task_spec["binary_action_dim"]),
         vector_env=str(ppo_cfg.get("vector_env", "sync")),
         torch_num_threads=int(ppo_cfg.get("torch_num_threads", 0)),
+        device=device,
     )
 
 

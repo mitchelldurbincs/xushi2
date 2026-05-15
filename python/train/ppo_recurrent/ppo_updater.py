@@ -10,8 +10,8 @@ from train.recurrent_common import next_update_sampling_state
 
 def update_ppo(trainer, rollout) -> dict[str, float]:
     cfg = trainer.config
-    last_value = getattr(rollout, "last_value", torch.zeros(cfg.num_envs))
-    last_done = getattr(rollout, "last_done", torch.zeros(cfg.num_envs))
+    last_value = getattr(rollout, "last_value", torch.zeros(cfg.num_envs, device=rollout.device))
+    last_done = getattr(rollout, "last_done", torch.zeros(cfg.num_envs, device=rollout.device))
     rollout.compute_gae(last_values=last_value, last_dones=last_done)
 
     if cfg.value_normalization:
@@ -113,17 +113,26 @@ def ppo_minibatch_step(
     nn.utils.clip_grad_norm_(trainer.model.parameters(), cfg.max_grad_norm)
     trainer.optimizer.step()
 
-    return (
-        {
-            "policy_loss": float(loss.policy_loss.item()),
-            "value_loss": float(loss.value_loss.item()),
-            "entropy": float(loss.entropy.item()),
-            "approx_kl": float(loss.approx_kl.item()),
-            "clip_fraction": float(loss.clip_fraction.item()),
-            "total_loss": float(loss.total_loss.item()),
-            "actor_grad_norm": actor_grad_norm,
-            "critic_grad_norm": critic_grad_norm,
-            "trunk_grad_norm": trunk_grad_norm,
-        },
-        n_valid,
+    scalar_keys = (
+        "policy_loss",
+        "value_loss",
+        "entropy",
+        "approx_kl",
+        "clip_fraction",
+        "total_loss",
     )
+    scalars = torch.stack(
+        [
+            loss.policy_loss,
+            loss.value_loss,
+            loss.entropy,
+            loss.approx_kl,
+            loss.clip_fraction,
+            loss.total_loss,
+        ]
+    ).detach().cpu().tolist()
+    out = {k: float(v) for k, v in zip(scalar_keys, scalars, strict=False)}
+    out["actor_grad_norm"] = actor_grad_norm
+    out["critic_grad_norm"] = critic_grad_norm
+    out["trunk_grad_norm"] = trunk_grad_norm
+    return (out, n_valid)

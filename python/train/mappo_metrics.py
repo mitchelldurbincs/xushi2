@@ -32,38 +32,46 @@ def rollout_metrics(cfg, rollout) -> dict[str, float]:
         self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
     distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
 
-    out = {
-        "active_agent_fraction": float(agent_mask.mean().item()),
-        "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
-        "rollout_reward_std": float(_masked_mean((reward - _masked_mean(reward, agent_mask)) ** 2, agent_mask).sqrt().item()),
-        "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
-        "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
-        "advantage_mean": float(advantages.mean().item()),
-        "advantage_std": float(advantages.std(unbiased=False).item()),
-        "advantage_min": float(advantages.min().item()),
-        "advantage_max": float(advantages.max().item()),
-        "return_mean": float(returns.mean().item()),
-        "return_std": float(returns.std(unbiased=False).item()),
-        "action_move_mag_mean": float(_masked_mean(move_mag, agent_mask).item()),
-        "action_cont_mean": float(_masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont)).item()),
-        "action_cont_std": float(
-            _masked_mean(
-                (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
-                agent_mask.unsqueeze(-1).expand_as(cont),
-            )
-            .sqrt()
-            .item()
-        ),
-        "mean_distance_to_objective": float(_masked_mean(distance_to_objective, agent_mask).item()),
-        "self_on_point_fraction": float(
-            _masked_mean(self_on_point, agent_mask.unsqueeze(-1).expand_as(self_on_point)).item()
-        ),
-    }
-    out["action_binary_mean"] = (
-        float(_masked_mean(binary, agent_mask.unsqueeze(-1).expand_as(binary)).item()) if binary.numel() > 0 else 0.0
+    cont_mask = agent_mask.unsqueeze(-1).expand_as(cont)
+    binary_mask = agent_mask.unsqueeze(-1).expand_as(binary) if binary.numel() > 0 else None
+    target_mask = (
+        agent_mask.unsqueeze(-1).expand_as(target)
+        if (target is not None and target.numel() > 0)
+        else None
     )
-    if target is not None and target.numel() > 0:
-        out["action_target_slot_mean"] = float(
-            _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
-        )
+    self_on_point_mask = agent_mask.unsqueeze(-1).expand_as(self_on_point)
+
+    with torch.no_grad():
+        reward_mean = _masked_mean(reward, agent_mask)
+        reward_active = reward[agent_mask > 0.0]
+        cont_mean = _masked_mean(cont, cont_mask)
+        tensor_metrics: dict[str, torch.Tensor] = {
+            "active_agent_fraction": agent_mask.mean(),
+            "rollout_reward_mean": reward_mean,
+            "rollout_reward_std": _masked_mean((reward - reward_mean) ** 2, agent_mask).sqrt(),
+            "rollout_reward_min": reward_active.min(),
+            "rollout_reward_max": reward_active.max(),
+            "advantage_mean": advantages.mean(),
+            "advantage_std": advantages.std(unbiased=False),
+            "advantage_min": advantages.min(),
+            "advantage_max": advantages.max(),
+            "return_mean": returns.mean(),
+            "return_std": returns.std(unbiased=False),
+            "action_move_mag_mean": _masked_mean(move_mag, agent_mask),
+            "action_cont_mean": cont_mean,
+            "action_cont_std": _masked_mean((cont - cont_mean) ** 2, cont_mask).sqrt(),
+            "mean_distance_to_objective": _masked_mean(distance_to_objective, agent_mask),
+            "self_on_point_fraction": _masked_mean(self_on_point, self_on_point_mask),
+        }
+        if binary_mask is not None:
+            tensor_metrics["action_binary_mean"] = _masked_mean(binary, binary_mask)
+        if target_mask is not None:
+            tensor_metrics["action_target_slot_mean"] = _masked_mean(target, target_mask)
+
+    # Stack + single .item() so we incur one host sync instead of N.
+    keys = list(tensor_metrics.keys())
+    stacked = torch.stack([tensor_metrics[k] for k in keys]).cpu().tolist()
+    out: dict[str, float] = {k: float(v) for k, v in zip(keys, stacked, strict=False)}
+    if "action_binary_mean" not in out:
+        out["action_binary_mean"] = 0.0
     return out
