@@ -1,0 +1,98 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: architecture_probe
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+  - phase4_architecture_break_glass
+  hypothesis: "Agents fire and move but miss because the single entropy bonus overweights already-active movement exploration while underweighting aim exploration; separating entropy coefficients with aim > binary > move should widen aim exploration while preserving cap movement and firing, improving kills or score versus weak_basic_v1 without changing rewards, observations, actions, or game rules."
+  falsification_criteria: "Falsified if by update 500 eval still shows 50/50 draws, score 0/0, and kills no better than weak_basic_v1's update-500 result of 4.0/4.0, or if entropy/action metrics show aim exploration did not increase while binary fire stayed near 0.33."
+  max_updates_if_no_signal: 500
+  diagnostic: "2026-05-15 implementation diagnostic: focused update test verified entropy_bonus equals 0.02*entropy_move + 0.15*entropy_aim + 0.05*entropy_binary when per-action coefficients are configured; existing configs preserve ppo.entropy_coef behavior when fields are omitted."
+  lineage: "Architecture probe based on weak_basic_v1 baseline after aux_aim_v1 was falsified. The only intended lever is per-action entropy weighting from Escape Protocol 5.2."
+  provenance: "Escape Protocol 5.2 per-action-type entropy implementation."
+
+# per_action_entropy_v1 — Escape Protocol 5.2 architecture probe.
+#
+# This config isolates one structural PPO-loss change from weak_basic_v1:
+# independent entropy coefficients for movement, aim, and binary action heads.
+# The opponent, rewards, sim mechanics, BC warm-start, LR, and PPO schedule are
+# intentionally inherited from weak_basic_v1.
+#
+# Success criteria:
+#   - Update 200: Team A kills > bot kills, nonzero score, or first wins.
+#   - Update 500: score or wins appear, or kills exceed weak_basic_v1's 4/4
+#     while entropy_aim shows the intended higher exploration pressure.
+#
+# Failure criteria:
+#   - Update 500: 50/50 draws, score 0/0, kills <= 4/4-equivalent, or
+#     binary fire collapses below the established ~0.33 action mean.
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.02
+  entropy_coef_aim: 0.15
+  entropy_coef_binary: 0.05
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_per_action_entropy_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
