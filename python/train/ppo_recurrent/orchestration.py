@@ -187,8 +187,15 @@ def _load_init_checkpoint(
 
 
 def _migrate_ckpt_v0_to_v1(config: dict) -> dict:
-    # v0 and v1 share the same fields; this is a version stamp only.
-    return config
+    """Migrate old checkpoints that stored model topology under 'mappo' to new 'model' key."""
+    normalized = dict(config)
+    if "model" not in normalized and "mappo" in normalized:
+        # Old schema: model topology was stored directly in 'mappo'
+        normalized["model"] = dict(normalized["mappo"])
+        # Old checkpoints didn't store 'use_recurrence'; infer from presence of GRU weights
+        if "use_recurrence" not in normalized["model"]:
+            normalized["model"]["use_recurrence"] = True
+    return normalized
 
 
 _CKPT_MIGRATIONS: dict[int, Callable[[dict], dict]] = {
