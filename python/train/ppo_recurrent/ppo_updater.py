@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from train.ppo_recurrent import metrics as metrics_lib
-from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
+from train.ppo_recurrent.losses import action_logprob_and_entropy, compute_ppo_loss
 
 
 def update_ppo(trainer, rollout) -> dict[str, float]:
@@ -86,39 +86,30 @@ def ppo_minibatch_step(
     entropy = torch.stack(entropies, dim=1)
     value = torch.stack(values, dim=1)
 
-    adv_mean = _masked_mean(advantage, valid_mask)
-    adv_var = _masked_mean((advantage - adv_mean) ** 2, valid_mask)
-    norm_adv = (advantage - adv_mean) / adv_var.clamp(min=1e-8).sqrt()
-
-    ratio = (new_logprob - old_logprob).exp()
-    pg1 = ratio * norm_adv
-    pg2 = torch.clamp(ratio, 1.0 - cfg.clip_ratio, 1.0 + cfg.clip_ratio) * norm_adv
-    policy_loss = _masked_mean(-torch.min(pg1, pg2), valid_mask)
-
-    value_n = (value - return_mean) / return_std
-    old_value_n = (old_value - return_mean) / return_std
-    return_n = (return_ - return_mean) / return_std
-    value_clipped_n = old_value_n + torch.clamp(
-        value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio
+    loss = compute_ppo_loss(
+        new_logprob=new_logprob,
+        old_logprob=old_logprob,
+        advantage=advantage,
+        value=value,
+        old_value=old_value,
+        return_=return_,
+        valid_mask=valid_mask,
+        clip_ratio=cfg.clip_ratio,
+        value_clip_ratio=cfg.value_clip_ratio,
+        value_coef=cfg.value_coef,
+        entropy_coef=cfg.entropy_coef,
+        entropy=entropy,
+        return_mean=return_mean,
+        return_std=return_std,
     )
-    vl_unclipped = (value_n - return_n) ** 2
-    vl_clipped = (value_clipped_n - return_n) ** 2
-    value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), valid_mask)
-
-    entropy_mean = _masked_mean(entropy, valid_mask)
-    total_loss = policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_mean
 
     trainer.optimizer.zero_grad()
-    total_loss.backward()
+    loss.total_loss.backward()
     actor_grad_norm = trainer._group_grad_norm(trainer._actor_params)
     critic_grad_norm = trainer._group_grad_norm(trainer._critic_params)
     trunk_grad_norm = trainer._group_grad_norm(trainer._trunk_params)
     nn.utils.clip_grad_norm_(trainer.model.parameters(), cfg.max_grad_norm)
     trainer.optimizer.step()
-
-    with torch.no_grad():
-        approx_kl = _masked_mean(old_logprob - new_logprob, valid_mask)
-        clip_fraction = _masked_mean(((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_mask)
 
     scalar_keys = (
         "policy_loss",
@@ -129,7 +120,14 @@ def ppo_minibatch_step(
         "total_loss",
     )
     scalars = torch.stack(
-        [policy_loss, value_loss, entropy_mean, approx_kl, clip_fraction, total_loss]
+        [
+            loss.policy_loss,
+            loss.value_loss,
+            loss.entropy,
+            loss.approx_kl,
+            loss.clip_fraction,
+            loss.total_loss,
+        ]
     ).detach().cpu().tolist()
     out = {k: float(v) for k, v in zip(scalar_keys, scalars, strict=False)}
     out["actor_grad_norm"] = actor_grad_norm

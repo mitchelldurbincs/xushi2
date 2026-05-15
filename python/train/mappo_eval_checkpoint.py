@@ -10,7 +10,7 @@ from train.mappo_bc_pretrain import bc_pretrain_walk_and_shoot_to_objective, bc_
 from train.mappo_model import compute_team_spirit
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
-from train.ppo_recurrent.lr_schedule import lr_for_update
+from train.common_orchestration import LoopConfig, run_training_loop
 from train.wandb_logger import make_logger
 from train.mappo_eval_gate_io import EvalGateConfig, read_json_artifact, run_eval_gate, write_json_artifact
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
@@ -139,124 +139,68 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 {f"bc_eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
                 step=0,
             )
-        for update_idx in range(1, total_updates + 1):
-            lr = lr_for_update(
-                update_idx,
-                total_updates,
-                base_lr=cfg.learning_rate,
-                schedule=cfg.lr_schedule,
-                lr_final_ratio=cfg.lr_final_ratio,
-                warmup_updates=cfg.warmup_updates,
-            )
-            trainer.set_learning_rate(lr)
-            tau = compute_team_spirit(
-                update=update_idx,
-                total=total_updates,
-                initial=cfg.team_spirit_initial,
-                final=cfg.team_spirit_final,
-                ramp_fraction=cfg.team_spirit_ramp_fraction,
-            )
-            trainer.set_team_spirit(tau)
-            metrics = trainer.update(trainer.collect_rollout())
-            metrics["team_spirit"] = tau
-            wandb_logger.log(
-                {f"train/{k}": float(v) for k, v in metrics.items()},
-                step=update_idx,
-            )
-            wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
-            if update_idx % int(run_cfg.get("log_every", 1)) == 0:
+        class _MappoHooks:
+            def set_learning_rate(self, lr: float) -> None:
+                trainer.set_learning_rate(lr)
+
+            def collect_rollout(self, update_idx: int):
+                return trainer.collect_rollout()
+
+            def update_step(self, update_idx: int, rollout, lr: float):
+                tau = compute_team_spirit(
+                    update=update_idx,
+                    total=total_updates,
+                    initial=cfg.team_spirit_initial,
+                    final=cfg.team_spirit_final,
+                    ramp_fraction=cfg.team_spirit_ramp_fraction,
+                )
+                trainer.set_team_spirit(tau)
+                metrics = trainer.update(rollout)
+                metrics["team_spirit"] = tau
+                return metrics
+
+            def evaluate_step(self, update_idx: int, lr: float):
+                return evaluate_mappo(trainer.model, env_fn, episodes=eval_episodes, seed=seed_base + 100_000 + update_idx)
+
+            def checkpoint_payload(self, update_idx: int) -> dict:
+                return {"update_idx": update_idx, "path": output_dir / f"ckpt_{update_idx:04d}.pt"}
+
+            def on_log(self, update_idx: int, lr: float, metrics: dict[str, float]) -> None:
+                wandb_logger.log({f"train/{k}": float(v) for k, v in metrics.items()}, step=update_idx)
+                wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
                 print(
-                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} "
-                    f"policy_loss={metrics['policy_loss']:.3f} "
-                    f"value_loss={metrics['value_loss']:.3f} "
-                    f"entropy={metrics['entropy']:.3f} "
-                    f"rew={metrics['rollout_reward_mean']:+.3f}"
-                    f"/{metrics['rollout_reward_std']:.3f} "
-                    f"adv={metrics['advantage_mean']:+.3f}"
-                    f"/{metrics['advantage_std']:.3f} "
-                    f"move={metrics['action_move_mag_mean']:.3f} "
-                    f"bin={metrics['action_binary_mean']:.3f} "
-                    f"dist={metrics['mean_distance_to_objective']:.3f} "
-                    f"onpt={metrics['self_on_point_fraction']:.3f} "
-                    f"gn={metrics['actor_grad_norm']:.2e}/"
-                    f"{metrics['critic_grad_norm']:.2e}/"
-                    f"{metrics['trunk_grad_norm']:.2e} "
-                    f"lr={lr:.2e} "
-                    f"ts={metrics['team_spirit']:.2f}",
+                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} policy_loss={metrics['policy_loss']:.3f} value_loss={metrics['value_loss']:.3f} entropy={metrics['entropy']:.3f} rew={metrics['rollout_reward_mean']:+.3f}/{metrics['rollout_reward_std']:.3f} adv={metrics['advantage_mean']:+.3f}/{metrics['advantage_std']:.3f} move={metrics['action_move_mag_mean']:.3f} bin={metrics['action_binary_mean']:.3f} dist={metrics['mean_distance_to_objective']:.3f} onpt={metrics['self_on_point_fraction']:.3f} gn={metrics['actor_grad_norm']:.2e}/{metrics['critic_grad_norm']:.2e}/{metrics['trunk_grad_norm']:.2e} lr={lr:.2e} ts={metrics['team_spirit']:.2f}",
                     flush=True,
                 )
-            if update_idx % eval_every == 0 or update_idx == total_updates:
-                eval_stats = evaluate_mappo(
-                    trainer.model,
-                    env_fn,
-                    episodes=eval_episodes,
-                    seed=seed_base + 100_000 + update_idx,
-                )
+
+            def on_eval(self, update_idx: int, lr: float, eval_stats) -> bool:
+                nonlocal last_eval, best_eval, best_state, best_eval_update_idx, best_eval_stats
                 last_eval = eval_stats.mean_reward
                 print(
-                    f"[{phase_label}/mappo] eval update={update_idx}/{total_updates} "
-                    f"mean_reward={eval_stats.mean_reward:+.3f} "
-                    f"wins={eval_stats.wins}/{eval_stats.episodes} "
-                    f"losses={eval_stats.losses}/{eval_stats.episodes} "
-                    f"draws={eval_stats.draws}/{eval_stats.episodes} "
-                    f"term={eval_stats.terminated} trunc={eval_stats.truncated} "
-                    f"tick={eval_stats.mean_final_tick:.1f} "
-                    f"score={eval_stats.mean_team_a_score:.2f}/"
-                    f"{eval_stats.mean_team_b_score:.2f} "
-                    f"kills={eval_stats.mean_team_a_kills:.1f}/"
-                    f"{eval_stats.mean_team_b_kills:.1f}",
+                    f"[{phase_label}/mappo] eval update={update_idx}/{total_updates} mean_reward={eval_stats.mean_reward:+.3f} wins={eval_stats.wins}/{eval_stats.episodes} losses={eval_stats.losses}/{eval_stats.episodes} draws={eval_stats.draws}/{eval_stats.episodes} term={eval_stats.terminated} trunc={eval_stats.truncated} tick={eval_stats.mean_final_tick:.1f} score={eval_stats.mean_team_a_score:.2f}/{eval_stats.mean_team_b_score:.2f} kills={eval_stats.mean_team_a_kills:.1f}/{eval_stats.mean_team_b_kills:.1f}",
                     flush=True,
                 )
-                wandb_logger.log(
-                    {f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
-                    step=update_idx,
-                )
+                wandb_logger.log({f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()}, step=update_idx)
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())
                     best_eval_update_idx = update_idx
-                    best_eval_stats = {
-                        "wins": int(eval_stats.wins),
-                        "losses": int(eval_stats.losses),
-                        "draws": int(eval_stats.draws),
-                        "score_team_a": float(eval_stats.mean_team_a_score),
-                        "score_team_b": float(eval_stats.mean_team_b_score),
-                        "kills_team_a": float(eval_stats.mean_team_a_kills),
-                        "kills_team_b": float(eval_stats.mean_team_b_kills),
-                    }
+                    best_eval_stats = {"wins": int(eval_stats.wins), "losses": int(eval_stats.losses), "draws": int(eval_stats.draws), "score_team_a": float(eval_stats.mean_team_a_score), "score_team_b": float(eval_stats.mean_team_b_score), "kills_team_a": float(eval_stats.mean_team_a_kills), "kills_team_b": float(eval_stats.mean_team_b_kills)}
                 if run_cfg.get("eval_gate"):
-                    run_eval_gate(
-                        phase_label=phase_label,
-                        stats=eval_stats,
-                        gate_cfg=EvalGateConfig.from_dict(dict(run_cfg.get("eval_gate", {}))),
-                        output_dir=output_dir,
-                    )
-            if update_idx % checkpoint_every == 0 or update_idx == total_updates:
-                checkpoint_path = output_dir / f"ckpt_{update_idx:04d}.pt"
-                torch.save(
-                    {
-                        "model_state_dict": trainer.model.state_dict(),
-                        "config": {
-                            "phase": phase,
-                            "env": ckpt_env_cfg,
-                            "mappo": cfg.__dict__,
-                        },
-                    },
-                    checkpoint_path,
-                )
+                    run_eval_gate(phase_label=phase_label, stats=eval_stats, gate_cfg=EvalGateConfig.from_dict(dict(run_cfg.get("eval_gate", {}))), output_dir=output_dir)
+                return False
+
+            def on_checkpoint(self, update_idx: int, payload: dict) -> None:
+                checkpoint_path = payload["path"]
+                torch.save({"model_state_dict": trainer.model.state_dict(), "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__}}, checkpoint_path)
                 if retention is not None:
-                    manifest = retention.record_checkpoint(
-                        checkpoint_path,
-                        update=update_idx,
-                        score=last_eval,
-                    )
-                    print(
-                        f"[{phase_label}/mappo] snapshot_pool "
-                        f"latest={len(manifest['latest'])} "
-                        f"historical={len(manifest['historical'])} "
-                        f"anchor={len(manifest['anchor'])}",
-                        flush=True,
-                    )
+                    manifest = retention.record_checkpoint(checkpoint_path, update=update_idx, score=last_eval)
+                    print(f"[{phase_label}/mappo] snapshot_pool latest={len(manifest['latest'])} historical={len(manifest['historical'])} anchor={len(manifest['anchor'])}", flush=True)
+
+        run_training_loop(
+            LoopConfig(total_updates=total_updates, eval_every=eval_every, checkpoint_every=checkpoint_every, log_every=int(run_cfg.get("log_every", 1)), base_lr=cfg.learning_rate, lr_schedule=cfg.lr_schedule, lr_final_ratio=cfg.lr_final_ratio, warmup_updates=cfg.warmup_updates),
+            _MappoHooks(),
+        )
     finally:
         trainer.close()
         wandb_logger.finish()
