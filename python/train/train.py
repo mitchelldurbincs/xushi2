@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import faulthandler
+import signal
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from types import FrameType
+from typing import TYPE_CHECKING
 
 import yaml
-
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from xushi2.runner import EpisodeResult
@@ -28,6 +30,28 @@ class NormalizedEntryConfig:
 def load_config(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
+
+
+def _enable_usr1_traceback_dump() -> None:
+    """Make SIGUSR1 useful for diagnosing stuck training jobs.
+
+    Python's default SIGUSR1 behavior is process termination on POSIX. Training
+    runs are often launched without an attached TTY, so a terminated process can
+    leave no traceback. Registering faulthandler keeps the process alive and
+    dumps all Python thread stacks to stderr instead.
+    """
+    sigusr1 = getattr(signal, "SIGUSR1", None)
+    if sigusr1 is None:
+        return
+    try:
+        faulthandler.register(sigusr1, all_threads=True, chain=False)
+    except (RuntimeError, ValueError):
+        # Some embedded or redirected runtimes cannot register faulthandler.
+        # Install a minimal fallback so SIGUSR1 still does not kill the process.
+        def _dump_traceback(_signum: int, _frame: FrameType | None) -> None:
+            faulthandler.dump_traceback(all_threads=True)
+
+        signal.signal(sigusr1, _dump_traceback)
 
 
 # --- phase0 harness ---
@@ -105,7 +129,8 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
         (
             {4, 5, 6, 7, 8, 9, 10},
             lambda: (
-                f"[xushi2] phase={phase_raw} mappo opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+                f"[xushi2] phase={phase_raw} mappo "
+                f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
                 f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
                 f"base_seed=0x{normalized.base_seed:x}"
             ),
@@ -113,7 +138,8 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
         (
             {3},
             lambda: (
-                f"[xushi2] phase={phase_raw} opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+                f"[xushi2] phase={phase_raw} "
+                f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
                 f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
                 f"base_seed=0x{normalized.base_seed:x}"
             ),
@@ -187,6 +213,7 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
 
 
 def main() -> int:
+    _enable_usr1_traceback_dump()
     parser = argparse.ArgumentParser(description="xushi2 training entrypoint")
     parser.add_argument(
         "--config",
@@ -204,7 +231,7 @@ def main() -> int:
         return 2
 
     phase_raw = config.get("phase", "unknown")
-    print(format_phase_banner(normalized, phase_raw))
+    print(format_phase_banner(normalized, phase_raw), flush=True)
     return run_phase(normalized, config)
 
 
