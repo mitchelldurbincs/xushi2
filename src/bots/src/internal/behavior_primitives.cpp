@@ -19,6 +19,8 @@ common::Vec2 objective_center(const sim::MapBounds& map) {
 
 const sim::HeroState* find_opponent(const sim::MatchState& state,
                                     const sim::HeroState& self) {
+    const sim::HeroState* best = nullptr;
+    float best_dist2 = 0.0F;
     for (const auto& h : state.heroes) {
         if (!h.present || !h.alive) {
             continue;
@@ -26,16 +28,23 @@ const sim::HeroState* find_opponent(const sim::MatchState& state,
         if (h.team == self.team) {
             continue;
         }
-        return &h;
+        const float dx = h.position.x - self.position.x;
+        const float dy = h.position.y - self.position.y;
+        const float d2 = dx * dx + dy * dy;
+        if (best == nullptr || d2 < best_dist2) {
+            best = &h;
+            best_dist2 = d2;
+        }
     }
-    return nullptr;
+    return best;
 }
 
-float aim_delta_toward(const sim::HeroState& self, float tx, float ty) {
+float aim_delta_toward(const sim::HeroState& self, float tx, float ty,
+                       float noise_radians) {
     const float dx = tx - self.position.x;
     const float dy = ty - self.position.y;
     const float desired = std::atan2(dy, dx);
-    const float raw = common::wrap_angle(desired - self.aim_angle);
+    const float raw = common::wrap_angle(desired - self.aim_angle + noise_radians);
     return common::clampf(raw, -common::kAimDeltaMax, common::kAimDeltaMax);
 }
 
@@ -55,13 +64,15 @@ common::Action walk_to_objective(const sim::HeroState& self,
 }
 
 common::Action hold_and_shoot(const sim::MatchState& state,
-                              const sim::HeroState& self) {
+                              const sim::HeroState& self,
+                              float aim_noise_radians) {
     common::Action a{};
     const sim::HeroState* opp = find_opponent(state, self);
     if (opp == nullptr) {
         return a;
     }
-    a.aim_delta = aim_delta_toward(self, opp->position.x, opp->position.y);
+    a.aim_delta = aim_delta_toward(self, opp->position.x, opp->position.y,
+                                   aim_noise_radians);
     a.primary_fire = true;
     return a;
 }
