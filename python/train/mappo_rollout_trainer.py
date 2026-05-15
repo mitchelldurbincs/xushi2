@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from train.mappo_advantage import compute_gae
 from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
-from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
+from train.ppo_recurrent.losses import _masked_mean, compute_ppo_loss
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
@@ -384,54 +384,44 @@ class MappoTrainer:
                 N, L
             )
             advantage = rollout.advantages[:, None, :].expand(N, A, L)
-        adv_mean = _masked_mean(advantage, valid_agent)
-        adv_var = _masked_mean((advantage - adv_mean) ** 2, valid_agent)
-        norm_adv = (advantage - adv_mean) / adv_var.clamp(min=1e-8).sqrt()
-
-        ratio = (new_logprob - rollout.logprob).exp()
-        pg1 = ratio * norm_adv
-        pg2 = torch.clamp(ratio, 1.0 - cfg.clip_ratio, 1.0 + cfg.clip_ratio) * norm_adv
-        policy_loss = _masked_mean(-torch.min(pg1, pg2), valid_agent)
-
         if cfg.value_per_agent:
-            value_n = (value - return_mean) / return_std
-            old_value_n = (rollout.value - return_mean) / return_std
-            return_n = (rollout.returns - return_mean) / return_std
             value_mask = valid_agent
         else:
-            value_n = (value - return_mean) / return_std
-            old_value_n = (rollout.value - return_mean) / return_std
-            return_n = (rollout.returns - return_mean) / return_std
             value_mask = (valid_agent.sum(dim=1) > 0.0).to(valid_agent.dtype)
-        value_clipped_n = old_value_n + torch.clamp(
-            value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio
+
+        loss = compute_ppo_loss(
+            new_logprob=new_logprob,
+            old_logprob=rollout.logprob,
+            advantage=advantage,
+            value=value,
+            old_value=rollout.value,
+            return_=rollout.returns,
+            valid_mask=valid_agent,
+            clip_ratio=cfg.clip_ratio,
+            value_clip_ratio=cfg.value_clip_ratio,
+            value_coef=cfg.value_coef,
+            entropy_coef=cfg.entropy_coef,
+            entropy=entropy,
+            return_mean=return_mean,
+            return_std=return_std,
+            value_mask=value_mask,
         )
-        vl_unclipped = (value_n - return_n) ** 2
-        vl_clipped = (value_clipped_n - return_n) ** 2
-        value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), value_mask)
-        entropy_mean = _masked_mean(entropy, valid_agent)
-        total_loss = policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_mean
 
         self.optimizer.zero_grad()
-        total_loss.backward()
+        loss.total_loss.backward()
         actor_grad_norm = self._group_grad_norm(self._actor_params)
         critic_grad_norm = self._group_grad_norm(self._critic_params)
         trunk_grad_norm = self._group_grad_norm(self._trunk_params)
         nn.utils.clip_grad_norm_(self.model.parameters(), cfg.max_grad_norm)
         self.optimizer.step()
 
-        with torch.no_grad():
-            approx_kl = _masked_mean(rollout.logprob - new_logprob, valid_agent)
-            clip_fraction = _masked_mean(
-                ((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_agent
-            )
         return {
-            "policy_loss": float(policy_loss.item()),
-            "value_loss": float(value_loss.item()),
-            "entropy": float(entropy_mean.item()),
-            "approx_kl": float(approx_kl.item()),
-            "clip_fraction": float(clip_fraction.item()),
-            "total_loss": float(total_loss.item()),
+            "policy_loss": float(loss.policy_loss.item()),
+            "value_loss": float(loss.value_loss.item()),
+            "entropy": float(loss.entropy.item()),
+            "approx_kl": float(loss.approx_kl.item()),
+            "clip_fraction": float(loss.clip_fraction.item()),
+            "total_loss": float(loss.total_loss.item()),
             "actor_grad_norm": actor_grad_norm,
             "critic_grad_norm": critic_grad_norm,
             "trunk_grad_norm": trunk_grad_norm,
