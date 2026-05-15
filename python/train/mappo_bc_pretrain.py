@@ -252,6 +252,7 @@ def bc_pretrain_walk_to_objective(
 ) -> None:
     if steps <= 0:
         return
+    device = next(model.parameters()).device
     with _freeze_actor_aim_for_bc(model, cfg, enabled=freeze_actor_aim):
         opt = torch.optim.Adam(_bc_trainable_parameters(model), lr=float(learning_rate))
         if freeze_actor_aim:
@@ -263,7 +264,9 @@ def bc_pretrain_walk_to_objective(
             obs_seq, target_seq = _collect_walk_bc_sequence(
                 env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step
             )
-            h = model.init_hidden(cfg.n_agents)
+            obs_seq = obs_seq.to(device)
+            target_seq = target_seq.to(device)
+            h = model.init_hidden(cfg.n_agents).to(device)
             cont_losses = []
             binary_losses = []
             aim_aux_losses = []
@@ -365,6 +368,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
     """BC pretrain that walks to cap, aims at enemies, and fires when visible."""
     if steps <= 0:
         return
+    device = next(model.parameters()).device
     aim_target_model = (
         load_bc_aim_target_model(aim_target_checkpoint, cfg)
         if aim_target_checkpoint is not None
@@ -392,6 +396,8 @@ def bc_pretrain_walk_and_shoot_to_objective(
                 target_fn=_walk_and_shoot_to_objective_targets,
                 aim_target_model=aim_target_model,
             )
+            obs_seq = obs_seq.to(device)
+            target_seq = target_seq.to(device)
             cont_losses = []
             binary_losses = []
             aim_aux_losses = []
@@ -415,10 +421,12 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     target_fn=_walk_and_shoot_to_objective_targets,
                     aim_target_model=aim_target_model,
                 )
+                rehearsal_obs_seq = rehearsal_obs_seq.to(device)
+                rehearsal_target_seq = rehearsal_target_seq.to(device)
                 sequences.append((rehearsal_obs_seq, rehearsal_target_seq))
 
             for seq_obs, seq_target in sequences:
-                h = model.init_hidden(cfg.n_agents)
+                h = model.init_hidden(cfg.n_agents).to(device)
                 for t in range(seq_obs.shape[0]):
                     features, h = model.actor_head_features(seq_obs[t], h)
                     mean, logits, target_selection_logits = model.policy_heads_from_features(

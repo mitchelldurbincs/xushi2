@@ -49,6 +49,8 @@ from collections.abc import Iterator
 
 import torch
 
+from train.common_advantage import compute_gae_core
+
 
 class RolloutBuffer:
     def __init__(
@@ -154,28 +156,15 @@ class RolloutBuffer:
         ``(1 - done_t)`` factor zeros both the bootstrap at step ``t``
         and the recursion from ``A_{t+1}`` across episode boundaries.
         """
-        N, L = self.num_envs, self.rollout_len
-        advantages = torch.zeros_like(self.value)
-        last_gae = torch.zeros(N, device=self.device)
-
-        for t in reversed(range(L)):
-            if t == L - 1:
-                next_value = last_values
-                next_nonterminal = 1.0 - last_dones
-            else:
-                next_value = self.value[:, t + 1]
-                # The boundary factor uses ``done_t``, NOT ``done_{t+1}``:
-                # we gate on whether the episode ends AT step t, which
-                # kills both the bootstrap into V_{t+1} and the carry of
-                # A_{t+1} back into A_t.
-                next_nonterminal = 1.0 - self.done[:, t]
-            delta = (
-                self.reward[:, t] + self.gamma * next_value * next_nonterminal - self.value[:, t]
-            )
-            last_gae = delta + self.gamma * self.gae_lambda * next_nonterminal * last_gae
-            advantages[:, t] = last_gae
-
-        returns = advantages + self.value
+        advantages, returns = compute_gae_core(
+            rewards=self.reward,
+            values=self.value,
+            dones=self.done,
+            last_value=last_values,
+            last_done=last_dones,
+            gamma=self.gamma,
+            gae_lambda=self.gae_lambda,
+        )
         self.advantages = advantages
         self.returns = returns
         self._gae_computed = True

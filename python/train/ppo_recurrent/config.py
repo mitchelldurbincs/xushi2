@@ -36,3 +36,6 @@ class PPOConfig:
     binary_action_dim: int = 0
     vector_env: str = "sync"  # "sync" or "async"
     torch_num_threads: int = 0  # 0 = leave default
+    # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
+    # else CPU). Resolved to ``torch.device`` once in the trainer.
+    device: str = "cpu"

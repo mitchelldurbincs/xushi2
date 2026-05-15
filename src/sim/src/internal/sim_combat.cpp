@@ -213,7 +213,6 @@ void resolve_revolver_fire(MatchState& state,
             continue;
         }
         if (hit.kind == RayHitCandidate::Kind::Enemy && hit.slot >= 0) {
-            buf[i].attacker_id = shooter.id;
             buf[i].victim_slot = static_cast<std::uint32_t>(hit.slot);
             buf[i].damage_centi_hp = m.revolver_damage_centi_hp;
             has_damage[i] = true;
@@ -258,7 +257,6 @@ void resolve_mender_sidearm_fire(MatchState& state,
             continue;
         }
         if (hit.kind == RayHitCandidate::Kind::Enemy && hit.slot >= 0) {
-            buf[i].attacker_id = shooter.id;
             buf[i].victim_slot = static_cast<std::uint32_t>(hit.slot);
             buf[i].damage_centi_hp =
                 static_cast<std::uint32_t>(common::kMenderSidearmDamageCentiHp);

@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     import gymnasium as gym
 
+from train.device import resolve_device
 from train.mappo_advantage import compute_gae
 from train.mappo_model import (
     _OWN_POSITION_SLICE,
@@ -20,9 +21,17 @@ from train.mappo_model import (
     target_selection_aux_loss_and_accuracy,
 )
 from train.phases import resolve_phase
+from train.mappo_rollout import collect_rollout, step_loss_mask
 from train.ppo_recurrent.losses import (
     _masked_mean,
     action_logprob_and_entropy_parts,
+)
+from train.recurrent_common import (
+    apply_global_seeds,
+    get_optimizer_learning_rate,
+    grad_group_norm,
+    next_update_sampling_state,
+    set_optimizer_learning_rate,
 )
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
@@ -30,30 +39,35 @@ from xushi2.vector_env import make_xushi_vector_env
 
 
 class MappoRollout:
-    def __init__(self, cfg: MappoConfig) -> None:
+    def __init__(self, cfg: MappoConfig, device: torch.device | str | None = None) -> None:
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
-        self.actor_obs = torch.zeros(N, A, L, cfg.obs_dim)
+        self.device = resolve_device(cfg.device if device is None else device)
+        dev = self.device
+        self.actor_obs = torch.zeros(N, A, L, cfg.obs_dim, device=dev)
         if cfg.value_per_agent:
-            self.critic_obs = torch.zeros(N, A, L, cfg.critic_obs_dim)
-            self.value = torch.zeros(N, A, L)
-            self.advantages = torch.zeros(N, A, L)
-            self.returns = torch.zeros(N, A, L)
-            self.last_value = torch.zeros(N, A)
+            self.critic_obs = torch.zeros(N, A, L, cfg.critic_obs_dim, device=dev)
+            self.value = torch.zeros(N, A, L, device=dev)
+            self.advantages = torch.zeros(N, A, L, device=dev)
+            self.returns = torch.zeros(N, A, L, device=dev)
+            self.last_value = torch.zeros(N, A, device=dev)
         else:
-            self.critic_obs = torch.zeros(N, L, cfg.critic_obs_dim)
-            self.value = torch.zeros(N, L)
-            self.advantages = torch.zeros(N, L)
-            self.returns = torch.zeros(N, L)
-            self.last_value = torch.zeros(N)
-        self.action = torch.zeros(N, A, L, cfg.action_dim)
-        self.logprob = torch.zeros(N, A, L)
-        self.reward = torch.zeros(N, A, L)
-        self.done = torch.zeros(N, L)
-        self.h_init = torch.zeros(N, A, L, cfg.gru_hidden)
-        self.last_done = torch.zeros(N)
+            self.critic_obs = torch.zeros(N, L, cfg.critic_obs_dim, device=dev)
+            self.value = torch.zeros(N, L, device=dev)
+            self.advantages = torch.zeros(N, L, device=dev)
+            self.returns = torch.zeros(N, L, device=dev)
+            self.last_value = torch.zeros(N, device=dev)
+        self.action = torch.zeros(N, A, L, cfg.action_dim, device=dev)
+        self.logprob = torch.zeros(N, A, L, device=dev)
+        self.reward = torch.zeros(N, A, L, device=dev)
+        self.done = torch.zeros(N, L, device=dev)
+        self.h_init = torch.zeros(N, A, L, cfg.gru_hidden, device=dev)
+        self.last_done = torch.zeros(N, device=dev)
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
         self.agent_loss_mask = (
-            torch.as_tensor(raw_mask, dtype=torch.float32).view(1, A, 1).expand(N, A, L).clone()
+            torch.as_tensor(raw_mask, dtype=torch.float32, device=dev)
+            .view(1, A, 1)
+            .expand(N, A, L)
+            .clone()
         )
 
 
@@ -61,10 +75,10 @@ class MappoTrainer:
     def __init__(self, env_fn: Callable[[], gym.Env], cfg: MappoConfig, seed: int) -> None:
         self.cfg = cfg
         self.seed = int(seed)
+        self.device = resolve_device(cfg.device)
         if cfg.torch_num_threads > 0:
             torch.set_num_threads(cfg.torch_num_threads)
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
+        apply_global_seeds(self.seed)
         self.vec_env = make_xushi_vector_env(
             [env_fn for _ in range(cfg.num_envs)],
             critic_obs_dim=(
@@ -74,16 +88,16 @@ class MappoTrainer:
             backend=cfg.vector_env,
         )
         obs, initial_critic_obs, _infos = self.vec_env.reset(seed=self.seed)
-        self.last_obs = torch.as_tensor(obs, dtype=torch.float32)
+        self.last_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
         self.last_critic_obs = self._critic_obs_from_np(initial_critic_obs)
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
-        self.model = MappoActorCritic(cfg)
+        apply_global_seeds(self.seed)
+        self.model = MappoActorCritic(cfg).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.learning_rate)
-        self.current_learning_rate = cfg.learning_rate
+        set_optimizer_learning_rate(self.optimizer, cfg.learning_rate)
         self.h = self.model.init_hidden(cfg.num_envs * cfg.n_agents).view(
             cfg.num_envs, cfg.n_agents, cfg.gru_hidden
         )
+        self.rollout_cls = MappoRollout
         self._sampling_rng_state = torch.get_rng_state()
         self._update_counter = 0
         self._actor_params: list[torch.nn.Parameter] = []
@@ -114,9 +128,7 @@ class MappoTrainer:
         self.vec_env.close()
 
     def set_learning_rate(self, lr: float) -> None:
-        self.current_learning_rate = float(lr)
-        for group in self.optimizer.param_groups:
-            group["lr"] = self.current_learning_rate
+        set_optimizer_learning_rate(self.optimizer, lr)
 
     def set_team_spirit(self, value: float) -> None:
         """Push team_spirit value to every wrapped env via the vector wrapper.
@@ -126,104 +138,25 @@ class MappoTrainer:
         per-agent envs actually reweight their per-step rewards."""
         self.vec_env.set_team_spirit(float(value))
 
+    @property
+    def current_learning_rate(self) -> float:
+        return get_optimizer_learning_rate(self.optimizer)
+
     @staticmethod
     def _group_grad_norm(params: list[torch.nn.Parameter]) -> float:
-        total_sq = 0.0
-        for p in params:
-            if p.grad is not None:
-                total_sq += float(p.grad.detach().pow(2).sum().item())
-        return float(total_sq**0.5)
+        return grad_group_norm(params)
 
     def _critic_obs_from_np(self, critic_obs_np: np.ndarray) -> torch.Tensor:
-        critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32)
+        critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32, device=self.device)
         if self.cfg.value_per_agent:
             return critic_obs.view(self.cfg.num_envs, self.cfg.n_agents, self.cfg.critic_obs_dim)
         return critic_obs
 
     def collect_rollout(self) -> MappoRollout:
-        cfg = self.cfg
-        rollout = MappoRollout(cfg)
-        obs = self.last_obs
-        h = self.h
-        critic_obs = self.last_critic_obs
-        for t in range(cfg.rollout_len):
-            flat_obs = obs.reshape(cfg.num_envs * cfg.n_agents, cfg.obs_dim)
-            flat_h = h.reshape(cfg.num_envs * cfg.n_agents, cfg.gru_hidden)
-            with torch.no_grad():
-                prev_rng = torch.get_rng_state()
-                torch.set_rng_state(self._sampling_rng_state)
-                try:
-                    action, logprob, h_next = self.model.sample_action(flat_obs, flat_h)
-                    self._sampling_rng_state = torch.get_rng_state()
-                finally:
-                    torch.set_rng_state(prev_rng)
-                if cfg.value_per_agent:
-                    value = self.model.value(
-                        critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
-                    ).view(cfg.num_envs, cfg.n_agents)
-                else:
-                    value = self.model.value(critic_obs)
-            action_3d = action.view(cfg.num_envs, cfg.n_agents, cfg.action_dim)
-            action_np = action_3d.cpu().numpy()
-            next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, _infos = (
-                self.vec_env.step(action_np)
-            )
-            done_np = np.logical_or(terminated, truncated)
-            rollout.actor_obs[:, :, t] = obs
-            if cfg.value_per_agent:
-                rollout.critic_obs[:, :, t] = critic_obs
-            else:
-                rollout.critic_obs[:, t] = critic_obs
-            rollout.action[:, :, t] = action_3d
-            rollout.logprob[:, :, t] = logprob.view(cfg.num_envs, cfg.n_agents)
-            rollout.reward[:, :, t] = torch.as_tensor(reward_np, dtype=torch.float32)
-            rollout.agent_loss_mask[:, :, t] = self._step_loss_mask(_infos)
-            if cfg.value_per_agent:
-                rollout.value[:, :, t] = value
-            else:
-                rollout.value[:, t] = value
-            rollout.done[:, t] = torch.as_tensor(done_np, dtype=torch.float32)
-            h = h_next.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
-            rollout.h_init[:, :, t] = flat_h.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
-            for e, done in enumerate(done_np):
-                if bool(done):
-                    h[e] = 0.0
-            obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
-            critic_obs = self._critic_obs_from_np(next_critic_obs_np)
-        with torch.no_grad():
-            if cfg.value_per_agent:
-                rollout.last_value = self.model.value(
-                    critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
-                ).view(cfg.num_envs, cfg.n_agents)
-            else:
-                rollout.last_value = self.model.value(critic_obs)
-        rollout.last_done = rollout.done[:, -1].clone()
-        self.last_obs = obs
-        self.last_critic_obs = critic_obs
-        self.h = h
-        return rollout
+        return collect_rollout(self)
 
     def _step_loss_mask(self, infos: list[dict]) -> torch.Tensor:
-        cfg = self.cfg
-        static = torch.as_tensor(cfg.agent_loss_mask, dtype=torch.float32)
-        masks = torch.zeros(cfg.num_envs, cfg.n_agents, dtype=torch.float32)
-        for env_idx, info in enumerate(infos):
-            raw = info.get("loss_mask")
-            if raw is None:
-                final_info = info.get("final_info")
-                if isinstance(final_info, dict):
-                    raw = final_info.get("loss_mask")
-            if raw is None:
-                masks[env_idx] = static
-                continue
-            mask = torch.as_tensor(raw, dtype=torch.float32).reshape(-1)
-            if mask.numel() != cfg.n_agents:
-                raise ValueError(f"env loss_mask length must be {cfg.n_agents}, got {mask.numel()}")
-            mask = torch.clamp(mask, min=0.0) * static
-            if float(mask.sum().item()) <= 0.0:
-                raise ValueError("env loss_mask must leave at least one active agent")
-            masks[env_idx] = mask
-        return masks
+        return step_loss_mask(self.cfg, infos)
 
     def update(self, rollout: MappoRollout) -> dict[str, float]:
         cfg = self.cfg
@@ -252,7 +185,9 @@ class MappoTrainer:
         losses = []
         for _epoch in range(cfg.num_epochs):
             losses.append(self._update_full_rollout(rollout, ret_mean, ret_std))
-        self._update_counter += 1
+        self._update_counter = next_update_sampling_state(
+            self.seed, self._update_counter
+        ).update_counter
         metrics = {k: float(np.mean([m[k] for m in losses])) for k in losses[0]}
         metrics.update(rollout_metrics)
         return metrics
@@ -585,6 +520,10 @@ def make_mappo_config(config: dict) -> MappoConfig:
         raise ValueError(f"MAPPO trainer only supports phases 4-11, got phase={phase!r}")
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
+    run_cfg = config.get("run", {})
+    # ``run.device`` wins (matches other infra-level toggles); ``ppo.device``
+    # is accepted as a fallback for symmetry with the rest of the PPO block.
+    device = str(run_cfg.get("device", ppo_cfg.get("device", "cpu")))
     obs_encoder = str(model_cfg.get("obs_encoder", "flat"))
     n_agents = int(phase_spec["n_agents"])
     raw_agent_loss_mask = ppo_cfg.get("agent_loss_mask", [1.0] * n_agents)
@@ -661,4 +600,5 @@ def make_mappo_config(config: dict) -> MappoConfig:
         target_conditioned_combat=bool(ppo_cfg.get("target_conditioned_combat", False)),
         target_selection_aux_coef=float(ppo_cfg.get("target_selection_aux_coef", 0.0)),
         target_selection_aux_mode=str(ppo_cfg.get("target_selection_aux_mode", "nearest_visible")),
+        device=device,
     )

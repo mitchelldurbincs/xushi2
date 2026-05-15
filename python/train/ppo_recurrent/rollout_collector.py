@@ -12,6 +12,7 @@ def collect_rollout(trainer) -> RolloutBuffer:
     Keeps behavior identical to legacy ``PPOTrainer.collect_rollout``.
     """
     cfg = trainer.config
+    device = trainer.device
     buf = trainer._make_buffer()
 
     last_obs = trainer._last_obs
@@ -33,8 +34,8 @@ def collect_rollout(trainer) -> RolloutBuffer:
         next_obs, reward, terminated, truncated, _info = trainer.envs.step(action_np)
         done_np = np.logical_or(terminated, truncated)
 
-        reward_t = torch.as_tensor(reward, dtype=torch.float32)
-        done_t = torch.as_tensor(done_np, dtype=torch.float32)
+        reward_t = torch.as_tensor(reward, dtype=torch.float32, device=device)
+        done_t = torch.as_tensor(done_np, dtype=torch.float32, device=device)
 
         buf.add(
             tick=tick,
@@ -54,7 +55,7 @@ def collect_rollout(trainer) -> RolloutBuffer:
                     h[e] = 0.0
                     buf.mark_reset(e)
 
-        last_obs = torch.as_tensor(next_obs, dtype=torch.float32)
+        last_obs = torch.as_tensor(next_obs, dtype=torch.float32, device=device)
 
     with torch.no_grad():
         _, _, last_value, _ = trainer.model.forward(last_obs, h)

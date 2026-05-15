@@ -106,8 +106,9 @@ def evaluate_mappo(
         backend=backend,
     )
     try:
+        device = next(model.parameters()).device
         obs_np, _critic_obs, _infos = vec_env.reset(seed=int(seed))
-        obs = torch.as_tensor(obs_np, dtype=torch.float32)
+        obs = torch.as_tensor(obs_np, dtype=torch.float32, device=device)
         h = model.init_hidden(num_envs * cfg.n_agents).view(
             num_envs, cfg.n_agents, cfg.gru_hidden
         )
@@ -158,7 +159,7 @@ def evaluate_mappo(
                 rewards.append(float(ep_rewards[i]))
                 ep_rewards[i] = 0.0
                 h[i] = 0.0
-            obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
+            obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=device)
     finally:
         vec_env.close()
         if was_training:

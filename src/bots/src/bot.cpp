@@ -2,6 +2,7 @@
 
 #include "internal/behavior_primitives.h"
 
+#include <cstdint>
 #include <string>
 
 // Phase-0 scripted bots. Deterministic (no RNG, no wall clock) and
@@ -11,6 +12,28 @@
 namespace xushi2::bots {
 
 namespace {
+
+// Integer hash (splitmix64). Cross-platform deterministic — unlike a
+// std::sin-based GLSL hash, the result is bit-identical on any compiler
+// because it uses only integer arithmetic.
+constexpr std::uint64_t splitmix64(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+// Returns a deterministic float in [-1, 1] from (tick, slot). Per-slot
+// per-decision variation; no positional aliasing.
+float deterministic_unit_noise(std::uint32_t tick, int agent_index) {
+    const std::uint64_t key =
+        (static_cast<std::uint64_t>(tick) << 32) ^
+        static_cast<std::uint64_t>(static_cast<std::uint32_t>(agent_index));
+    const std::uint64_t h = splitmix64(key);
+    // Use top 24 bits → exact float mantissa, no rounding double-round.
+    const float u = static_cast<float>(h >> 40) * (1.0F / 16777216.0F);  // [0,1)
+    return u * 2.0F - 1.0F;
+}
 
 // All scripted bots share this gate so invalid/dead slots deterministically
 // produce a no-op action before running any movement/combat policy.
@@ -87,17 +110,16 @@ class WeakBasicBot final : public IBot {
         if (self == nullptr) {
             return common::Action{};
         }
+        // Deterministic ±0.5 rad noise applied pre-clamp inside
+        // aim_delta_toward so the final aim_delta stays within
+        // kAimDeltaMax — noise reduces accuracy without saturating
+        // the action.
+        constexpr float kAimNoiseScale = 0.5F;  // ±0.5 rad (~±28.6°)
+        const float noise =
+            deterministic_unit_noise(state.tick, agent_index) * kAimNoiseScale;
         common::Action walk = internal::walk_to_objective(*self, config.map);
-        common::Action shoot = internal::hold_and_shoot(state, *self);
-        // Add deterministic aim noise so the bot misses frequently,
-        // making it beatable while still contesting the cap.
-        constexpr float kAimNoiseScale = 0.5f;  // ±0.5 rad (~±28.6°)
-        float noise = std::sin((self->position.x + agent_index * 31.0f) * 12.9898f +
-                                self->position.y * 78.233f) *
-                      43758.5453f;
-        noise = noise - std::floor(noise);
-        noise = (noise * 2.0f - 1.0f) * kAimNoiseScale;
-        walk.aim_delta = shoot.aim_delta + noise;
+        common::Action shoot = internal::hold_and_shoot(state, *self, noise);
+        walk.aim_delta = shoot.aim_delta;
         walk.primary_fire = shoot.primary_fire;
         return walk;
     }

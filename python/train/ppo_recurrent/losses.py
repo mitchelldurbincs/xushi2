@@ -7,6 +7,7 @@ unit-tested in isolation and reused by evaluation/analysis code.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
@@ -139,3 +140,65 @@ def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """
     denom = mask.sum().clamp(min=1.0)
     return (values * mask).sum() / denom
+
+
+@dataclass(frozen=True)
+class PpoLossResult:
+    policy_loss: torch.Tensor
+    value_loss: torch.Tensor
+    entropy: torch.Tensor
+    total_loss: torch.Tensor
+    approx_kl: torch.Tensor
+    clip_fraction: torch.Tensor
+
+
+def compute_ppo_loss(
+    *,
+    new_logprob: torch.Tensor,
+    old_logprob: torch.Tensor,
+    advantage: torch.Tensor,
+    value: torch.Tensor,
+    old_value: torch.Tensor,
+    return_: torch.Tensor,
+    valid_mask: torch.Tensor,
+    clip_ratio: float,
+    value_clip_ratio: float,
+    value_coef: float,
+    entropy_coef: float,
+    entropy: torch.Tensor,
+    return_mean: float = 0.0,
+    return_std: float = 1.0,
+    value_mask: torch.Tensor | None = None,
+) -> PpoLossResult:
+    adv_mean = _masked_mean(advantage, valid_mask)
+    adv_var = _masked_mean((advantage - adv_mean) ** 2, valid_mask)
+    norm_adv = (advantage - adv_mean) / adv_var.clamp(min=1e-8).sqrt()
+
+    ratio = (new_logprob - old_logprob).exp()
+    pg1 = ratio * norm_adv
+    pg2 = torch.clamp(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio) * norm_adv
+    policy_loss = _masked_mean(-torch.min(pg1, pg2), valid_mask)
+
+    value_n = (value - return_mean) / return_std
+    old_value_n = (old_value - return_mean) / return_std
+    return_n = (return_ - return_mean) / return_std
+    value_clipped_n = old_value_n + torch.clamp(
+        value_n - old_value_n, -value_clip_ratio, value_clip_ratio
+    )
+    vl_unclipped = (value_n - return_n) ** 2
+    vl_clipped = (value_clipped_n - return_n) ** 2
+    v_mask = valid_mask if value_mask is None else value_mask
+    value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), v_mask)
+
+    entropy_mean = _masked_mean(entropy, valid_mask)
+    total_loss = policy_loss + value_coef * value_loss - entropy_coef * entropy_mean
+    approx_kl = _masked_mean(old_logprob - new_logprob, valid_mask)
+    clip_fraction = _masked_mean(((ratio - 1.0).abs() > clip_ratio).float(), valid_mask)
+    return PpoLossResult(
+        policy_loss=policy_loss,
+        value_loss=value_loss,
+        entropy=entropy_mean,
+        total_loss=total_loss,
+        approx_kl=approx_kl,
+        clip_fraction=clip_fraction,
+    )

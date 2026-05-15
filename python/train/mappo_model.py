@@ -89,6 +89,9 @@ class MappoConfig:
     target_conditioned_combat: bool = False
     target_selection_aux_coef: float = 0.0
     target_selection_aux_mode: str = "nearest_visible"
+    # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
+    # else CPU). Resolved to ``torch.device`` once in the trainer.
+    device: str = "cpu"
 
 
 @dataclass(frozen=True)
