@@ -7,6 +7,7 @@ team-level critic observation supplied by ``Phase4MappoEnv``.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import torch
@@ -70,6 +71,9 @@ class MappoConfig:
     team_spirit_initial: float = 0.0
     team_spirit_final: float = 0.0
     team_spirit_ramp_fraction: float = 0.3
+    # Escape Protocol 5.1: optional auxiliary supervised loss that predicts
+    # the angle to the visible enemy from the actor path.
+    aim_aux_coef: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -205,6 +209,8 @@ class MappoActorCritic(nn.Module):
             )
         else:
             raise ValueError(f"unknown obs_encoder {cfg.obs_encoder!r}")
+        if cfg.aim_aux_coef > 0.0 and cfg.obs_encoder != "flat":
+            raise ValueError("aim_aux_coef currently supports only flat Phase-4 observations")
         self.actor_gru = nn.GRUCell(cfg.embed_dim, cfg.gru_hidden)
         self.actor_body = nn.Sequential(
             nn.Linear(cfg.gru_hidden, cfg.head_hidden),
@@ -214,6 +220,9 @@ class MappoActorCritic(nn.Module):
         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
         self.actor_target_head = (
             nn.Linear(cfg.head_hidden, cfg.target_action_dim) if cfg.target_action_dim > 0 else None
+        )
+        self.actor_aim_aux_head = (
+            nn.Linear(cfg.head_hidden, 1) if cfg.aim_aux_coef > 0.0 else None
         )
         self.log_std = nn.Parameter(torch.ones(cfg.continuous_action_dim) * cfg.action_log_std_init)
         self.critic = nn.Sequential(
@@ -237,15 +246,25 @@ class MappoActorCritic(nn.Module):
         torch.Tensor | None,
         torch.Tensor,
     ]:
-        emb = self._actor_features(obs)
-        h_next = self.actor_gru(emb, h)
-        features = self.actor_body(h_next)
+        features, h_next = self.actor_head_features(obs, h)
         mean = self.actor_mean_head(features)
         logits = self.actor_binary_head(features)
         target_logits = (
             self.actor_target_head(features) if self.actor_target_head is not None else None
         )
         return mean, self.log_std, logits, target_logits, h_next
+
+    def actor_head_features(
+        self, obs: torch.Tensor, h: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        emb = self._actor_features(obs)
+        h_next = self.actor_gru(emb, h)
+        return self.actor_body(h_next), h_next
+
+    def aim_aux_prediction_from_features(self, features: torch.Tensor) -> torch.Tensor | None:
+        if self.actor_aim_aux_head is None:
+            return None
+        return self.actor_aim_aux_head(features).squeeze(-1)
 
     def _actor_features(self, obs: torch.Tensor) -> torch.Tensor:
         if self.cfg.obs_encoder == "flat":
@@ -337,3 +356,51 @@ class MappoActorCritic(nn.Module):
             pieces.append(target_logits.argmax(dim=-1).to(obs.dtype).unsqueeze(-1))
         action = torch.cat(pieces, dim=-1)
         return action, h_next
+
+
+def aim_aux_targets(
+    obs: torch.Tensor, cfg: MappoConfig
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return target enemy angle in radians and a visibility mask.
+
+    Phase-4 flat actor observations expose the nearest enemy alive flag at
+    index 10 and relative position at indices 12:14. The target is the angle
+    from the agent to that visible enemy in the actor observation frame.
+    """
+    if cfg.obs_encoder != "flat":
+        target = torch.zeros(obs.shape[0], dtype=obs.dtype, device=obs.device)
+        mask = torch.zeros(obs.shape[0], dtype=torch.bool, device=obs.device)
+        return target, mask
+    enemy_alive = obs[:, 10] > 0.5
+    enemy_rel_pos = obs[:, 12:14]
+    rel_norm = torch.linalg.vector_norm(enemy_rel_pos, dim=-1)
+    target = torch.atan2(enemy_rel_pos[:, 1], enemy_rel_pos[:, 0])
+    return target, enemy_alive & (rel_norm > 1.0e-6)
+
+
+def wrapped_angle_error(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Smallest signed angle difference in radians."""
+    return torch.atan2(torch.sin(pred - target), torch.cos(pred - target))
+
+
+def aim_aux_loss_and_rmse(
+    pred: torch.Tensor | None,
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if pred is None:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, zero
+    target, visible = aim_aux_targets(obs, cfg)
+    valid = visible
+    if mask is not None:
+        valid = valid & (mask.reshape(-1) > 0.0)
+    count = valid.to(obs.dtype).sum()
+    if float(count.item()) <= 0.0:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, count
+    err = wrapped_angle_error(pred, target)
+    mse = (err[valid] ** 2).mean()
+    return mse, mse.sqrt().clamp(max=math.pi), count

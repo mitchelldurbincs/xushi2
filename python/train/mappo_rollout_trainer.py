@@ -12,7 +12,12 @@ if TYPE_CHECKING:
     import gymnasium as gym
 
 from train.mappo_advantage import compute_gae
-from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
+from train.mappo_model import (
+    _OWN_POSITION_SLICE,
+    MappoActorCritic,
+    MappoConfig,
+    aim_aux_loss_and_rmse,
+)
 from train.phases import resolve_phase
 from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
 from xushi2.entity_obs import entity_obs_self_position
@@ -88,6 +93,7 @@ class MappoTrainer:
                         "actor_mean_head",
                         "actor_binary_head",
                         "actor_target_head",
+                        "actor_aim_aux_head",
                     )
                 )
                 or name == "log_std"
@@ -350,25 +356,47 @@ class MappoTrainer:
         cfg = self.cfg
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
-        logprobs, entropies = [], []
+        logprobs, entropies, aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], [], [], []
         h = flat_h
         for t in range(L):
             obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
-            mean, log_std, logits, target_logits, h = self.model.policy_outputs(obs_t, h)
+            features, h = self.model.actor_head_features(obs_t, h)
+            mean = self.model.actor_mean_head(features)
+            log_std = self.model.log_std
+            logits = self.model.actor_binary_head(features)
+            target_logits = (
+                self.model.actor_target_head(features)
+                if self.model.actor_target_head is not None
+                else None
+            )
             target_logits = self.model._masked_target_logits(
                 target_logits, self.model._target_mask(obs_t)
             )
+            aim_pred = self.model.aim_aux_prediction_from_features(features)
             action_t = rollout.action[:, :, t].reshape(N * A, cfg.action_dim)
             logp, ent = self._action_logprob_and_entropy(
                 mean, log_std, logits, target_logits, action_t
             )
             logprobs.append(logp.view(N, A))
             entropies.append(ent.view(N, A))
+            flat_mask = rollout.agent_loss_mask[:, :, t].reshape(N * A)
+            aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+                aim_pred, obs_t, cfg, mask=flat_mask
+            )
+            aim_aux_losses.append(aim_loss)
+            aim_aux_rmses.append(aim_rmse)
+            aim_aux_counts.append(aim_count)
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
         new_logprob = torch.stack(logprobs, dim=2)
         entropy = torch.stack(entropies, dim=2)
+        aim_aux_loss = torch.stack(aim_aux_losses).mean()
+        aim_aux_count_total = torch.stack(aim_aux_counts).sum()
+        if float(aim_aux_count_total.item()) > 0.0:
+            aim_aux_rmse = torch.stack(aim_aux_rmses).mean()
+        else:
+            aim_aux_rmse = rollout.actor_obs.new_tensor(0.0)
         valid_agent = rollout.agent_loss_mask.expand(N, A, L)
         if cfg.value_per_agent:
             value = (
@@ -410,7 +438,12 @@ class MappoTrainer:
         vl_clipped = (value_clipped_n - return_n) ** 2
         value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), value_mask)
         entropy_mean = _masked_mean(entropy, valid_agent)
-        total_loss = policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_mean
+        total_loss = (
+            policy_loss
+            + cfg.value_coef * value_loss
+            - cfg.entropy_coef * entropy_mean
+            + cfg.aim_aux_coef * aim_aux_loss
+        )
 
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -432,6 +465,9 @@ class MappoTrainer:
             "approx_kl": float(approx_kl.item()),
             "clip_fraction": float(clip_fraction.item()),
             "total_loss": float(total_loss.item()),
+            "aim_aux_loss": float(aim_aux_loss.item()),
+            "aim_aux_rmse": float(aim_aux_rmse.item()),
+            "aim_aux_count": float(aim_aux_count_total.item()),
             "actor_grad_norm": actor_grad_norm,
             "critic_grad_norm": critic_grad_norm,
             "trunk_grad_norm": trunk_grad_norm,
@@ -498,4 +534,5 @@ def make_mappo_config(config: dict) -> MappoConfig:
         team_spirit_initial=float(ppo_cfg.get("team_spirit_initial", 0.0)),
         team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
         team_spirit_ramp_fraction=float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3)),
+        aim_aux_coef=float(ppo_cfg.get("aim_aux_coef", 0.0)),
     )

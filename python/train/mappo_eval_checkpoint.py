@@ -5,15 +5,24 @@ from pathlib import Path
 
 import torch
 
-from train.mappo_bc_pretrain import bc_pretrain_walk_and_shoot_to_objective, bc_pretrain_walk_to_objective
-from train.mappo_model import compute_team_spirit
+from train.mappo_bc_pretrain import (
+    bc_pretrain_walk_and_shoot_to_objective,
+    bc_pretrain_walk_to_objective,
+)
+from train.mappo_eval_gate_io import EvalGateConfig, read_json_artifact, run_eval_gate
+from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
+from train.mappo_matrix_eval import (
+    CheckpointEnvConfig,
+    MatrixEvalConfig,
+    matrix_gate_label,
+    matrix_retention_summary,
+    run_mappo_matrix_eval,
+)
+from train.mappo_model import MappoActorCritic, compute_team_spirit
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
 from train.ppo_recurrent.lr_schedule import lr_for_update
 from train.wandb_logger import make_logger
-from train.mappo_eval_gate_io import EvalGateConfig, read_json_artifact, run_eval_gate, write_json_artifact
-from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
-from train.mappo_matrix_eval import CheckpointEnvConfig, MatrixEvalConfig, matrix_gate_label, matrix_retention_summary, run_mappo_matrix_eval
 from xushi2.snapshot_retention import SnapshotRetention
 
 
@@ -79,7 +88,21 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     init_ckpt = run_cfg.get("init_from_checkpoint")
     if init_ckpt:
         raw = torch.load(init_ckpt, map_location="cpu", weights_only=False)
-        trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
+        if cfg.aim_aux_coef > 0.0:
+            load_result = trainer.model.load_state_dict(raw["model_state_dict"], strict=False)
+            unexpected = list(load_result.unexpected_keys)
+            missing = [
+                key
+                for key in load_result.missing_keys
+                if not key.startswith("actor_aim_aux_head.")
+            ]
+            if missing or unexpected:
+                raise RuntimeError(
+                    "warm-start checkpoint mismatch outside auxiliary aim head: "
+                    f"missing={missing}, unexpected={unexpected}"
+                )
+        else:
+            trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
         print(
             f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}",
             flush=True,
@@ -92,7 +115,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         bc_steps = int(run_cfg.get("bc_pretrain_steps", 0))
         if bc_steps > 0:
             bc_variant = str(run_cfg.get("bc_pretrain_variant", "walk_to_objective"))
-            bc_fn = bc_pretrain_walk_and_shoot_to_objective if bc_variant == "walk_and_shoot" else bc_pretrain_walk_to_objective
+            bc_fn = (
+                bc_pretrain_walk_and_shoot_to_objective
+                if bc_variant == "walk_and_shoot"
+                else bc_pretrain_walk_to_objective
+            )
             bc_fn(
                 trainer.model,
                 env_fn,

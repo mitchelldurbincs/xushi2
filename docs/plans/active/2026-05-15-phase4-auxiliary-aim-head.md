@@ -44,3 +44,17 @@ enemy from the actor path.
 Only after the implementation diagnostic succeeds should a new Phase 4 config
 be created. That config must include `metadata.hypothesis`,
 `metadata.falsification_criteria`, and a cheap diagnostic result in the journal.
+
+## Implementation Note
+
+Implemented in commit draft following this plan:
+
+- Aux head is opt-in via `ppo.aim_aux_coef`.
+- Existing checkpoints without the head can warm-start aux-enabled models; only
+  `actor_aim_aux_head.*` keys may be missing.
+- Cheap BC-only diagnostic on the Phase 4 smoke env reduced fixed-batch
+  auxiliary RMSE from `1.8184` to `1.3880` over 40 BC steps.
+- Focused verification:
+  `cd python && .venv/bin/pytest tests/test_mappo_aux_aim.py tests/test_phase_registry.py::test_phase4_smoke_config_builds_mappo_config tests/test_mappo_warm_start.py::test_mappo_warm_starts_from_init_checkpoint tests/test_mappo_loss_mask.py -q`
+  and
+  `cd python && .venv/bin/ruff check train/mappo_model.py train/mappo_rollout_trainer.py train/mappo_bc_pretrain.py train/mappo_eval_checkpoint.py tests/test_mappo_aux_aim.py`.
