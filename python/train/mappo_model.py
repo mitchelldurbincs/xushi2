@@ -56,6 +56,7 @@ class MappoConfig:
     entropy_coef_binary: float | None = None
     target_action_dim: int = 0
     value_per_agent: bool = False
+    mask_fire_when_no_visible_enemy: bool = False
     lr_schedule: str = "constant"
     lr_final_ratio: float = 1.0
     warmup_updates: int = 0
@@ -216,6 +217,10 @@ class MappoActorCritic(nn.Module):
             raise ValueError(f"unknown obs_encoder {cfg.obs_encoder!r}")
         if cfg.aim_aux_coef > 0.0 and cfg.obs_encoder != "flat":
             raise ValueError("aim_aux_coef currently supports only flat Phase-4 observations")
+        if cfg.mask_fire_when_no_visible_enemy and cfg.obs_encoder != "flat":
+            raise ValueError(
+                "mask_fire_when_no_visible_enemy currently supports only flat observations"
+            )
         self.actor_gru = nn.GRUCell(cfg.embed_dim, cfg.gru_hidden)
         self.actor_body = nn.Sequential(
             nn.Linear(cfg.gru_hidden, cfg.head_hidden),
@@ -320,10 +325,25 @@ class MappoActorCritic(nn.Module):
             return target_logits
         return target_logits.masked_fill(~target_mask, -1.0e9)
 
+    def fire_valid_mask(self, obs: torch.Tensor) -> torch.Tensor | None:
+        if not self.cfg.mask_fire_when_no_visible_enemy:
+            return None
+        _target, visible = aim_aux_targets(obs, self.cfg)
+        return visible
+
+    def masked_binary_logits(self, obs: torch.Tensor, logits: torch.Tensor) -> torch.Tensor:
+        fire_valid = self.fire_valid_mask(obs)
+        if fire_valid is None or logits.shape[-1] == 0:
+            return logits
+        masked = logits.clone()
+        masked[:, 0] = masked[:, 0].masked_fill(~fire_valid, -1.0e9)
+        return masked
+
     def sample_action(
         self, obs: torch.Tensor, h: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mean, log_std, logits, target_logits, h_next = self.policy_outputs(obs, h)
+        logits = self.masked_binary_logits(obs, logits)
         target_logits = self._masked_target_logits(target_logits, self._target_mask(obs))
         pieces: list[torch.Tensor] = []
         logprob = torch.zeros(obs.shape[0], device=obs.device, dtype=obs.dtype)
@@ -353,6 +373,7 @@ class MappoActorCritic(nn.Module):
         self, obs: torch.Tensor, h: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         mean, _log_std, logits, target_logits, h_next = self.policy_outputs(obs, h)
+        logits = self.masked_binary_logits(obs, logits)
         target_logits = self._masked_target_logits(target_logits, self._target_mask(obs))
         pieces = [torch.tanh(mean), (logits >= 0.0).to(obs.dtype)]
         if self.cfg.target_action_dim > 0:

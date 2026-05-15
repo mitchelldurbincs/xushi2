@@ -331,6 +331,12 @@ class MappoTrainer:
             out["action_target_slot_mean"] = float(
                 _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
             )
+        if cfg.mask_fire_when_no_visible_enemy:
+            valid = self.model.fire_valid_mask(rollout.actor_obs.reshape(-1, cfg.obs_dim))
+            if valid is not None:
+                out["fire_valid_fraction"] = float(
+                    _masked_mean(valid.to(agent_mask.dtype), agent_mask.reshape(-1)).item()
+                )
         return out
 
     def _action_logprob_and_entropy(
@@ -410,6 +416,7 @@ class MappoTrainer:
             mean = self.model.actor_mean_head(features)
             log_std = self.model.log_std
             logits = self.model.actor_binary_head(features)
+            logits = self.model.masked_binary_logits(obs_t, logits)
             target_logits = (
                 self.model.actor_target_head(features)
                 if self.model.actor_target_head is not None
@@ -579,6 +586,9 @@ def make_mappo_config(config: dict) -> MappoConfig:
         binary_action_dim=int(phase_spec["binary_action_dim"]),
         target_action_dim=int(phase_spec.get("target_action_dim", 0)),
         value_per_agent=bool(ppo_cfg.get("value_per_agent", False)),
+        mask_fire_when_no_visible_enemy=bool(
+            ppo_cfg.get("mask_fire_when_no_visible_enemy", False)
+        ),
         embed_dim=int(model_cfg["embed_dim"]),
         gru_hidden=int(model_cfg["gru_hidden"]),
         head_hidden=int(model_cfg["head_hidden"]),

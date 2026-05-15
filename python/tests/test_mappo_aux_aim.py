@@ -25,6 +25,7 @@ def _phase4_smoke_cfg(
     entropy_coef_move: float | None = None,
     entropy_coef_aim: float | None = None,
     entropy_coef_binary: float | None = None,
+    mask_fire_when_no_visible_enemy: bool = False,
 ) -> dict:
     ppo = {
         "num_envs": 2,
@@ -46,6 +47,7 @@ def _phase4_smoke_cfg(
         "value_coef": 0.5,
         "max_grad_norm": 0.5,
         "aim_aux_coef": aim_aux_coef,
+        "mask_fire_when_no_visible_enemy": mask_fire_when_no_visible_enemy,
     }
     if entropy_coef_move is not None:
         ppo["entropy_coef_move"] = entropy_coef_move
@@ -234,3 +236,53 @@ def test_mappo_update_logs_per_action_entropy_bonus(tmp_path: Path) -> None:
         + 0.05 * metrics["entropy_binary"]
     )
     assert metrics["entropy_bonus"] == pytest.approx(expected_bonus)
+
+
+def test_make_mappo_config_parses_invalid_fire_mask_flag(tmp_path: Path) -> None:
+    cfg = make_mappo_config(
+        _phase4_smoke_cfg(tmp_path, mask_fire_when_no_visible_enemy=True)
+    )
+
+    assert cfg.mask_fire_when_no_visible_enemy is True
+
+
+def test_invalid_fire_mask_suppresses_primary_fire_for_hidden_enemy(tmp_path: Path) -> None:
+    cfg = make_mappo_config(
+        _phase4_smoke_cfg(tmp_path, mask_fire_when_no_visible_enemy=True)
+    )
+    model = MappoActorCritic(cfg)
+    with torch.no_grad():
+        model.actor_binary_head.weight.zero_()
+        model.actor_binary_head.bias.fill_(10.0)
+
+    obs = torch.zeros(2, cfg.obs_dim)
+    obs[1, 10] = 1.0
+    obs[1, 12] = 1.0
+    h = model.init_hidden(2)
+
+    action, _h_next = model.greedy_action(obs, h)
+    primary_fire = action[:, cfg.continuous_action_dim]
+
+    assert primary_fire.tolist() == [0.0, 1.0]
+
+
+def test_mappo_update_logs_invalid_fire_mask_fraction(tmp_path: Path) -> None:
+    config = _phase4_smoke_cfg(tmp_path, mask_fire_when_no_visible_enemy=True)
+    cfg = make_mappo_config(config)
+    trainer = MappoTrainer(
+        lambda: __import__("envs").Phase4MappoEnv(
+            config["env"]["sim"],
+            opponent_bot="noop",
+            learner_team="A",
+            reward_cfg={},
+        ),
+        cfg,
+        seed=0,
+    )
+    try:
+        metrics = trainer.update(trainer.collect_rollout())
+    finally:
+        trainer.close()
+
+    assert "fire_valid_fraction" in metrics
+    assert 0.0 <= metrics["fire_valid_fraction"] <= 1.0
