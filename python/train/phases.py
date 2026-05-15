@@ -43,7 +43,16 @@ def _make_phase4_env(
     opponent_bot: str,
     learner_team: str,
     reward_cfg: dict,
+    mini_game: str | None = None,
+    mini_game_cfg: dict | None = None,
 ):
+    if mini_game == "aim_only":
+        from envs import Phase4AimOnlyMappoEnv
+
+        return Phase4AimOnlyMappoEnv(**dict(mini_game_cfg or {}))
+    if mini_game not in (None, ""):
+        raise ValueError(f"unknown phase4 mini_game {mini_game!r}")
+
     from envs import Phase4MappoEnv
 
     return Phase4MappoEnv(
@@ -253,6 +262,12 @@ def _phase3_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
 def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     env_cfg = config.get("env", {})
     base_cfg = _extract_base_env_cfg(env_cfg)
+    mini_game = env_cfg.get("mini_game")
+    mini_game_cfg = dict(env_cfg.get("mini_game_config", {}))
+    ckpt_env_cfg = dict(base_cfg)
+    if mini_game is not None:
+        ckpt_env_cfg["mini_game"] = str(mini_game)
+        ckpt_env_cfg["mini_game_config"] = mini_game_cfg
     return (
         partial(
             _make_phase4_env,
@@ -260,8 +275,10 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
             base_cfg["opponent_bot"],
             base_cfg["learner_team"],
             base_cfg["reward"],
+            None if mini_game is None else str(mini_game),
+            mini_game_cfg,
         ),
-        base_cfg,
+        ckpt_env_cfg,
         _resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
