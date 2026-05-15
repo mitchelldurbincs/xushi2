@@ -87,7 +87,7 @@ ppo:
   aim_aux_coef: 1.0
 
 run:
-  total_updates: 1000
+  total_updates: 500
   eval_every: 50
   eval_episodes: 50
   checkpoint_every: 50
