@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+from pathlib import Path
+
 import torch
 
 from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
-from train.mappo_bc_pretrain import bc_pretrain_walk_and_shoot_to_objective
+from train.mappo_bc_pretrain import (
+    _collect_walk_bc_sequence,
+    _walk_and_shoot_to_objective_targets,
+    bc_pretrain_walk_and_shoot_to_objective,
+    load_bc_aim_target_model,
+)
 from train.mappo_model import MappoActorCritic
 from train.mappo_rollout_trainer import make_mappo_config
 
@@ -114,3 +122,51 @@ def test_bc_without_freeze_updates_actor_trunk_and_aim_row() -> None:
     assert not torch.allclose(
         after["actor_mean_head.weight"][2], before["actor_mean_head.weight"][2]
     )
+
+
+def _constant_aim_checkpoint(path: Path, aim: float) -> None:
+    cfg = make_mappo_config(_aim_only_cfg())
+    model = MappoActorCritic(cfg)
+    with torch.no_grad():
+        for param in model.parameters():
+            param.zero_()
+        model.actor_mean_head.bias[2] = torch.atanh(torch.tensor(aim))
+    torch.save(
+        {
+            "config": {"mappo": asdict(cfg)},
+            "model_state_dict": model.state_dict(),
+        },
+        path,
+    )
+
+
+def test_load_bc_aim_target_model_freezes_checkpoint(tmp_path: Path) -> None:
+    cfg = make_mappo_config(_aim_only_cfg())
+    ckpt = tmp_path / "aim_target.pt"
+    _constant_aim_checkpoint(ckpt, aim=0.25)
+
+    model = load_bc_aim_target_model(ckpt, cfg)
+
+    assert not model.training
+    assert all(not param.requires_grad for param in model.parameters())
+
+
+def test_walk_and_shoot_bc_can_replace_only_aim_from_checkpoint(tmp_path: Path) -> None:
+    cfg = make_mappo_config(_aim_only_cfg())
+    ckpt = tmp_path / "aim_target.pt"
+    _constant_aim_checkpoint(ckpt, aim=0.25)
+    aim_target_model = load_bc_aim_target_model(ckpt, cfg)
+
+    obs_seq, target_seq = _collect_walk_bc_sequence(
+        lambda: Phase4AimOnlyMappoEnv(episode_decisions=4),
+        cfg,
+        batch_size=12,
+        seed=0,
+        target_fn=_walk_and_shoot_to_objective_targets,
+        aim_target_model=aim_target_model,
+    )
+    crude_targets = _walk_and_shoot_to_objective_targets(obs_seq[0], cfg)
+
+    assert torch.allclose(target_seq[0, :, 2], torch.full((3,), 0.25), atol=1.0e-6)
+    assert torch.allclose(target_seq[0, :, :2], crude_targets[:, :2])
+    assert torch.allclose(target_seq[0, :, 3:], crude_targets[:, 3:])

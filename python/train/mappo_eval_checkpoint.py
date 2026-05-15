@@ -115,22 +115,54 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         bc_steps = int(run_cfg.get("bc_pretrain_steps", 0))
         if bc_steps > 0:
             bc_variant = str(run_cfg.get("bc_pretrain_variant", "walk_to_objective"))
-            bc_fn = (
-                bc_pretrain_walk_and_shoot_to_objective
-                if bc_variant == "walk_and_shoot"
-                else bc_pretrain_walk_to_objective
-            )
-            bc_fn(
-                trainer.model,
-                env_fn,
-                cfg,
-                steps=bc_steps,
-                batch_size=int(run_cfg.get("bc_batch_size", 1024)),
-                learning_rate=float(run_cfg.get("bc_learning_rate", 1.0e-3)),
-                seed=seed_base + 50_000,
-                log_label=phase_label,
-                freeze_actor_aim=bool(run_cfg.get("bc_freeze_actor_aim", False)),
-            )
+            bc_kwargs = {
+                "steps": bc_steps,
+                "batch_size": int(run_cfg.get("bc_batch_size", 1024)),
+                "learning_rate": float(run_cfg.get("bc_learning_rate", 1.0e-3)),
+                "seed": seed_base + 50_000,
+                "log_label": phase_label,
+                "freeze_actor_aim": bool(run_cfg.get("bc_freeze_actor_aim", False)),
+            }
+            if bc_variant == "walk_and_shoot":
+                aim_rehearsal_env_fn = None
+                aim_rehearsal_batch_size = int(run_cfg.get("bc_aim_rehearsal_batch_size", 0))
+                if aim_rehearsal_batch_size > 0:
+                    from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
+
+                    target_ckpt = run_cfg.get("bc_aim_target_checkpoint")
+                    if not target_ckpt:
+                        raise ValueError(
+                            "bc_aim_rehearsal_batch_size requires bc_aim_target_checkpoint"
+                        )
+                    target_raw = torch.load(target_ckpt, map_location="cpu", weights_only=False)
+                    mini_game_cfg = dict(
+                        target_raw.get("config", {}).get("env", {}).get(
+                            "mini_game_config", {}
+                        )
+                    )
+                    if not mini_game_cfg:
+                        raise ValueError(
+                            "bc_aim_target_checkpoint does not contain env.mini_game_config"
+                        )
+
+                    def aim_rehearsal_env_fn() -> Phase4AimOnlyMappoEnv:
+                        return Phase4AimOnlyMappoEnv(**mini_game_cfg)
+                bc_pretrain_walk_and_shoot_to_objective(
+                    trainer.model,
+                    env_fn,
+                    cfg,
+                    aim_target_checkpoint=run_cfg.get("bc_aim_target_checkpoint"),
+                    aim_rehearsal_env_fn=aim_rehearsal_env_fn,
+                    aim_rehearsal_batch_size=aim_rehearsal_batch_size,
+                    **bc_kwargs,
+                )
+            else:
+                bc_pretrain_walk_to_objective(
+                    trainer.model,
+                    env_fn,
+                    cfg,
+                    **bc_kwargs,
+                )
             eval_stats = evaluate_mappo(
                 trainer.model,
                 env_fn,

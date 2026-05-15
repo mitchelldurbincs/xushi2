@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
@@ -15,8 +16,10 @@ from train.mappo_model import (
     aim_aux_loss_and_rmse,
 )
 from xushi2.entity_obs import entity_obs_self_position
+from xushi2.obs_manifest import actor_field_slice
 
 _AIM_ACTION_INDEX = 2
+_ENEMY_ALIVE_SLICE = actor_field_slice("enemy_alive")
 
 
 @contextmanager
@@ -82,6 +85,40 @@ def _bc_trainable_parameters(model: MappoActorCritic) -> list[nn.Parameter]:
     return [param for param in model.parameters() if param.requires_grad]
 
 
+def load_bc_aim_target_model(
+    checkpoint_path: str | Path,
+    cfg: MappoConfig,
+) -> MappoActorCritic:
+    raw = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    ckpt_cfg_raw = dict(raw.get("config", {}).get("mappo", {}))
+    if not ckpt_cfg_raw:
+        raise ValueError(f"checkpoint {checkpoint_path} does not contain config.mappo")
+    ckpt_cfg = MappoConfig(**ckpt_cfg_raw)
+    if ckpt_cfg.obs_encoder != "flat":
+        raise ValueError("BC aim-target checkpoint inference currently supports only flat obs")
+    compatibility = {
+        "n_agents": (ckpt_cfg.n_agents, cfg.n_agents),
+        "obs_dim": (ckpt_cfg.obs_dim, cfg.obs_dim),
+        "action_dim": (ckpt_cfg.action_dim, cfg.action_dim),
+        "continuous_action_dim": (
+            ckpt_cfg.continuous_action_dim,
+            cfg.continuous_action_dim,
+        ),
+    }
+    mismatches = {k: v for k, v in compatibility.items() if v[0] != v[1]}
+    if mismatches:
+        raise ValueError(f"BC aim-target checkpoint is incompatible: {mismatches}")
+    if ckpt_cfg.continuous_action_dim <= _AIM_ACTION_INDEX:
+        raise ValueError("BC aim-target checkpoint has no continuous aim action")
+
+    model = MappoActorCritic(ckpt_cfg)
+    model.load_state_dict(raw["model_state_dict"], strict=True)
+    model.eval()
+    for param in model.parameters():
+        param.requires_grad_(False)
+    return model
+
+
 def _walk_to_objective_targets(obs: torch.Tensor, cfg: MappoConfig) -> torch.Tensor:
     if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
         own_pos_np = entity_obs_self_position(obs.detach().cpu().numpy())
@@ -135,6 +172,33 @@ def _walk_and_shoot_to_objective_targets(obs: torch.Tensor, cfg: MappoConfig) ->
     return target
 
 
+@torch.no_grad()
+def _replace_aim_target_from_model(
+    target: torch.Tensor,
+    obs: torch.Tensor,
+    h: torch.Tensor,
+    aim_target_model: MappoActorCritic,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    if obs.shape[1] != aim_target_model.cfg.obs_dim:
+        raise ValueError(
+            "BC aim-target model obs_dim mismatch: "
+            f"obs={obs.shape[1]}, model={aim_target_model.cfg.obs_dim}"
+        )
+    device = next(aim_target_model.parameters()).device
+    obs_for_model = obs.to(device=device, dtype=next(aim_target_model.parameters()).dtype)
+    h_for_model = h.to(device=device, dtype=obs_for_model.dtype)
+    features, h_next = aim_target_model.actor_head_features(obs_for_model, h_for_model)
+    aim = torch.tanh(aim_target_model.actor_mean_head(features))[:, _AIM_ACTION_INDEX]
+    visible_enemy = obs_for_model[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    out = target.clone()
+    out[:, _AIM_ACTION_INDEX] = torch.where(
+        visible_enemy.to(device=target.device),
+        aim.to(device=target.device, dtype=target.dtype),
+        out[:, _AIM_ACTION_INDEX],
+    )
+    return out, h_next.detach()
+
+
 def _collect_walk_bc_sequence(
     env_fn: Callable[[], gym.Env],
     cfg: MappoConfig,
@@ -142,20 +206,30 @@ def _collect_walk_bc_sequence(
     batch_size: int,
     seed: int,
     target_fn: Callable[[torch.Tensor, MappoConfig], torch.Tensor] = _walk_to_objective_targets,
+    aim_target_model: MappoActorCritic | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     obs_parts: list[np.ndarray] = []
     target_parts: list[np.ndarray] = []
     max_decisions = max(1, int(np.ceil(float(batch_size) / float(cfg.n_agents))))
     env = env_fn()
+    aim_h = aim_target_model.init_hidden(cfg.n_agents) if aim_target_model is not None else None
     try:
         obs, _info = env.reset(seed=seed)
         for _ in range(max_decisions):
             obs_parts.append(obs.astype(np.float32, copy=True))
-            target = target_fn(torch.as_tensor(obs, dtype=torch.float32), cfg)
+            obs_tensor = torch.as_tensor(obs, dtype=torch.float32)
+            target = target_fn(obs_tensor, cfg)
+            if aim_target_model is not None:
+                assert aim_h is not None
+                target, aim_h = _replace_aim_target_from_model(
+                    target, obs_tensor, aim_h, aim_target_model
+                )
             target_parts.append(target.numpy().astype(np.float32, copy=True))
             obs, _reward, term, trunc, _info = env.step(target.numpy())
             if term or trunc:
                 obs, _info = env.reset(seed=seed + len(obs_parts))
+                if aim_target_model is not None:
+                    aim_h = aim_target_model.init_hidden(cfg.n_agents)
     finally:
         env.close()
     obs_seq = torch.as_tensor(np.stack(obs_parts, axis=0), dtype=torch.float32)
@@ -258,15 +332,29 @@ def bc_pretrain_walk_and_shoot_to_objective(
     seed: int,
     log_label: str = "phase4",
     freeze_actor_aim: bool = False,
+    aim_target_checkpoint: str | Path | None = None,
+    aim_rehearsal_env_fn: Callable[[], gym.Env] | None = None,
+    aim_rehearsal_batch_size: int = 0,
 ) -> None:
     """BC pretrain that walks to cap, aims at enemies, and fires when visible."""
     if steps <= 0:
         return
+    aim_target_model = (
+        load_bc_aim_target_model(aim_target_checkpoint, cfg)
+        if aim_target_checkpoint is not None
+        else None
+    )
     with _freeze_actor_aim_for_bc(model, cfg, enabled=freeze_actor_aim):
         opt = torch.optim.Adam(_bc_trainable_parameters(model), lr=float(learning_rate))
         if freeze_actor_aim:
             print(
                 f"[{log_label}/mappo] bc_pretrain_walk_and_shoot freeze_actor_aim=true",
+                flush=True,
+            )
+        if aim_target_checkpoint is not None:
+            print(
+                f"[{log_label}/mappo] bc_pretrain_walk_and_shoot "
+                f"aim_target_checkpoint={aim_target_checkpoint}",
                 flush=True,
             )
         for step in range(1, int(steps) + 1):
@@ -276,41 +364,60 @@ def bc_pretrain_walk_and_shoot_to_objective(
                 batch_size=int(batch_size),
                 seed=int(seed) + step,
                 target_fn=_walk_and_shoot_to_objective_targets,
+                aim_target_model=aim_target_model,
             )
-            h = model.init_hidden(cfg.n_agents)
             cont_losses = []
             binary_losses = []
             aim_aux_losses = []
             aim_aux_rmses = []
             aim_aux_counts = []
-            for t in range(obs_seq.shape[0]):
-                features, h = model.actor_head_features(obs_seq[t], h)
-                mean = model.actor_mean_head(features)
-                logits = model.actor_binary_head(features)
-                pred_cont = torch.tanh(mean)
-                target = target_seq[t]
-                cont_losses.append(
-                    torch.nn.functional.mse_loss(
-                        pred_cont, target[:, : cfg.continuous_action_dim]
+
+            sequences = [(obs_seq, target_seq)]
+            if (
+                aim_target_model is not None
+                and aim_rehearsal_env_fn is not None
+                and int(aim_rehearsal_batch_size) > 0
+            ):
+                rehearsal_obs_seq, rehearsal_target_seq = _collect_walk_bc_sequence(
+                    aim_rehearsal_env_fn,
+                    cfg,
+                    batch_size=int(aim_rehearsal_batch_size),
+                    seed=int(seed) + 1_000_000 + step,
+                    target_fn=_walk_and_shoot_to_objective_targets,
+                    aim_target_model=aim_target_model,
+                )
+                sequences.append((rehearsal_obs_seq, rehearsal_target_seq))
+
+            for seq_obs, seq_target in sequences:
+                h = model.init_hidden(cfg.n_agents)
+                for t in range(seq_obs.shape[0]):
+                    features, h = model.actor_head_features(seq_obs[t], h)
+                    mean = model.actor_mean_head(features)
+                    logits = model.actor_binary_head(features)
+                    pred_cont = torch.tanh(mean)
+                    target = seq_target[t]
+                    cont_losses.append(
+                        torch.nn.functional.mse_loss(
+                            pred_cont, target[:, : cfg.continuous_action_dim]
+                        )
                     )
-                )
-                binary_losses.append(
-                    torch.nn.functional.binary_cross_entropy_with_logits(
-                        logits,
-                        target[
-                            :,
-                            cfg.continuous_action_dim : cfg.continuous_action_dim
-                            + cfg.binary_action_dim,
-                        ],
+                    binary_losses.append(
+                        torch.nn.functional.binary_cross_entropy_with_logits(
+                            logits,
+                            target[
+                                :,
+                                cfg.continuous_action_dim : cfg.continuous_action_dim
+                                + cfg.binary_action_dim,
+                            ],
+                        )
                     )
-                )
-                aim_pred = model.aim_aux_prediction_from_features(features)
-                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
-                    aim_pred, obs_seq[t], cfg
-                )
-                aim_aux_losses.append(aim_loss)
-                aim_aux_rmses.append(aim_rmse)
-                aim_aux_counts.append(aim_count)
+                    aim_pred = model.aim_aux_prediction_from_features(features)
+                    aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+                        aim_pred, seq_obs[t], cfg
+                    )
+                    aim_aux_losses.append(aim_loss)
+                    aim_aux_rmses.append(aim_rmse)
+                    aim_aux_counts.append(aim_count)
             cont_loss = torch.stack(cont_losses).mean()
             binary_loss = torch.stack(binary_losses).mean()
             aim_aux_loss = torch.stack(aim_aux_losses).mean()

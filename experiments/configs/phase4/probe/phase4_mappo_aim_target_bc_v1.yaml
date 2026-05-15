@@ -1,0 +1,88 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: architecture_probe
+  status: experimental
+  expected_runtime: short
+  gate_relevance:
+  - phase4_architecture_break_glass
+  hypothesis: "The standard walk-and-shoot BC aim heuristic conflicts with the successful aim-only mini-game mapping; replacing only the BC aim target with frozen aim-only checkpoint inference while keeping walk-and-shoot movement/fire labels should preserve >=80/96 synthetic aim-only hits after BC and improve the first weak_basic full-env eval over the standard BC retention baseline."
+  falsification_criteria: "Falsified if 500-step BC with the checkpoint aim target yields <80/96 synthetic aim-only hits after BC, or if weak_basic BC/first-PPO eval still has 0 learner score and kills no better than the standard/frozen BC baselines."
+  max_updates_if_no_signal: 50
+  diagnostic: "Human-selected post-Option1 direction after frozen BC preserved aim-only skill but failed weak_basic transfer. This probe tests target replacement before any long run."
+  lineage: "Escalation Option 3 from t_825f8604 after phase4_mappo_aim_freeze_bc_v1 was falsified."
+  provenance: "Human decision on 2026-05-15: replace BC aim target with mini-game-trained aim prediction."
+
+# aim_target_bc_v1 — human-approved target-composition probe.
+#
+# The only intended lever versus aim_transfer_v1 is
+# `run.bc_aim_target_checkpoint`: movement and fire labels still come from
+# walk_and_shoot BC, but the continuous aim label is replaced with deterministic
+# inference from the successful aim-only checkpoint when an enemy is visible.
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 50
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_aim_target_bc_v1
+  init_from_checkpoint: runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
+  bc_aim_target_checkpoint: runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt
+  bc_aim_rehearsal_batch_size: 1024
