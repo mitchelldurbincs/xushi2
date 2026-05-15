@@ -568,3 +568,46 @@ combat/objective dynamics, not simple BC erasure of the synthetic aim mapping.
 Do not extend `aim_target_bc_v1` to a long run without a new diagnostic or
 instrumentation that explains why 90/96 synthetic aim hits still become only
 scoreless 5/5 weak_basic draws.
+
+## 2026-05-15 — Phase 4 next-experiment strategic analysis
+
+**Question:** should the next Phase 4 experiment implement the proposed
+`weak_basic_v2` opponent nerf, or should the plan change after 18+ falsified
+variants and the latest `aim_target_bc_v1` result?
+
+**Decision:** do not run `weak_basic_v2` next. It changes opponent aim noise,
+bot cooldown, bot damage, round length, LR, entropy, and BC warm start, but
+those axes have already been exhausted or weakened by prior falsifications:
+`weak_basic_v1` still drew, reduced-fire/cooldown variants did not escape the
+basin, damage variants changed score margins without producing learner score,
+and LR/entropy variants produced at most transient kill edges. Running another
+multi-axis opponent nerf would risk manufacturing wins without explaining why
+preserved synthetic aim still fails in full 3v3.
+
+**Implementation:** added `python/scripts/analyze_replay_combat.py`, a replay
+diagnostic that reconstructs existing text replays through the C++ sim and
+reports per-slot/team fire commands, visible-fire commands, damage-producing
+hit deltas, kill deltas, damage, nearest-visible-target aim error, and target
+distribution. It detects multi-episode replay dumps by tick rollback and resets
+the sim with the replay seed plus episode index. Outputs were written to
+`runs/phase4_replay_combat_diagnostics/`.
+
+**Cross-replay autopsy:** recent stochastic replays show the same pattern.
+Team A fires frequently and usually fires with a visible target, but hit
+conversion is poor. Team A damage-producing hits per fire command were
+`0.0096-0.0219`, while Team B converted `0.0231-0.0455`. Team A nearest-visible
+aim error stayed high (`1.466-1.684` radians), and target attribution remained
+diffuse instead of a reliable focus-fire policy. In the best recent probe,
+`aim_target_bc_v1`, Team A converted `97/4422` fire commands into damage and
+`2` kill deltas; Team B converted `201/4420` fire commands and `30` kill
+deltas.
+
+**Recommendation:** the next actual run should be instrumentation-gated
+combat composition, not `weak_basic_v2`. Add these hit/aim/focus metrics to the
+eval path for the next probe, then test a target-conditioned combat head or
+explicit target-selection head that keeps movement/objective behavior intact
+while conditioning aim/fire on a chosen enemy slot. Stop early if update 50
+does not improve hit/fire, target concentration, or score over
+`aim_target_bc_v1`.
+
+**Report:** `docs/reports/phase4_next_experiment_recommendation.md`.
