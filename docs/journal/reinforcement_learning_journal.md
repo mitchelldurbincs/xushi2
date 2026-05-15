@@ -290,3 +290,24 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 - Optional: replay inspection showing tracking/leading behavior
 
 **Next stage after success:** warm-start the combat-capable checkpoint into 3v3 objective control with `basic` opponent and normal objective rewards. The policy should now have both cap-holding (from v6_5 warm-start) AND aim quality (from this combat stage).
+
+## 2026-05-14 — Phase 4 v8_combat_pretrain_v1 (hold_and_shoot, 250 damage, pure combat, done)
+
+**CATASTROPHIC FAILURE: hold_and_shoot opponent stays at spawn, so ZERO COMBAT HAPPENED.**
+
+**BC phase:** 500 steps, loss 0.4386 → 0.0004. `walk_and_shoot` variant.
+
+**BC eval:** **50/50 WINS**, score **37-0**, kills **0/0**, mean_reward **+37.000**.
+
+**PPO evals (updates 50-500):**
+- Update 50: 50/50 wins, score **37-0**, kills **0.0/0.0**, mean_reward +37.000, bin=0.333
+- Update 100-400: same — 50/50 wins, score 37-0, kills 0.0/0.0, mean_reward +37.000, bin=0.333
+- Update 450-500: degraded to **50/50 draws**, score **0-0**, kills 0.0/0.0, mean_reward -1.000, bin=0.333
+
+**Root cause: hold_and_shoot bot stays at its spawn point. Our agents walk to the cap (opposite side of map). They never enter each other's line of fire.** The opponent never contests the cap, so our agents score 37 points uncontested. Zero shots fired in anger. Zero kills. Zero combat.
+
+**PPO had no combat reward signal** (kill_bonus and damage_dealt never triggered). The only signal was cap-scoring from the BC behavior, so PPO reinforced capping. Eventually it drifted and lost even that.
+
+**This proves: for combat pretraining to work, the opponent MUST be where our agents actually are.** `hold_and_shoot` at spawn + our agents at cap = no combat range.
+
+**Next approach: use `basic` bot (walks to cap) with survivable DPS. Bot walks to the same location as our agents, guaranteeing close-range combat. 250 damage + 60-tick cooldown means bot cannot kill anyone even with 100% accuracy in 60s rounds. Our ~10× fire-rate advantage should produce hits through sheer volume at close range.
