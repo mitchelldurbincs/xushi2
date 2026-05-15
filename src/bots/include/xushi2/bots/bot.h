@@ -44,11 +44,15 @@ std::unique_ptr<IBot> make_hold_and_shoot_bot();
 // Combination of walk-to-objective + shoot-visible. Weakest meaningful bot.
 std::unique_ptr<IBot> make_basic_bot();
 
+// Like basic but adds deterministic aim noise so shots frequently miss.
+// Used as a curriculum opponent that contests the cap without perfect aim.
+std::unique_ptr<IBot> make_weak_basic_bot();
+
 // Zero-action bot. Used as a deterministic control in tests.
 std::unique_ptr<IBot> make_noop_bot();
 
 // Factory by string name. Valid names: "walk_to_objective",
-// "hold_and_shoot", "basic", "noop". Unknown names abort via X2_REQUIRE.
+// "hold_and_shoot", "basic", "weak_basic", "noop". Unknown names abort via X2_REQUIRE.
 // Kept here so both the episode runner and the Python env wrapper can
 // dispatch without duplicating the name→factory mapping.
 std::unique_ptr<IBot> make_bot_by_name(std::string_view name);

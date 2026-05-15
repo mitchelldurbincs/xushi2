@@ -1,0 +1,113 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: combat_curriculum
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+  - phase4_combat_curriculum
+  lineage: "First run with new `weak_basic` bot — walks to cap like `basic` but aims with ±0.5 rad (~±28.6°) deterministic noise. This creates the missing curriculum rung: a bot that contests the objective, is weak enough to beat, and still forces combat."
+  provenance: C++ bot patch in src/bots/ adding WeakBasicBot class.
+
+# v9-weak_basic-v1 — NEW BOT TYPE with imperfect aim.
+#
+# Every prior config has failed because the available opponent bots bracket
+# the useful teacher too coarsely:
+#   - `hold_and_shoot`: shoots but stays at spawn → avoidance wins
+#   - `basic`: contests AND shoots with perfect aim ↔ too strong for learner
+#
+# This config adds `weak_basic`: same movement as `basic` (walks to cap,
+# seeks cover when hurt), same fire rate, but adds deterministic aim noise
+# of ±0.5 radians. The bot still fires at visible enemies and still walks
+# to the cap, but it misses frequently — especially at medium range —
+# giving our agents a genuine chance to survive, return fire, and win.
+#
+# Key design choices:
+#   - 30s rounds: prevents the stronger scripted combatant from compounding
+#     advantage over time (v6 proved 60s rounds make the bot stronger).
+#   - 1000 damage (~10 hits to die): lethal enough that hits matter,
+#     but not so lethal that one burst kills instantly.
+#   - LR 1e-6 + entropy 0.02: conservative PPO that preserved the draw
+#     basin for 450+ updates in v5. Here we want the same stability but
+#     with a genuinely beatable opponent, so the draw should break toward
+#     wins instead of staying frozen.
+#   - walk_and_shoot BC warm-start: gives firing behavior from the start.
+#   - Normal objective rewards (score_per_second, time_penalty, cap shaping)
+#     — this is a FULL 3v3 objective run, not isolated combat. If the
+#     weak_basic bot is beatable, we should see score appear.
+#
+# Success criteria (update 200, 500, 1000):
+#   - Update 200: first nonzero wins or score in eval, or Team A kills > bot kills
+#   - Update 500: consistent wins or score, Team A kills trending upward
+#   - Update 1000: stable win pattern, mean_reward positive, score > 0
+#
+# Failure criteria:
+#   - Update 200: still 50/50 draws, score 0/0, kills 0-4 per 50 episodes
+#   - Update 500: no improvement from v5 pattern (draw basin persists even
+#     against weak_basic → the problem is not opponent strength but something
+#     deeper: aim mechanics, architecture, or PPO exploration).
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 1000
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_weak_basic_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500

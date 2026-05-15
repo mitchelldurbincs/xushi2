@@ -29,6 +29,7 @@ VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
         "walk_to_objective",
         "hold_and_shoot",
         "basic",
+        "weak_basic",
         "noop",
     }
 )

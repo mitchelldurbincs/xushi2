@@ -17,10 +17,11 @@ struct BotFactoryEntry {
     BotFactory factory;
 };
 
-constexpr std::array<BotFactoryEntry, 4> kBotFactories{{
+constexpr std::array<BotFactoryEntry, 5> kBotFactories{{
     {"walk_to_objective", &make_walk_to_objective_bot},
     {"hold_and_shoot", &make_hold_and_shoot_bot},
     {"basic", &make_basic_bot},
+    {"weak_basic", &make_weak_basic_bot},
     {"noop", &make_noop_bot},
 }};
 

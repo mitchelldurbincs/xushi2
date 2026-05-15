@@ -78,6 +78,32 @@ class BasicBot final : public IBot {
     std::string name() const override { return "basic"; }
 };
 
+class WeakBasicBot final : public IBot {
+   public:
+    common::Action decide(const sim::MatchState& state,
+                          const sim::MatchConfig& config,
+                          int agent_index) override {
+        const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
+        if (self == nullptr) {
+            return common::Action{};
+        }
+        common::Action walk = internal::walk_to_objective(*self, config.map);
+        common::Action shoot = internal::hold_and_shoot(state, *self);
+        // Add deterministic aim noise so the bot misses frequently,
+        // making it beatable while still contesting the cap.
+        constexpr float kAimNoiseScale = 0.5f;  // ±0.5 rad (~±28.6°)
+        float noise = std::sin((self->position.x + agent_index * 31.0f) * 12.9898f +
+                                self->position.y * 78.233f) *
+                      43758.5453f;
+        noise = noise - std::floor(noise);
+        noise = (noise * 2.0f - 1.0f) * kAimNoiseScale;
+        walk.aim_delta = shoot.aim_delta + noise;
+        walk.primary_fire = shoot.primary_fire;
+        return walk;
+    }
+    std::string name() const override { return "weak_basic"; }
+};
+
 class NoopBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& /*state*/,
@@ -100,6 +126,10 @@ std::unique_ptr<IBot> make_hold_and_shoot_bot() {
 
 std::unique_ptr<IBot> make_basic_bot() {
     return std::make_unique<BasicBot>();
+}
+
+std::unique_ptr<IBot> make_weak_basic_bot() {
+    return std::make_unique<WeakBasicBot>();
 }
 
 std::unique_ptr<IBot> make_noop_bot() {
