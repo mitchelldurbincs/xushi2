@@ -363,3 +363,22 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Result:** 0/50 wins, 0/50 losses, 50/50 draws, score 0/0, mean_reward +1.000, kills 6.0/5.0, final_tick 900, trunc=50.
 
 **Interpretation:** BC alone still cannot convert cap-and-fire behavior into score, so this does not clear the draw basin. It is nevertheless a positive diagnostic signal for the `weak_basic` curriculum hypothesis: Team A led kills 6.0/5.0 against the noisy-aim bot, unlike the recent `basic` runs where the bot typically led kills or collapsed us into losses. This satisfies the config's early signal criterion ("Team A kills > bot kills") and justifies spending PPO updates, with `metadata.max_updates_if_no_signal=500` as the stop point if score/wins do not appear.
+
+## 2026-05-15 — Phase 4 weak_basic_v1 PPO run (stopped at update 500)
+
+**Result: weak_basic did not break the draw basin.** The run was intentionally stopped after update 500 because the config's `metadata.max_updates_if_no_signal: 500` criterion was reached with no score or wins.
+
+**Identity:** commit `725fa61589e230f3015a505f1d8ed3f831dd9d0c`, config `experiments/configs/phase4/legacy/archive/phase4_mappo_weak_basic_v1.yaml`, seed `3519994490`, W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/1s3mtfap`, checkpoint `runs/phase4_mappo_weak_basic_v1/mappo/ckpt_0500.pt`, stochastic replay `data/replays/phase4_weak_basic_v1_ckpt0500_stochastic.replay`.
+
+**Eval progression:**
+- BC eval: 0/50 wins, 50/50 draws, score 0/0, kills 6.0/5.0, mean_reward +1.000.
+- Update 50: 0/50 wins, 50/50 draws, score 0/0, kills 6.0/5.0, mean_reward +1.000.
+- Update 100: 0/50 wins, 50/50 draws, score 0/0, kills 3.0/4.0, mean_reward -1.000.
+- Update 200: 0/50 wins, 50/50 draws, score 0/0, kills 6.0/5.0, mean_reward +1.000.
+- Update 300: 0/50 wins, 50/50 draws, score 0/0, kills 5.0/5.0, mean_reward +0.284.
+- Update 400: 0/50 wins, 50/50 draws, score 0/0, kills 6.0/5.0, mean_reward +1.000.
+- Update 500: 0/50 wins, 50/50 draws, score 0/0, kills 4.0/4.0, mean_reward +0.650.
+
+**Behavioral autopsy from stochastic replay:** agents do fire constantly (`primary_fire` rate ~0.998 for Team A over 5 dumped episodes) and move while firing (mean move magnitude ~0.677), so the fire action is not dead and the policy is not standing still. The replay/action dump does not show target identity, but all three agents fire almost every decision, which looks like indiscriminate spray rather than selective focus fire. Training `onpt` continued to oscillate from ~0.16 to ~0.66 rather than collapsing permanently to zero; this is the same cap-contact cycle as prior draw-basin runs. Per-agent kill attribution is not available in current eval metrics, only team totals. The opponent's noisy aim reduced combat dominance sometimes, but not enough to create score.
+
+**Conclusion:** the remaining opponent-design hypothesis is falsified at the configured stop point. `weak_basic` changes the kill exchange slightly but does not produce objective conversion. Do not queue another weak-basic hyperparameter variant. The next Phase 4 move should be an Escape Protocol Section 5 architecture change, starting with one isolated lever such as the auxiliary aim prediction head, or human escalation if that engineering direction needs approval.
