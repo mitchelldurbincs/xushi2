@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 
 import torch
@@ -87,6 +88,8 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
 
     best_eval = float("-inf")
     best_state: dict | None = None
+    best_eval_update_idx: int | None = None
+    best_eval_stats: dict[str, float | int] | None = None
     last_eval = float("nan")
     try:
         bc_steps = int(run_cfg.get("bc_pretrain_steps", 0))
@@ -113,6 +116,16 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             if last_eval > best_eval:
                 best_eval = last_eval
                 best_state = copy.deepcopy(trainer.model.state_dict())
+                best_eval_update_idx = 0
+                best_eval_stats = {
+                    "wins": int(eval_stats.wins),
+                    "losses": int(eval_stats.losses),
+                    "draws": int(eval_stats.draws),
+                    "score_team_a": float(eval_stats.mean_team_a_score),
+                    "score_team_b": float(eval_stats.mean_team_b_score),
+                    "kills_team_a": float(eval_stats.mean_team_a_kills),
+                    "kills_team_b": float(eval_stats.mean_team_b_kills),
+                }
             print(
                 f"[{phase_label}/mappo] bc_eval "
                 f"mean_reward={eval_stats.mean_reward:+.3f} "
@@ -201,6 +214,16 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())
+                    best_eval_update_idx = update_idx
+                    best_eval_stats = {
+                        "wins": int(eval_stats.wins),
+                        "losses": int(eval_stats.losses),
+                        "draws": int(eval_stats.draws),
+                        "score_team_a": float(eval_stats.mean_team_a_score),
+                        "score_team_b": float(eval_stats.mean_team_b_score),
+                        "kills_team_a": float(eval_stats.mean_team_a_kills),
+                        "kills_team_b": float(eval_stats.mean_team_b_kills),
+                    }
                 if run_cfg.get("eval_gate"):
                     run_eval_gate(
                         phase_label=phase_label,
@@ -237,13 +260,56 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     finally:
         trainer.close()
         wandb_logger.finish()
-    final_state = best_state if best_state is not None else trainer.model.state_dict()
+    last_state = trainer.model.state_dict()
+    final_state = best_state if best_state is not None else last_state
+    ckpt_last_path = (output_dir / "ckpt_last.pt").resolve()
+    ckpt_best_eval_path = (output_dir / "ckpt_best_eval.pt").resolve()
+    ckpt_final_path = (output_dir / "ckpt_final.pt").resolve()
+    manifest_path = (output_dir / "checkpoint_manifest.json").resolve()
+    torch.save(
+        {
+            "model_state_dict": last_state,
+            "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
+        },
+        ckpt_last_path,
+    )
     torch.save(
         {
             "model_state_dict": final_state,
             "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
         },
-        output_dir / "ckpt_final.pt",
+        ckpt_best_eval_path,
+    )
+    torch.save(
+        {
+            "model_state_dict": final_state,
+            "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
+        },
+        ckpt_final_path,
+    )
+    final_alias = "ckpt_best_eval.pt" if best_state is not None else "ckpt_last.pt"
+    manifest = {
+        "ckpt_final_alias": final_alias,
+        "best_eval_update_idx": best_eval_update_idx,
+        "best_eval_score": (float(best_eval) if best_eval > float("-inf") else None),
+        "best_eval_stats": best_eval_stats,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(
+        f"[{phase_label}/mappo] checkpoint_last path={ckpt_last_path} label=last",
+        flush=True,
+    )
+    print(
+        f"[{phase_label}/mappo] checkpoint_best_eval path={ckpt_best_eval_path} label=best_eval",
+        flush=True,
+    )
+    print(
+        f"[{phase_label}/mappo] checkpoint_final path={ckpt_final_path} label={final_alias}",
+        flush=True,
+    )
+    print(
+        f"[{phase_label}/mappo] checkpoint_manifest path={manifest_path}",
+        flush=True,
     )
     if run_cfg.get("matrix_eval"):
         matrix_model = MappoActorCritic(cfg)
