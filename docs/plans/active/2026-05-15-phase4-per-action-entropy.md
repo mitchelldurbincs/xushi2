@@ -64,3 +64,17 @@ probe config be created. That config must include `metadata.hypothesis`,
 `metadata.falsification_criteria`, `metadata.max_updates_if_no_signal`, and a
 cheap diagnostic or unit-level evidence that the entropy bonus is actually
 using the per-action coefficients.
+
+## Probe Result
+
+`phase4_mappo_per_action_entropy_v1` ran to the configured 500-update stop
+point. The separate entropy path was active at update 500
+(`entropy_move=1.2543`, `entropy_aim=0.6406`, `entropy_binary=0.0189`,
+`entropy_bonus=0.1221`) and `action_binary_mean` stayed near `0.33`, but final
+eval remained 0/50 wins, 50/50 draws, score 0/0, kills 6.0/5.0.
+
+Stochastic replay was dumped to
+`data/replays/phase4_per_action_entropy_v1_ckpt0500_stochastic.replay`.
+
+Conclusion: the isolated Escape Protocol 5.2 per-action entropy intervention is
+falsified as a Phase 4 fix. Do not continue with coefficient variants.

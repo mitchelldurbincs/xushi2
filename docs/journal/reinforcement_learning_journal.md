@@ -420,3 +420,17 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Implementation verification:** focused tests passed for entropy decomposition, config parsing, update metrics, loss-mask behavior, Phase 4 config smoke, warm-start compatibility, ruff, and `git diff --check`. Unit-level diagnostic verified `entropy_bonus = 0.02*entropy_move + 0.15*entropy_aim + 0.05*entropy_binary` when configured.
 
 **New config:** `experiments/configs/phase4/probe/phase4_mappo_per_action_entropy_v1.yaml`. This is an architecture probe based on `weak_basic_v1`; the only intended lever is independent entropy weighting with `move=0.02`, `aim=0.15`, `binary=0.05`. Metadata includes hypothesis, falsification criteria, `max_updates_if_no_signal: 500`, and diagnostic evidence. Falsification: update-500 eval still 50/50 draws, score 0/0, and kills no better than `weak_basic_v1`'s 4.0/4.0, or entropy/action metrics show aim exploration did not increase while fire stayed near `bin ~= 0.33`.
+
+## 2026-05-15 — Phase 4 per_action_entropy_v1 PPO run (stopped at update 500)
+
+**Result: per-action entropy improved the kill exchange slightly but did not break the draw basin.** The run reached the configured `max_updates_if_no_signal: 500` stop point with 50/50 draws and score 0/0 at every eval.
+
+**Identity:** commit `53f1964f49ca1d92019d9a026a35c7c8a5ed5064`, config `experiments/configs/phase4/probe/phase4_mappo_per_action_entropy_v1.yaml`, seed `3519994490`, W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/n3gh2mea`, checkpoint `runs/phase4_mappo_per_action_entropy_v1/mappo/ckpt_0500.pt`, stochastic replay `data/replays/phase4_per_action_entropy_v1_ckpt0500_stochastic.replay`.
+
+**Entropy diagnostics at update 500:** `entropy_move=1.2543`, `entropy_aim=0.6406`, `entropy_binary=0.0189`, `entropy_other≈0`, `entropy_bonus=0.1221`. The configured separate entropy path was active and kept `action_binary_mean=0.3322`, so the fire head did not collapse.
+
+**Eval progression:** BC eval and every PPO eval from update 50 through update 500 were identical: 0/50 wins, 0/50 losses, 50/50 draws, score 0/0, kills 6.0/5.0, mean_reward +1.000.
+
+**Behavioral autopsy from stochastic replay:** Team A fires almost continuously (`primary_fire` rate 0.9969) and moves while firing (`move_mean` 0.639, moving-while-firing rate 0.980), so neither firing nor strafing is dead. Aim deltas remain broad (`abs_aim_mean` 0.668, p90 0.759), but the replay action dump still lacks target identity, so focus fire cannot be measured directly; behavior is consistent with high-volume spray that does not convert into score. Training `onpt` continued to oscillate through late updates (`0.13` to `0.65`) rather than collapsing permanently, but cap contact still never becomes score. Per-agent kill attribution and body/headshot attribution are unavailable.
+
+**Conclusion:** Escape Protocol 5.2 per-action entropy is falsified as an isolated Phase 4 fix. It preserves fire and yields a stable 6.0/5.0 kill edge over weak_basic, better than weak_basic_v1's 4.0/4.0 and aux_aim_v1's 1.0/6.0, but it still produces no wins and no score. Do not queue coefficient variants. The next valid Phase 4 action is another distinct Section 5 architecture intervention, likely 5.3 action masking / invalid fire suppression or human escalation.
