@@ -29,7 +29,7 @@ env:
     time_penalty_per_second: 0.0
     death_penalty: 0.0
     kill_bonus: 1.0
-    damage_dealt_per_second: 0.2
+    damage_dealt_coef: 0.2
     distance_shaping_coef: 0.0
     on_point_shaping_coef: 0.0
   sim:
