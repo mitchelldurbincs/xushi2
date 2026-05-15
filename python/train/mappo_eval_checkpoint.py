@@ -129,6 +129,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 learning_rate=float(run_cfg.get("bc_learning_rate", 1.0e-3)),
                 seed=seed_base + 50_000,
                 log_label=phase_label,
+                freeze_actor_aim=bool(run_cfg.get("bc_freeze_actor_aim", False)),
             )
             eval_stats = evaluate_mappo(
                 trainer.model,

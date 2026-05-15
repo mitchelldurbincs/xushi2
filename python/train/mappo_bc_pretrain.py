@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import gymnasium as gym
 import numpy as np
@@ -14,6 +15,71 @@ from train.mappo_model import (
     aim_aux_loss_and_rmse,
 )
 from xushi2.entity_obs import entity_obs_self_position
+
+_AIM_ACTION_INDEX = 2
+
+
+@contextmanager
+def _freeze_actor_aim_for_bc(
+    model: MappoActorCritic,
+    cfg: MappoConfig,
+    *,
+    enabled: bool,
+) -> Iterator[None]:
+    """Protect a learned flat-observation aim mapping during BC.
+
+    Phase 4's current actor shares its representation between movement, aim,
+    and fire. To keep BC from overwriting the aim-only checkpoint mapping, we
+    freeze the shared actor trunk during BC and mask gradients for the aim row
+    of the continuous action head. Movement and binary output heads can still
+    adapt to the full-env BC target.
+    """
+    if not enabled:
+        yield
+        return
+    if cfg.obs_encoder != "flat":
+        raise ValueError("freeze_actor_aim during BC currently supports only flat observations")
+    if cfg.continuous_action_dim <= _AIM_ACTION_INDEX:
+        raise ValueError("freeze_actor_aim requires an aim continuous action dimension")
+
+    frozen_modules: list[nn.Module | None] = [
+        model.actor_embed,
+        model.actor_gru,
+        model.actor_body,
+        model.actor_aim_aux_head,
+    ]
+    previous: list[tuple[nn.Parameter, bool]] = []
+    for module in frozen_modules:
+        if module is None:
+            continue
+        for param in module.parameters():
+            previous.append((param, param.requires_grad))
+            param.requires_grad_(False)
+
+    handles: list[torch.utils.hooks.RemovableHandle] = []
+
+    def _mask_aim_row(grad: torch.Tensor) -> torch.Tensor:
+        masked = grad.clone()
+        masked[_AIM_ACTION_INDEX].zero_()
+        return masked
+
+    handles.append(model.actor_mean_head.weight.register_hook(_mask_aim_row))
+    if model.actor_mean_head.bias is not None:
+        handles.append(model.actor_mean_head.bias.register_hook(_mask_aim_row))
+    if model.log_std.requires_grad and model.log_std.numel() > _AIM_ACTION_INDEX:
+        handles.append(model.log_std.register_hook(_mask_aim_row))
+
+    try:
+        yield
+    finally:
+        for handle in handles:
+            handle.remove()
+        for param, requires_grad in previous:
+            param.requires_grad_(requires_grad)
+
+
+def _bc_trainable_parameters(model: MappoActorCritic) -> list[nn.Parameter]:
+    return [param for param in model.parameters() if param.requires_grad]
 
 
 def _walk_to_objective_targets(obs: torch.Tensor, cfg: MappoConfig) -> torch.Tensor:
@@ -107,67 +173,78 @@ def bc_pretrain_walk_to_objective(
     learning_rate: float,
     seed: int,
     log_label: str = "phase4",
+    freeze_actor_aim: bool = False,
 ) -> None:
     if steps <= 0:
         return
-    opt = torch.optim.Adam(model.parameters(), lr=float(learning_rate))
-    for step in range(1, int(steps) + 1):
-        obs_seq, target_seq = _collect_walk_bc_sequence(
-            env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step
-        )
-        h = model.init_hidden(cfg.n_agents)
-        cont_losses = []
-        binary_losses = []
-        aim_aux_losses = []
-        aim_aux_rmses = []
-        aim_aux_counts = []
-        for t in range(obs_seq.shape[0]):
-            features, h = model.actor_head_features(obs_seq[t], h)
-            mean = model.actor_mean_head(features)
-            logits = model.actor_binary_head(features)
-            pred_cont = torch.tanh(mean)
-            target = target_seq[t]
-            cont_losses.append(
-                torch.nn.functional.mse_loss(pred_cont, target[:, : cfg.continuous_action_dim])
-            )
-            binary_losses.append(
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    logits,
-                    target[
-                        :,
-                        cfg.continuous_action_dim : cfg.continuous_action_dim
-                        + cfg.binary_action_dim,
-                    ],
-                )
-            )
-            aim_pred = model.aim_aux_prediction_from_features(features)
-            aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, obs_seq[t], cfg)
-            aim_aux_losses.append(aim_loss)
-            aim_aux_rmses.append(aim_rmse)
-            aim_aux_counts.append(aim_count)
-        cont_loss = torch.stack(cont_losses).mean()
-        binary_loss = torch.stack(binary_losses).mean()
-        aim_aux_loss = torch.stack(aim_aux_losses).mean()
-        aim_aux_count = torch.stack(aim_aux_counts).sum()
-        aim_aux_rmse = (
-            torch.stack(aim_aux_rmses).mean()
-            if float(aim_aux_count.item()) > 0.0
-            else obs_seq.new_tensor(0.0)
-        )
-        loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
-        opt.zero_grad()
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-        opt.step()
-        if step == 1 or step == steps or step % max(1, steps // 5) == 0:
+    with _freeze_actor_aim_for_bc(model, cfg, enabled=freeze_actor_aim):
+        opt = torch.optim.Adam(_bc_trainable_parameters(model), lr=float(learning_rate))
+        if freeze_actor_aim:
             print(
-                f"[{log_label}/mappo] bc_pretrain step={step}/{steps} "
-                f"loss={float(loss.item()):.4f} "
-                f"cont_loss={float(cont_loss.item()):.4f} "
-                f"binary_loss={float(binary_loss.item()):.4f} "
-                f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                f"[{log_label}/mappo] bc_pretrain freeze_actor_aim=true",
                 flush=True,
             )
+        for step in range(1, int(steps) + 1):
+            obs_seq, target_seq = _collect_walk_bc_sequence(
+                env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step
+            )
+            h = model.init_hidden(cfg.n_agents)
+            cont_losses = []
+            binary_losses = []
+            aim_aux_losses = []
+            aim_aux_rmses = []
+            aim_aux_counts = []
+            for t in range(obs_seq.shape[0]):
+                features, h = model.actor_head_features(obs_seq[t], h)
+                mean = model.actor_mean_head(features)
+                logits = model.actor_binary_head(features)
+                pred_cont = torch.tanh(mean)
+                target = target_seq[t]
+                cont_losses.append(
+                    torch.nn.functional.mse_loss(
+                        pred_cont, target[:, : cfg.continuous_action_dim]
+                    )
+                )
+                binary_losses.append(
+                    torch.nn.functional.binary_cross_entropy_with_logits(
+                        logits,
+                        target[
+                            :,
+                            cfg.continuous_action_dim : cfg.continuous_action_dim
+                            + cfg.binary_action_dim,
+                        ],
+                    )
+                )
+                aim_pred = model.aim_aux_prediction_from_features(features)
+                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+                    aim_pred, obs_seq[t], cfg
+                )
+                aim_aux_losses.append(aim_loss)
+                aim_aux_rmses.append(aim_rmse)
+                aim_aux_counts.append(aim_count)
+            cont_loss = torch.stack(cont_losses).mean()
+            binary_loss = torch.stack(binary_losses).mean()
+            aim_aux_loss = torch.stack(aim_aux_losses).mean()
+            aim_aux_count = torch.stack(aim_aux_counts).sum()
+            aim_aux_rmse = (
+                torch.stack(aim_aux_rmses).mean()
+                if float(aim_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
+            loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
+            opt.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(_bc_trainable_parameters(model), cfg.max_grad_norm)
+            opt.step()
+            if step == 1 or step == steps or step % max(1, steps // 5) == 0:
+                print(
+                    f"[{log_label}/mappo] bc_pretrain step={step}/{steps} "
+                    f"loss={float(loss.item()):.4f} "
+                    f"cont_loss={float(cont_loss.item()):.4f} "
+                    f"binary_loss={float(binary_loss.item()):.4f} "
+                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                    flush=True,
+                )
 
 
 def bc_pretrain_walk_and_shoot_to_objective(
@@ -180,66 +257,80 @@ def bc_pretrain_walk_and_shoot_to_objective(
     learning_rate: float,
     seed: int,
     log_label: str = "phase4",
+    freeze_actor_aim: bool = False,
 ) -> None:
     """BC pretrain that walks to cap, aims at enemies, and fires when visible."""
     if steps <= 0:
         return
-    opt = torch.optim.Adam(model.parameters(), lr=float(learning_rate))
-    for step in range(1, int(steps) + 1):
-        obs_seq, target_seq = _collect_walk_bc_sequence(
-            env_fn, cfg, batch_size=int(batch_size), seed=int(seed) + step,
-            target_fn=_walk_and_shoot_to_objective_targets,
-        )
-        h = model.init_hidden(cfg.n_agents)
-        cont_losses = []
-        binary_losses = []
-        aim_aux_losses = []
-        aim_aux_rmses = []
-        aim_aux_counts = []
-        for t in range(obs_seq.shape[0]):
-            features, h = model.actor_head_features(obs_seq[t], h)
-            mean = model.actor_mean_head(features)
-            logits = model.actor_binary_head(features)
-            pred_cont = torch.tanh(mean)
-            target = target_seq[t]
-            cont_losses.append(
-                torch.nn.functional.mse_loss(pred_cont, target[:, : cfg.continuous_action_dim])
-            )
-            binary_losses.append(
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    logits,
-                    target[
-                        :,
-                        cfg.continuous_action_dim : cfg.continuous_action_dim
-                        + cfg.binary_action_dim,
-                    ],
-                )
-            )
-            aim_pred = model.aim_aux_prediction_from_features(features)
-            aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, obs_seq[t], cfg)
-            aim_aux_losses.append(aim_loss)
-            aim_aux_rmses.append(aim_rmse)
-            aim_aux_counts.append(aim_count)
-        cont_loss = torch.stack(cont_losses).mean()
-        binary_loss = torch.stack(binary_losses).mean()
-        aim_aux_loss = torch.stack(aim_aux_losses).mean()
-        aim_aux_count = torch.stack(aim_aux_counts).sum()
-        aim_aux_rmse = (
-            torch.stack(aim_aux_rmses).mean()
-            if float(aim_aux_count.item()) > 0.0
-            else obs_seq.new_tensor(0.0)
-        )
-        loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
-        opt.zero_grad()
-        loss.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
-        opt.step()
-        if step == 1 or step == steps or step % max(1, steps // 5) == 0:
+    with _freeze_actor_aim_for_bc(model, cfg, enabled=freeze_actor_aim):
+        opt = torch.optim.Adam(_bc_trainable_parameters(model), lr=float(learning_rate))
+        if freeze_actor_aim:
             print(
-                f"[{log_label}/mappo] bc_pretrain_walk_and_shoot step={step}/{steps} "
-                f"loss={float(loss.item()):.4f} "
-                f"cont_loss={float(cont_loss.item()):.4f} "
-                f"binary_loss={float(binary_loss.item()):.4f} "
-                f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                f"[{log_label}/mappo] bc_pretrain_walk_and_shoot freeze_actor_aim=true",
                 flush=True,
             )
+        for step in range(1, int(steps) + 1):
+            obs_seq, target_seq = _collect_walk_bc_sequence(
+                env_fn,
+                cfg,
+                batch_size=int(batch_size),
+                seed=int(seed) + step,
+                target_fn=_walk_and_shoot_to_objective_targets,
+            )
+            h = model.init_hidden(cfg.n_agents)
+            cont_losses = []
+            binary_losses = []
+            aim_aux_losses = []
+            aim_aux_rmses = []
+            aim_aux_counts = []
+            for t in range(obs_seq.shape[0]):
+                features, h = model.actor_head_features(obs_seq[t], h)
+                mean = model.actor_mean_head(features)
+                logits = model.actor_binary_head(features)
+                pred_cont = torch.tanh(mean)
+                target = target_seq[t]
+                cont_losses.append(
+                    torch.nn.functional.mse_loss(
+                        pred_cont, target[:, : cfg.continuous_action_dim]
+                    )
+                )
+                binary_losses.append(
+                    torch.nn.functional.binary_cross_entropy_with_logits(
+                        logits,
+                        target[
+                            :,
+                            cfg.continuous_action_dim : cfg.continuous_action_dim
+                            + cfg.binary_action_dim,
+                        ],
+                    )
+                )
+                aim_pred = model.aim_aux_prediction_from_features(features)
+                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+                    aim_pred, obs_seq[t], cfg
+                )
+                aim_aux_losses.append(aim_loss)
+                aim_aux_rmses.append(aim_rmse)
+                aim_aux_counts.append(aim_count)
+            cont_loss = torch.stack(cont_losses).mean()
+            binary_loss = torch.stack(binary_losses).mean()
+            aim_aux_loss = torch.stack(aim_aux_losses).mean()
+            aim_aux_count = torch.stack(aim_aux_counts).sum()
+            aim_aux_rmse = (
+                torch.stack(aim_aux_rmses).mean()
+                if float(aim_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
+            loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
+            opt.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(_bc_trainable_parameters(model), cfg.max_grad_norm)
+            opt.step()
+            if step == 1 or step == steps or step % max(1, steps // 5) == 0:
+                print(
+                    f"[{log_label}/mappo] bc_pretrain_walk_and_shoot step={step}/{steps} "
+                    f"loss={float(loss.item()):.4f} "
+                    f"cont_loss={float(cont_loss.item()):.4f} "
+                    f"binary_loss={float(binary_loss.item()):.4f} "
+                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                    flush=True,
+                )
