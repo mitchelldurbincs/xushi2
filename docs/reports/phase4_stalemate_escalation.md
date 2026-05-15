@@ -4,8 +4,9 @@ Date: 2026-05-15
 
 ## Summary
 
-Phase 4 remains in the full 3v3 scoreless draw basin. The latest Escape
-Protocol work ruled out Sections 5.1 through 5.4 as implemented:
+Phase 4 remains blocked after the full 3v3 scoreless draw basin and one
+post-escalation transfer attempt. The latest Escape Protocol work ruled out
+Sections 5.1 through 5.4 as implemented:
 
 - 5.1 auxiliary aim head learned its supervised target but did not improve
   score.
@@ -17,10 +18,17 @@ Protocol work ruled out Sections 5.1 through 5.4 as implemented:
   the full 3v3 transfer failed. A follow-up diagnostic showed the standard
   500-step `walk_and_shoot` BC pass erases the synthetic aim mapping before
   PPO (`94.84/96` hits before BC, `0.02/96` after BC).
+- Human-selected Option 1, freezing the actor trunk and aim row during
+  post-load BC, preserved the synthetic aim skill (`94.58/96` hits after BC)
+  but failed full 3v3 transfer. Both BC eval and the first PPO eval collapsed
+  to `0/50` wins, `50/50` losses, score `0/7`, kills `0/3`.
 
 The current evidence says the actor can learn visible-target aim in isolation,
-but the existing full-env warm-start pipeline cannot preserve that aim skill
-while restoring movement/objective behavior.
+and Option 1 can preserve that aim pathway through BC. However, freezing the
+shared actor trunk prevents the policy from restoring enough movement/objective
+competence to survive weak_basic. The unresolved problem is no longer just
+"preserve aim through BC"; it is how to compose aim skill with the known
+movement/objective behavior without collapsing either side.
 
 ## Recent Runs
 
@@ -31,6 +39,7 @@ while restoring movement/objective behavior.
 | `phase4_mappo_invalid_fire_mask_v1.yaml` | `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/x4mketjt` | `data/replays/phase4_invalid_fire_mask_v1_ckpt0500_stochastic.replay` | 0/50 wins, 50/50 draws, score 0/0, kills 5/5 |
 | `phase4_mappo_aim_only_v1.yaml` | `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/d6qgug61` | synthetic env; no C++ replay | Positive diagnostic: 94.96/96 hits |
 | `phase4_mappo_aim_transfer_v1.yaml` | `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/9n07ntl5` | `data/replays/phase4_aim_transfer_v1_ckpt0500_stochastic.replay` | 0/50 wins, 50/50 draws, score 0/0, kills 0/3 |
+| `phase4_mappo_aim_freeze_bc_v1.yaml` | `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/88w0yivd` | `data/replays/phase4_aim_freeze_bc_v1_ckpt0050_stochastic.replay` | 0/50 wins, 50/50 losses, score 0/7, kills 0/3 |
 
 ## Behavioral Findings
 
@@ -44,8 +53,11 @@ while restoring movement/objective behavior.
   available in the current replay format.
 - The aim-only mini-game proves the actor and PPO loop can learn a direct
   visible-target aim mapping when reward is immediate.
-- The standard full-env `walk_and_shoot` BC pretrain is now implicated: it
-  restores draw-basin behavior but erases the synthetic aim mapping.
+- The standard full-env `walk_and_shoot` BC pretrain is implicated: it restores
+  draw-basin behavior but erases the synthetic aim mapping.
+- Freezing the shared actor trunk and aim row preserves the synthetic aim
+  mapping, but the resulting full 3v3 policy no longer maintains
+  movement/objective competence and loses every greedy eval episode.
 
 ## Falsified Hypotheses
 
@@ -56,15 +68,17 @@ while restoring movement/objective behavior.
 - Invalid fire wastes the useful gradient: fire-valid fraction was already
   almost always true.
 - Aim-only warm-start plus normal BC transfers: BC erased aim-only performance.
+- Aim-only warm-start plus frozen aim/trunk BC transfers: aim survived, but
+  full weak_basic eval collapsed to 50/50 losses with zero learner score.
 
 ## Recommended Human Decision
 
 Choose one structural direction before any more full-length Phase 4 run:
 
-1. Protect the aim skill during movement/objective BC.
-   Freeze a subset of actor aim parameters or train only movement-related
-   layers during the post-aim BC pass, then test whether synthetic aim hit rate
-   survives BC and full 3v3 transfer.
+1. Compose the movement checkpoint with the aim checkpoint.
+   Start from the known movement/objective checkpoint and distill or transplant
+   only the aim mapping from `phase4_mappo_aim_only_v1`, then run the same
+   aim-retention and weak_basic BC-only diagnostics before PPO.
 
 2. Replace the `walk_and_shoot` aim target.
    The current BC target appears incompatible with the mini-game-trained aim
@@ -83,7 +97,7 @@ Choose one structural direction before any more full-length Phase 4 run:
 
 Specific question for the human reviewer:
 
-Should the next implementation protect the mini-game aim skill during BC
+Should the next implementation compose the movement and aim checkpoints
 (option 1), replace the BC aim target (option 2), add full-env shot/aim
 instrumentation first (option 3), or proceed directly to a separate combat head
 (option 4)?
