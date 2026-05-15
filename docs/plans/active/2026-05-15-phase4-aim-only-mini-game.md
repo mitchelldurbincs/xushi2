@@ -55,3 +55,19 @@ Implemented code support only:
 
 No Phase 4 experiment config or long PPO run was created in this
 implementation task.
+
+## Probe Result
+
+`phase4_mappo_aim_only_v1` ran to the configured 200-update stop point and
+succeeded. The success threshold was `mean_team_a_kills >= 48` by update 200,
+equivalent to at least 50% greedy hit rate across `3 agents x 32 decisions`.
+
+The run crossed that threshold at update 80 with `64.66` hits and reached
+`94.96 / 96` possible hits by update 200. W&B:
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/d6qgug61`.
+Checkpoint: `runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt`.
+
+Conclusion: Escape Protocol 5.4 is a positive diagnostic. The actor can learn
+visible-target aim in isolation. The next isolated test is full 3v3 weak_basic
+warm-started from the aim-only checkpoint, without combining auxiliary aim,
+per-action entropy, or invalid-fire masking.

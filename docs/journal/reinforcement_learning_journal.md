@@ -458,3 +458,13 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Circling Detector:** reviewed the last five completed/blocked Phase 4 tasks before creating this config. Recent full 3v3 probes still show the same scoreless draw basin, and the invalid-fire mask showed `fire_valid_fraction = 0.9994`; further hyperparameter, opponent, entropy, aux-aim, or mask variants remain blocked.
 
 **New config:** `experiments/configs/phase4/probe/phase4_mappo_aim_only_v1.yaml`. This is an Escape Protocol 5.4 synthetic mini-game diagnostic using `env.mini_game: aim_only`, not a full 3v3 objective run. It preserves the Phase 4 actor observation/action/checkpoint interface and warm-starts from `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`. Metadata includes hypothesis, falsification criteria, `max_updates_if_no_signal: 200`, and implementation diagnostic evidence. Success threshold: by update 200 greedy eval `mean_team_a_kills >= 48` per 32-decision episode, equivalent to at least 50% hit rate over 3 agents.
+
+## 2026-05-15 — Phase 4 aim_only_v1 mini-game run (success at update 80, completed update 200)
+
+**Result: the actor can learn visible-target aim in isolation.** The aim-only mini-game crossed its success threshold at update 80 and reached near-ceiling greedy hit rate by update 120. This is a positive diagnostic for Escape Protocol 5.4, not a full Phase 4 escape.
+
+**Identity:** commit `1f93020a78d9b3f8d0a1112c89523127e3ff6ee3`, config `experiments/configs/phase4/probe/phase4_mappo_aim_only_v1.yaml`, seed `3519994490`, W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/d6qgug61`, checkpoint `runs/phase4_mappo_aim_only_v1/mappo/ckpt_0200.pt`, final checkpoint `runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt`.
+
+**Eval trajectory:** update 20 `12.06`, 40 `18.80`, 60 `28.66`, 80 `64.66`, 100 `86.54`, 120 `93.12`, 140 `94.68`, 160 `95.04`, 180 `94.02`, 200 `94.96` mean Team A hits per 32-decision episode. The configured success threshold was `48` hits, so the mini-game succeeded by update 80 and finished at `94.96 / 96` possible hits.
+
+**Interpretation:** The Phase 4 actor architecture and PPO loop can learn the direct mapping from visible `enemy_relative_position` to `aim_delta` plus `primary_fire` when reward is immediate. The full 3v3 draw basin is therefore not explained by a basic inability to represent or optimize the visible-target aim mapping. The next valid diagnostic is to warm-start a full weak_basic 3v3 probe from `runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt` without combining other Section 5 interventions, then test whether the isolated aim skill transfers under movement, cooldown, and objective pressure.
