@@ -8,7 +8,6 @@
 namespace xushi2::sim::internal {
 
 struct DamageEvent {
-    common::EntityId attacker_id = 0;
     std::uint32_t victim_slot = 0;
     std::uint32_t damage_centi_hp = 0;
 };
