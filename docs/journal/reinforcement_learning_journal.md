@@ -440,3 +440,15 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Circling Detector:** reviewed the last five completed/blocked Phase 4 tasks before creating this config. The completed run tasks remain in the 50/50 draw basin with score 0/0, including `aux_aim_v1` and `per_action_entropy_v1`. This blocks further hyperparameter/opponent variants and permits only a distinct Escape Protocol Section 5 intervention.
 
 **New config:** `experiments/configs/phase4/probe/phase4_mappo_invalid_fire_mask_v1.yaml`. This is an architecture probe based on `weak_basic_v1`; the only intended lever is `ppo.mask_fire_when_no_visible_enemy: true`. It does not combine auxiliary aim or per-action entropy. Metadata includes hypothesis, falsification criteria, `max_updates_if_no_signal: 500`, and the implementation diagnostic evidence. Falsification: update-500 eval still 50/50 draws, score 0/0, and kills no better than `weak_basic_v1`'s 4.0/4.0, or replay/action metrics show no improvement in primary-fire validity and kill-per-fire conversion.
+
+## 2026-05-15 — Phase 4 invalid_fire_mask_v1 PPO run (stopped at update 500)
+
+**Result: invalid-fire masking did not break the draw basin.** The run reached its configured `max_updates_if_no_signal: 500` stop point with 50/50 draws, score 0/0, and symmetric kills.
+
+**Identity:** commit `928bf70ea25ac7da00598612f9b4f823b66bce2b`, config `experiments/configs/phase4/probe/phase4_mappo_invalid_fire_mask_v1.yaml`, seed `3519994490`, W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/x4mketjt`, checkpoint `runs/phase4_mappo_invalid_fire_mask_v1/mappo/ckpt_0500.pt`, stochastic replay `data/replays/phase4_invalid_fire_mask_v1_ckpt0500_stochastic.replay`.
+
+**Final eval:** update 500 mean_reward `+0.995`, wins `0/50`, losses `0/50`, draws `50/50`, score `0.00/0.00`, kills `5.0/5.0`. Eval history: update 50 `6/5`, 100 `3/4`, 150 `6/5`, 200 `6/5`, 250 `4/2`, 300 `6/5`, 350 `5/5`, 400 `5/5`, 450 `5/5`, 500 `5/5`.
+
+**Behavioral autopsy from stochastic replay:** Team A still fires almost continuously (`primary_fire` rate `0.9987`) and moves while firing (`move_mean` `0.664`, moving-while-firing rate `0.982`), so firing and strafing remain active. Aim deltas remain broad (`abs_aim_mean` `0.672`, p90 `0.760`), consistent with continued spray rather than reliable target conversion. The mask did not materially change action availability: W&B reports `train/fire_valid_fraction = 0.9994`, meaning almost every sampled timestep had an alive visible enemy under the actor-observation predicate. Focus-fire attribution, per-agent kills, and body/headshot attribution remain unavailable from the replay format.
+
+**Conclusion:** Escape Protocol 5.3 invalid-fire masking is falsified as an isolated fix. It shows that wasted fire on invisible/no-enemy timesteps is not the main bottleneck in the current weak_basic draw basin. Do not queue mask variants or combine this with 5.1/5.2 without a new diagnostic. Next valid Phase 4 action is a distinct Section 5 intervention such as 5.4 aim-only mini-game, or human escalation.

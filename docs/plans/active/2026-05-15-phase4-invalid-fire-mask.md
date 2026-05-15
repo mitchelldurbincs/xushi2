@@ -53,3 +53,19 @@ Implemented the opt-in code path:
   above.
 
 No Phase 4 experiment config was created in this implementation task.
+
+## Probe Result
+
+`phase4_mappo_invalid_fire_mask_v1` ran to the configured 500-update stop
+point. Final eval was `0/50` wins, `0/50` losses, `50/50` draws, score `0/0`,
+and kills `5.0/5.0`.
+
+The stochastic replay was dumped to
+`data/replays/phase4_invalid_fire_mask_v1_ckpt0500_stochastic.replay`.
+Replay action stats show Team A still fires almost continuously
+(`primary_fire` rate `0.9987`) and moves while firing (`0.982`). The rollout
+metric `fire_valid_fraction` was `0.9994`, so the mask was nearly always open
+and did not concentrate fire gradients enough to improve score conversion.
+
+Conclusion: Escape Protocol 5.3 is falsified as an isolated Phase 4 fix. Do
+not queue mask variants.
