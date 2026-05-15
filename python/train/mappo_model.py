@@ -49,6 +49,11 @@ class MappoConfig:
     learning_rate: float
     num_epochs: int
     minibatch_size: int
+    # Escape Protocol 5.2: optional per-action entropy coefficients. When
+    # omitted, each component defaults to `entropy_coef` for back-compat.
+    entropy_coef_move: float | None = None
+    entropy_coef_aim: float | None = None
+    entropy_coef_binary: float | None = None
     target_action_dim: int = 0
     value_per_agent: bool = False
     lr_schedule: str = "constant"

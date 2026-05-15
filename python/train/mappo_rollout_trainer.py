@@ -19,7 +19,10 @@ from train.mappo_model import (
     aim_aux_loss_and_rmse,
 )
 from train.phases import resolve_phase
-from train.ppo_recurrent.losses import _masked_mean, action_logprob_and_entropy
+from train.ppo_recurrent.losses import (
+    _masked_mean,
+    action_logprob_and_entropy_parts,
+)
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
@@ -337,10 +340,16 @@ class MappoTrainer:
         binary_logits: torch.Tensor,
         target_logits: torch.Tensor | None,
         action: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         cfg = self.cfg
         base_end = cfg.continuous_action_dim + cfg.binary_action_dim
-        logp, ent = action_logprob_and_entropy(mean, log_std, binary_logits, action[:, :base_end])
+        logp, move_ent, aim_ent, binary_ent = action_logprob_and_entropy_parts(
+            mean,
+            log_std,
+            binary_logits,
+            action[:, :base_end],
+        )
+        ent = move_ent + aim_ent + binary_ent
         if cfg.target_action_dim > 0:
             if target_logits is None:
                 raise RuntimeError("target_action_dim requires target logits")
@@ -348,7 +357,42 @@ class MappoTrainer:
             dist = torch.distributions.Categorical(logits=target_logits)
             logp = logp + dist.log_prob(target)
             ent = ent + dist.entropy()
-        return logp, ent
+        return logp, ent, move_ent, aim_ent, binary_ent
+
+    def _entropy_bonus(
+        self,
+        *,
+        move_entropy: torch.Tensor,
+        aim_entropy: torch.Tensor,
+        binary_entropy: torch.Tensor,
+        other_entropy: torch.Tensor,
+        entropy: torch.Tensor,
+        valid_agent: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        cfg = self.cfg
+        move_mean = _masked_mean(move_entropy, valid_agent)
+        aim_mean = _masked_mean(aim_entropy, valid_agent)
+        binary_mean = _masked_mean(binary_entropy, valid_agent)
+        other_mean = _masked_mean(other_entropy, valid_agent)
+        if (
+            cfg.entropy_coef_move is None
+            and cfg.entropy_coef_aim is None
+            and cfg.entropy_coef_binary is None
+        ):
+            bonus = cfg.entropy_coef * _masked_mean(entropy, valid_agent)
+            return bonus, move_mean, aim_mean, binary_mean, other_mean
+        move_coef = cfg.entropy_coef if cfg.entropy_coef_move is None else cfg.entropy_coef_move
+        aim_coef = cfg.entropy_coef if cfg.entropy_coef_aim is None else cfg.entropy_coef_aim
+        binary_coef = (
+            cfg.entropy_coef if cfg.entropy_coef_binary is None else cfg.entropy_coef_binary
+        )
+        bonus = (
+            move_coef * move_mean
+            + aim_coef * aim_mean
+            + binary_coef * binary_mean
+            + cfg.entropy_coef * other_mean
+        )
+        return bonus, move_mean, aim_mean, binary_mean, other_mean
 
     def _update_full_rollout(
         self, rollout: MappoRollout, return_mean: float, return_std: float
@@ -356,7 +400,9 @@ class MappoTrainer:
         cfg = self.cfg
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
-        logprobs, entropies, aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], [], [], []
+        logprobs, entropies = [], []
+        move_entropies, aim_entropies, binary_entropies = [], [], []
+        aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
         h = flat_h
         for t in range(L):
             obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
@@ -374,11 +420,14 @@ class MappoTrainer:
             )
             aim_pred = self.model.aim_aux_prediction_from_features(features)
             action_t = rollout.action[:, :, t].reshape(N * A, cfg.action_dim)
-            logp, ent = self._action_logprob_and_entropy(
+            logp, ent, move_ent, aim_ent, binary_ent = self._action_logprob_and_entropy(
                 mean, log_std, logits, target_logits, action_t
             )
             logprobs.append(logp.view(N, A))
             entropies.append(ent.view(N, A))
+            move_entropies.append(move_ent.view(N, A))
+            aim_entropies.append(aim_ent.view(N, A))
+            binary_entropies.append(binary_ent.view(N, A))
             flat_mask = rollout.agent_loss_mask[:, :, t].reshape(N * A)
             aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
                 aim_pred, obs_t, cfg, mask=flat_mask
@@ -391,6 +440,10 @@ class MappoTrainer:
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
         new_logprob = torch.stack(logprobs, dim=2)
         entropy = torch.stack(entropies, dim=2)
+        move_entropy = torch.stack(move_entropies, dim=2)
+        aim_entropy = torch.stack(aim_entropies, dim=2)
+        binary_entropy = torch.stack(binary_entropies, dim=2)
+        other_entropy = entropy - move_entropy - aim_entropy - binary_entropy
         aim_aux_loss = torch.stack(aim_aux_losses).mean()
         aim_aux_count_total = torch.stack(aim_aux_counts).sum()
         if float(aim_aux_count_total.item()) > 0.0:
@@ -438,10 +491,26 @@ class MappoTrainer:
         vl_clipped = (value_clipped_n - return_n) ** 2
         value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), value_mask)
         entropy_mean = _masked_mean(entropy, valid_agent)
+        (
+            entropy_bonus,
+            move_entropy_mean,
+            aim_entropy_mean,
+            binary_entropy_mean,
+            other_entropy_mean,
+        ) = (
+            self._entropy_bonus(
+                move_entropy=move_entropy,
+                aim_entropy=aim_entropy,
+                binary_entropy=binary_entropy,
+                other_entropy=other_entropy,
+                entropy=entropy,
+                valid_agent=valid_agent,
+            )
+        )
         total_loss = (
             policy_loss
             + cfg.value_coef * value_loss
-            - cfg.entropy_coef * entropy_mean
+            - entropy_bonus
             + cfg.aim_aux_coef * aim_aux_loss
         )
 
@@ -462,6 +531,11 @@ class MappoTrainer:
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy_mean.item()),
+            "entropy_move": float(move_entropy_mean.item()),
+            "entropy_aim": float(aim_entropy_mean.item()),
+            "entropy_binary": float(binary_entropy_mean.item()),
+            "entropy_other": float(other_entropy_mean.item()),
+            "entropy_bonus": float(entropy_bonus.item()),
             "approx_kl": float(approx_kl.item()),
             "clip_fraction": float(clip_fraction.item()),
             "total_loss": float(total_loss.item()),
@@ -515,6 +589,21 @@ def make_mappo_config(config: dict) -> MappoConfig:
         value_clip_ratio=float(ppo_cfg["value_clip_ratio"]),
         value_coef=float(ppo_cfg["value_coef"]),
         entropy_coef=float(ppo_cfg["entropy_coef"]),
+        entropy_coef_move=(
+            None
+            if ppo_cfg.get("entropy_coef_move") is None
+            else float(ppo_cfg["entropy_coef_move"])
+        ),
+        entropy_coef_aim=(
+            None
+            if ppo_cfg.get("entropy_coef_aim") is None
+            else float(ppo_cfg["entropy_coef_aim"])
+        ),
+        entropy_coef_binary=(
+            None
+            if ppo_cfg.get("entropy_coef_binary") is None
+            else float(ppo_cfg["entropy_coef_binary"])
+        ),
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
         num_epochs=int(ppo_cfg["num_epochs"]),

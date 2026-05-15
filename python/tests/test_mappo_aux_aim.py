@@ -12,9 +12,47 @@ from train.mappo_model import (
     wrapped_angle_error,
 )
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
+from train.ppo_recurrent.losses import (
+    action_logprob_and_entropy,
+    action_logprob_and_entropy_parts,
+)
 
 
-def _phase4_smoke_cfg(output_dir: Path, *, aim_aux_coef: float = 0.0) -> dict:
+def _phase4_smoke_cfg(
+    output_dir: Path,
+    *,
+    aim_aux_coef: float = 0.0,
+    entropy_coef_move: float | None = None,
+    entropy_coef_aim: float | None = None,
+    entropy_coef_binary: float | None = None,
+) -> dict:
+    ppo = {
+        "num_envs": 2,
+        "rollout_len": 8,
+        "num_epochs": 1,
+        "minibatch_size": 1,
+        "learning_rate": 3.0e-4,
+        "value_normalization": True,
+        "vector_env": "sync",
+        "torch_num_threads": 1,
+        "lr_schedule": "constant",
+        "lr_final_ratio": 1.0,
+        "warmup_updates": 0,
+        "clip_ratio": 0.2,
+        "value_clip_ratio": 0.2,
+        "gamma": 0.997,
+        "gae_lambda": 0.95,
+        "entropy_coef": 0.01,
+        "value_coef": 0.5,
+        "max_grad_norm": 0.5,
+        "aim_aux_coef": aim_aux_coef,
+    }
+    if entropy_coef_move is not None:
+        ppo["entropy_coef_move"] = entropy_coef_move
+    if entropy_coef_aim is not None:
+        ppo["entropy_coef_aim"] = entropy_coef_aim
+    if entropy_coef_binary is not None:
+        ppo["entropy_coef_binary"] = entropy_coef_binary
     return {
         "phase": 4,
         "env": {
@@ -42,27 +80,7 @@ def _phase4_smoke_cfg(output_dir: Path, *, aim_aux_coef: float = 0.0) -> dict:
             "head_hidden": 16,
             "action_log_std_init": -1.0,
         },
-        "ppo": {
-            "num_envs": 2,
-            "rollout_len": 8,
-            "num_epochs": 1,
-            "minibatch_size": 1,
-            "learning_rate": 3.0e-4,
-            "value_normalization": True,
-            "vector_env": "sync",
-            "torch_num_threads": 1,
-            "lr_schedule": "constant",
-            "lr_final_ratio": 1.0,
-            "warmup_updates": 0,
-            "clip_ratio": 0.2,
-            "value_clip_ratio": 0.2,
-            "gamma": 0.997,
-            "gae_lambda": 0.95,
-            "entropy_coef": 0.01,
-            "value_coef": 0.5,
-            "max_grad_norm": 0.5,
-            "aim_aux_coef": aim_aux_coef,
-        },
+        "ppo": ppo,
         "run": {
             "total_updates": 1,
             "eval_every": 1,
@@ -146,3 +164,73 @@ def test_mappo_update_logs_aux_aim_metrics(tmp_path: Path) -> None:
     assert "aim_aux_loss" in metrics
     assert "aim_aux_rmse" in metrics
     assert "aim_aux_count" in metrics
+
+
+def test_entropy_parts_sum_to_existing_entropy() -> None:
+    mean = torch.zeros(4, 3)
+    log_std = torch.full((3,), -0.5)
+    binary_logits = torch.zeros(4, 3)
+    action = torch.zeros(4, 6)
+
+    logp, entropy = action_logprob_and_entropy(mean, log_std, binary_logits, action)
+    logp_parts, move_entropy, aim_entropy, binary_entropy = action_logprob_and_entropy_parts(
+        mean,
+        log_std,
+        binary_logits,
+        action,
+    )
+
+    assert torch.allclose(logp_parts, logp)
+    assert torch.allclose(move_entropy + aim_entropy + binary_entropy, entropy)
+    assert move_entropy.mean().item() > aim_entropy.mean().item()
+    assert binary_entropy.mean().item() > 0.0
+
+
+def test_make_mappo_config_parses_per_action_entropy_coefficients(tmp_path: Path) -> None:
+    cfg = make_mappo_config(
+        _phase4_smoke_cfg(
+            tmp_path,
+            entropy_coef_move=0.02,
+            entropy_coef_aim=0.15,
+            entropy_coef_binary=0.05,
+        )
+    )
+
+    assert cfg.entropy_coef == pytest.approx(0.01)
+    assert cfg.entropy_coef_move == pytest.approx(0.02)
+    assert cfg.entropy_coef_aim == pytest.approx(0.15)
+    assert cfg.entropy_coef_binary == pytest.approx(0.05)
+
+
+def test_mappo_update_logs_per_action_entropy_bonus(tmp_path: Path) -> None:
+    config = _phase4_smoke_cfg(
+        tmp_path,
+        entropy_coef_move=0.02,
+        entropy_coef_aim=0.15,
+        entropy_coef_binary=0.05,
+    )
+    cfg = make_mappo_config(config)
+    trainer = MappoTrainer(
+        lambda: __import__("envs").Phase4MappoEnv(
+            config["env"]["sim"],
+            opponent_bot="noop",
+            learner_team="A",
+            reward_cfg={},
+        ),
+        cfg,
+        seed=0,
+    )
+    try:
+        metrics = trainer.update(trainer.collect_rollout())
+    finally:
+        trainer.close()
+
+    assert metrics["entropy_move"] > 0.0
+    assert metrics["entropy_aim"] > 0.0
+    assert metrics["entropy_binary"] > 0.0
+    expected_bonus = (
+        0.02 * metrics["entropy_move"]
+        + 0.15 * metrics["entropy_aim"]
+        + 0.05 * metrics["entropy_binary"]
+    )
+    assert metrics["entropy_bonus"] == pytest.approx(expected_bonus)

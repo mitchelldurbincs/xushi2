@@ -41,6 +41,21 @@ def _tanh_squashed_logprob(
     return logprob, entropy
 
 
+def _tanh_squashed_logprob_and_entropy_dims(
+    mean: torch.Tensor,
+    log_std: torch.Tensor,
+    action: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return log-prob and per-continuous-dimension entropy."""
+    action = action.clamp(-1.0 + _ATANH_EPS, 1.0 - _ATANH_EPS)
+    u = 0.5 * (torch.log1p(action) - torch.log1p(-action))
+    std = log_std.exp()
+    dist = Normal(mean, std)
+    correction = 2.0 * (_LOG2 - u - F.softplus(-2.0 * u))
+    logprob = dist.log_prob(u).sum(-1) - correction.sum(-1)
+    return logprob, dist.entropy()
+
+
 def action_logprob_and_entropy(
     continuous_mean: torch.Tensor,
     continuous_log_std: torch.Tensor,
@@ -71,6 +86,49 @@ def action_logprob_and_entropy(
         entropy = entropy + binary_dist.entropy().sum(-1)
 
     return logprob, entropy
+
+
+def action_logprob_and_entropy_parts(
+    continuous_mean: torch.Tensor,
+    continuous_log_std: torch.Tensor,
+    binary_logits: torch.Tensor,
+    action: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Log-prob plus entropy split into move, aim, and binary components.
+
+    Phase-4 continuous actions are ordered ``move_x, move_y, aim_delta``. For
+    other continuous shapes, the first two dimensions are treated as movement
+    and any remaining dimensions as aim-like continuous controls.
+    """
+    cont_dim = int(continuous_mean.shape[-1])
+    binary_dim = int(binary_logits.shape[-1])
+
+    logprob = action.new_zeros(action.shape[0])
+    move_entropy = action.new_zeros(action.shape[0])
+    aim_entropy = action.new_zeros(action.shape[0])
+    binary_entropy = action.new_zeros(action.shape[0])
+
+    if cont_dim > 0:
+        cont_action = action[:, :cont_dim]
+        cont_logprob, cont_entropy_dims = _tanh_squashed_logprob_and_entropy_dims(
+            continuous_mean,
+            continuous_log_std,
+            cont_action,
+        )
+        logprob = logprob + cont_logprob
+        move_dim = min(2, cont_dim)
+        if move_dim > 0:
+            move_entropy = cont_entropy_dims[:, :move_dim].sum(-1)
+        if cont_dim > move_dim:
+            aim_entropy = cont_entropy_dims[:, move_dim:].sum(-1)
+
+    if binary_dim > 0:
+        binary_action = action[:, cont_dim : cont_dim + binary_dim]
+        binary_dist = Bernoulli(logits=binary_logits)
+        logprob = logprob + binary_dist.log_prob(binary_action).sum(-1)
+        binary_entropy = binary_dist.entropy().sum(-1)
+
+    return logprob, move_entropy, aim_entropy, binary_entropy
 
 
 def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
