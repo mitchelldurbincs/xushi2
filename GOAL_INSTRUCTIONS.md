@@ -103,3 +103,24 @@ When a task requires human judgment (replay review, design decision, unclear spe
 
 ## Loop Cadence
 Wait 5 minutes between full board checks. If a task is actively running training, you may wait longer (15-30 min) before the next check to avoid interrupting long processes.
+
+---
+
+# Phase 4 Escape Protocol — Critical Override
+
+For ALL Phase 4 (3v3 MAPPO) tasks, you MUST also follow `docs/ESCAPE_PROTOCOL.md`.
+
+**The problem:** We are stuck in a draw basin. 13+ variants across damage, round length, fire rate, BC pretraining, LR, and entropy all produce identical results: 50/50 draws, score 0/0, kills 4-6 per 50 episodes, mean_reward ~+0.96. **Hyperparameter whack-a-mole is exhausted.**
+
+**What you have been doing wrong:** Creating a new YAML with one tweaked parameter, queuing it, getting the same draw result, and repeating. This stops now.
+
+**Before creating ANY new Phase 4 config or task:**
+
+1. **Read `docs/ESCAPE_PROTOCOL.md` Sections 1-3.**
+2. **Run the Circling Detector query.** If 3+ of the last 5 Phase 4 tasks match the draw pattern (50/50 draws, score 0/0, kills <10, mean_reward ≈ +0.96), **STOP creating hyperparameter variants.**
+3. **Perform Behavioral Autopsy.** Dump replays with `--stochastic`, answer the 6 diagnostic questions in ESCAPE_PROTOCOL Section 2, and write findings to the journal. No journal entry without replay evidence.
+4. **Every new config MUST have a `metadata.hypothesis` and `metadata.falsification_criteria` field.** If you cannot articulate a falsifiable hypothesis that has NOT already been tested (see ESCAPE_PROTOCOL Appendix), do NOT create the config.
+5. **Use Diagnostic Shortcuts (ESCAPE_PROTOCOL Section 4) before burning 90+ minutes on 1000-update PPO runs.** If a hypothesis can be tested in <10 minutes (BC-only eval, stochastic eval, self-play eval), run that FIRST.
+6. **If all opponent/hyperparameter hypotheses are exhausted,** follow ESCAPE_PROTOCOL Section 5 (architecture changes, ONE at a time) or Section 6 (Human Escalation with `HUMAN_INSPECTION_REQUIRED`).
+
+**Replays and behavioral diagnosis come BEFORE new configs. Always.**
