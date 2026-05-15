@@ -512,3 +512,59 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Behavioral autopsy:** stochastic eval did not reveal hidden capability: wins `0/50`, losses `43/50`, draws `7/50`, score `0.00/4.88`, kills `0.0/1.4`, mean_reward `-9.6`. The stochastic replay shows the policy can still fire and move while firing (`primary_fire` rate `0.725`, `move_mean` `0.723`, moving-while-firing rate `0.722`, `abs_aim_mean` `0.554`), but it does not convert any learner kills or score. Focus-fire attribution, per-agent kills, and body/headshot attribution remain unavailable from the replay format.
 
 **Conclusion:** Escalation Option 1 is partially successful but falsified as a transfer fix. Freezing the aim pathway during BC preserves the synthetic aim-only mapping, but it leaves the full 3v3 policy unable to contest weak_basic; both BC eval and the first PPO eval collapse to 50/50 losses with zero learner score and zero learner kills. Do not run `aim_freeze_bc_v1` to 500 updates without a new diagnostic or design change. The next useful direction is a structural composition change that preserves movement/objective competence while adding the aim skill, such as starting from the movement checkpoint and distilling the aim-only head into it, or replacing heuristic BC aim targets with the mini-game-trained aim target without freezing the full shared trunk.
+
+## 2026-05-15 — Phase 4 aim_target_bc_v1 first-eval probe
+
+**Human direction:** after `aim_freeze_bc_v1` was falsified, the human selected
+the structural target-replacement path: use the mini-game-trained aim mapping
+as the aim label during full-env `walk_and_shoot` BC while leaving
+movement/fire labels intact and not freezing shared actor layers.
+
+**Implementation/config:** commit `24a348d` added `run.bc_aim_target_checkpoint`
+for `walk_and_shoot` BC. When set, BC keeps the existing movement/fire targets
+but replaces continuous aim action index 2 with deterministic inference from
+the frozen aim-only checkpoint on visible-enemy timesteps. The probe config
+`experiments/configs/phase4/probe/phase4_mappo_aim_target_bc_v1.yaml` also
+uses `run.bc_aim_rehearsal_batch_size: 1024`, mixing full-env BC samples with
+mini-game rehearsal samples so movement/objective BC and mini-game aim are
+learned simultaneously without freezing.
+
+**Diagnostics before PPO:** checkpoint-only aim labels on full-env samples
+preserved only `42/96` synthetic hits after BC, so rehearsal was required.
+With rehearsal enabled, 500-step BC preserved the synthetic aim skill at
+`90/96` hits and `96/96` fires. Full weak_basic BC eval was still the old draw
+basin: `0/50` wins, `50/50` draws, score `0/0`, kills `5/5`.
+Diagnostic artifact:
+`runs/phase4_mappo_aim_target_bc_v1/diagnostics/bc_aim_target_diagnostic.json`.
+
+**First PPO eval:** commit `24a348d`, config
+`experiments/configs/phase4/probe/phase4_mappo_aim_target_bc_v1.yaml`, seed
+`3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/8pgcxmbt`, checkpoint
+`runs/phase4_mappo_aim_target_bc_v1/mappo/ckpt_0050.pt`, stochastic replay
+`data/replays/phase4_aim_target_bc_v1_ckpt0050_stochastic.replay`. A prior
+W&B run `4tgm7i0q` failed immediately because it was launched from `python/`
+and resolved checkpoint paths relative to the wrong working directory; the
+root venv launch succeeded.
+
+**Eval result:** BC eval and update-50 eval were both mean_reward `+1.000`,
+wins `0/50`, losses `0/50`, draws `50/50`, score `0.00/0.00`, kills `5.0/5.0`.
+This passes the synthetic aim-retention gate but fails the full weak_basic
+transfer gate: no wins, no score, and no kill improvement over the standard
+BC retention baseline (`6/5`) or the per-action-entropy best signal (`6/5`).
+
+**Behavioral autopsy:** the stochastic replay confirms agents still fire at
+visible enemies in the no-fog Phase 4 setup: Team A primary-fire rate
+`0.983`. They also move while firing: Team A move rate `0.988` and
+moving-while-firing rate `0.988`. The policy therefore has active fire and
+strafe behavior, but the full-env eval still produces no score separation.
+Focus-fire attribution, per-agent kill concentration, and bot body/headshot
+attribution remain unavailable from the replay format.
+
+**Conclusion:** replacing/rehearsing the mini-game aim target preserves much
+more isolated aim skill than standard BC, but it is falsified as a first-eval
+full 3v3 transfer fix. The remaining failure is composition under full-env
+combat/objective dynamics, not simple BC erasure of the synthetic aim mapping.
+Do not extend `aim_target_bc_v1` to a long run without a new diagnostic or
+instrumentation that explains why 90/96 synthetic aim hits still become only
+scoreless 5/5 weak_basic draws.
