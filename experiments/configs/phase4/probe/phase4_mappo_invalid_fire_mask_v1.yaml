@@ -1,0 +1,101 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: architecture_probe
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+  - phase4_architecture_break_glass
+  hypothesis: "Agents fire and move but waste primary-fire samples when no enemy is visible, diluting PPO fire/aim gradients; masking primary_fire unless the actor observation contains an alive visible enemy should concentrate fire on meaningful timesteps and improve kill-per-fire conversion versus weak_basic_v1 without changing rewards, observations, actions, or game rules."
+  falsification_criteria: "Falsified if by update 500 eval still shows 50/50 draws, score 0/0, and kills no better than weak_basic_v1's update-500 result of 4.0/4.0, or if replay/action metrics show primary fire remains high on invalid timesteps and kill-per-fire conversion does not improve."
+  max_updates_if_no_signal: 500
+  diagnostic: "2026-05-15 implementation diagnostic: focused unit tests confirm primary_fire is suppressed when no enemy is visible, remains available when an alive enemy is visible, and PPO update metrics log fire_valid_fraction; actor/critic leak tests and obs manifest tests passed."
+  lineage: "Architecture probe based on weak_basic_v1 baseline after aux_aim_v1 and per_action_entropy_v1 were falsified. The only intended lever is ppo.mask_fire_when_no_visible_enemy from Escape Protocol 5.3."
+  provenance: "Escape Protocol 5.3 invalid-fire action mask implementation."
+
+# invalid_fire_mask_v1 — Escape Protocol 5.3 architecture probe.
+#
+# This config isolates one structural action-distribution change from
+# weak_basic_v1: `ppo.mask_fire_when_no_visible_enemy: true`.
+# The opponent, rewards, sim mechanics, BC warm-start, LR, entropy, and PPO
+# schedule are intentionally inherited from weak_basic_v1.
+#
+# This must not be combined with 5.1 auxiliary aim or 5.2 per-action entropy
+# in this probe. Those interventions were already tested independently and
+# this run is measuring whether invalid-fire suppression alone breaks the
+# draw basin or improves kill conversion.
+#
+# Success criteria (update 200, 500):
+#   - Update 200: first nonzero wins or score in eval, or Team A kills > bot kills
+#   - Update 500: consistent wins or score, Team A kills trending upward, or
+#     kill-per-fire conversion materially exceeds weak_basic_v1.
+#
+# Failure criteria:
+#   - Update 500: still 50/50 draws, score 0/0, and kills no better than
+#     weak_basic_v1's 4.0/4.0 update-500 result.
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  mask_fire_when_no_visible_enemy: true
+
+run:
+  total_updates: 500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_invalid_fire_mask_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
