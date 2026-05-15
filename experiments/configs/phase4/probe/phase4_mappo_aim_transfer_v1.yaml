@@ -1,0 +1,93 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: architecture_probe
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+  - phase4_architecture_break_glass
+  hypothesis: "The aim-only mini-game proved the actor can learn visible-target aim; warm-starting the normal weak_basic 3v3 objective run from that checkpoint should transfer the aim mapping under movement/objective pressure, improving kills and producing nonzero score or wins versus weak_basic_v1 without adding auxiliary aim, per-action entropy, invalid-fire masking, reward changes, observation changes, or bot changes."
+  falsification_criteria: "Falsified if by update 500 eval still shows 50/50 draws, score 0/0, and kills no better than weak_basic_v1's update-500 result of 4.0/4.0, or if replay/action metrics show firing and movement remain active but the aim-only hit skill does not transfer into kill/score conversion."
+  max_updates_if_no_signal: 500
+  diagnostic: "phase4_mappo_aim_only_v1 crossed the 50% greedy hit-rate threshold at update 80 and finished update 200 at 94.96/96 possible hits."
+  lineage: "Full 3v3 transfer probe based on weak_basic_v1 after Escape Protocol 5.4 aim-only mini-game succeeded. The only intended lever versus weak_basic_v1 is run.init_from_checkpoint pointing to the aim-only checkpoint."
+  provenance: "Escape Protocol 5.4 aim-only mini-game checkpoint transfer."
+
+# aim_transfer_v1 — Escape Protocol 5.4 full 3v3 transfer probe.
+#
+# This config returns to the normal weak_basic 3v3 objective environment. It
+# is intentionally inherited from weak_basic_v1 except for the warm-start
+# checkpoint:
+#
+#   weak_basic_v1 init_from_checkpoint:
+#     runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+#   aim_transfer_v1 init_from_checkpoint:
+#     runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt
+#
+# Do not combine with auxiliary aim, per-action entropy, or invalid-fire
+# masking in this transfer probe.
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_aim_transfer_v1
+  init_from_checkpoint: runs/phase4_mappo_aim_only_v1/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
