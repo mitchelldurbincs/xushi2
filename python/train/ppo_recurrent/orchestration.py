@@ -20,7 +20,7 @@ from train.ppo_recurrent.logging import (
     log_eval,
     log_update,
 )
-from train.ppo_recurrent.lr_schedule import lr_for_update
+from train.common_orchestration import LoopConfig, run_training_loop
 from train.ppo_recurrent.trainer import PPOTrainer
 from train.wandb_logger import make_logger
 
@@ -311,114 +311,109 @@ def _run_variant(
 
     last_eval = float("nan")
     stop_reason: str | None = None
+    class _PpoHooks:
+        def set_learning_rate(self, lr: float) -> None:
+            trainer.set_learning_rate(lr)
+
+        def collect_rollout(self, update_idx: int):
+            return trainer.collect_rollout()
+
+        def update_step(self, update_idx: int, rollout, lr: float):
+            return trainer.update(rollout)
+
+        def evaluate_step(self, update_idx: int, lr: float):
+            return evaluate_policy_stats(
+                trainer.model,
+                env_fn,
+                num_episodes=eval_episodes,
+                seed=variant_seed + 100_000 + update_idx,
+            )
+
+        def checkpoint_payload(self, update_idx: int) -> dict:
+            return {"path": output_dir / f"ckpt_{update_idx:04d}.pt"}
+
+        def on_log(self, update_idx: int, lr: float, metrics: dict[str, float]) -> None:
+            update_record = log_update(
+                phase=phase_label,
+                variant=variant_name,
+                update=update_idx,
+                total_updates=total_updates,
+                metrics=metrics,
+            )
+            print(format_human_event(update_record), flush=True)
+            wandb_logger.log({f"train/{k}": float(v) for k, v in metrics.items()}, step=update_idx)
+
+        def on_eval(self, update_idx: int, lr: float, eval_stats) -> bool:
+            nonlocal last_eval, best_eval, best_update, best_state, no_improve_eval_count, stop_reason
+            last_eval = eval_stats.mean_reward
+            eval_record = log_eval(
+                phase=phase_label,
+                variant=variant_name,
+                update=update_idx,
+                total_updates=total_updates,
+                lr=lr,
+                eval_stats=eval_stats,
+            )
+            print(format_human_event(eval_record), flush=True)
+            _eval_scalar_keys = (
+                "mean_reward", "wins", "losses", "draws", "terminated", "truncated", "episodes",
+                "mean_final_tick", "mean_team_a_score", "mean_team_b_score", "mean_team_a_kills", "mean_team_b_kills",
+            )
+            wandb_logger.log({f"eval/{k}": float(getattr(eval_stats, k)) for k in _eval_scalar_keys}, step=update_idx)
+            if last_eval > (best_eval + early_stop_min_delta):
+                best_eval = last_eval
+                best_update = update_idx
+                best_state = copy.deepcopy(trainer.model.state_dict())
+                no_improve_eval_count = 0
+            else:
+                no_improve_eval_count += 1
+
+            if max_regression_from_best >= 0.0 and best_eval > float("-inf") and (best_eval - last_eval) > max_regression_from_best:
+                stop_reason = (
+                    "eval regression exceeded max_regression_from_best: "
+                    f"best={best_eval:+.3f} current={last_eval:+.3f} "
+                    f"drop={best_eval - last_eval:+.3f} "
+                    f"threshold={max_regression_from_best:+.3f} "
+                    f"at update={update_idx}"
+                )
+                return True
+            if early_stop_patience_evals > 0 and no_improve_eval_count >= early_stop_patience_evals:
+                stop_reason = (
+                    "eval improvement stagnated past patience: "
+                    f"no_improve_evals={no_improve_eval_count} "
+                    f"patience={early_stop_patience_evals} "
+                    f"min_delta={early_stop_min_delta:+.3f} "
+                    f"at update={update_idx}"
+                )
+                return True
+            return False
+
+        def on_checkpoint(self, update_idx: int, payload: dict) -> None:
+            ckpt_path = payload["path"]
+            _save_checkpoint(trainer.model, ckpt_path, ckpt_cfg)
+            checkpoint_record = log_checkpoint(
+                phase=phase_label,
+                variant=variant_name,
+                update=update_idx,
+                total_updates=total_updates,
+                path=str(ckpt_path),
+            )
+            print(format_human_event(checkpoint_record), flush=True)
+
     try:
-        for update_idx in range(1, total_updates + 1):
-            current_lr = lr_for_update(
-                update_idx,
-                total_updates,
+        run_training_loop(
+            LoopConfig(
+                total_updates=total_updates,
+                eval_every=eval_every,
+                checkpoint_every=checkpoint_every,
+                log_every=log_every,
                 base_lr=ppo_cfg.learning_rate,
-                schedule=ppo_cfg.lr_schedule,
+                lr_schedule=ppo_cfg.lr_schedule,
                 lr_final_ratio=ppo_cfg.lr_final_ratio,
                 warmup_updates=ppo_cfg.warmup_updates,
-            )
-            trainer.set_learning_rate(current_lr)
-            rollout = trainer.collect_rollout()
-            metrics = trainer.update(rollout)
-
-            if log_every > 0 and update_idx % log_every == 0:
-                update_record = log_update(
-                    phase=phase_label,
-                    variant=variant_name,
-                    update=update_idx,
-                    total_updates=total_updates,
-                    metrics=metrics,
-                )
-                print(format_human_event(update_record), flush=True)
-                wandb_logger.log(
-                    {f"train/{k}": float(v) for k, v in metrics.items()},
-                    step=update_idx,
-                )
-
-            if update_idx % eval_every == 0 or update_idx == total_updates:
-                eval_stats = evaluate_policy_stats(
-                    trainer.model,
-                    env_fn,
-                    num_episodes=eval_episodes,
-                    seed=variant_seed + 100_000 + update_idx,
-                )
-                last_eval = eval_stats.mean_reward
-                eval_record = log_eval(
-                    phase=phase_label,
-                    variant=variant_name,
-                    update=update_idx,
-                    total_updates=total_updates,
-                    lr=current_lr,
-                    eval_stats=eval_stats,
-                )
-                print(format_human_event(eval_record), flush=True)
-                _eval_scalar_keys = (
-                    "mean_reward",
-                    "wins",
-                    "losses",
-                    "draws",
-                    "terminated",
-                    "truncated",
-                    "episodes",
-                    "mean_final_tick",
-                    "mean_team_a_score",
-                    "mean_team_b_score",
-                    "mean_team_a_kills",
-                    "mean_team_b_kills",
-                )
-                wandb_logger.log(
-                    {f"eval/{k}": float(getattr(eval_stats, k)) for k in _eval_scalar_keys},
-                    step=update_idx,
-                )
-                if last_eval > (best_eval + early_stop_min_delta):
-                    best_eval = last_eval
-                    best_update = update_idx
-                    best_state = copy.deepcopy(trainer.model.state_dict())
-                    no_improve_eval_count = 0
-                else:
-                    no_improve_eval_count += 1
-
-                if (
-                    max_regression_from_best >= 0.0
-                    and best_eval > float("-inf")
-                    and (best_eval - last_eval) > max_regression_from_best
-                ):
-                    stop_reason = (
-                        "eval regression exceeded max_regression_from_best: "
-                        f"best={best_eval:+.3f} current={last_eval:+.3f} "
-                        f"drop={best_eval - last_eval:+.3f} "
-                        f"threshold={max_regression_from_best:+.3f} "
-                        f"at update={update_idx}"
-                    )
-                    break
-                if (
-                    early_stop_patience_evals > 0
-                    and no_improve_eval_count >= early_stop_patience_evals
-                ):
-                    stop_reason = (
-                        "eval improvement stagnated past patience: "
-                        f"no_improve_evals={no_improve_eval_count} "
-                        f"patience={early_stop_patience_evals} "
-                        f"min_delta={early_stop_min_delta:+.3f} "
-                        f"at update={update_idx}"
-                    )
-                    break
-
-            if update_idx % checkpoint_every == 0 or update_idx == total_updates:
-                ckpt_path = output_dir / f"ckpt_{update_idx:04d}.pt"
-                _save_checkpoint(trainer.model, ckpt_path, ckpt_cfg)
-                checkpoint_record = log_checkpoint(
-                    phase=phase_label,
-                    variant=variant_name,
-                    update=update_idx,
-                    total_updates=total_updates,
-                    path=str(ckpt_path),
-                )
-                print(format_human_event(checkpoint_record), flush=True)
+            ),
+            _PpoHooks(),
+        )
     finally:
         envs = getattr(trainer, "envs", None)
         if envs is not None:
