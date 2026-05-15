@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <xushi2/common/assert.hpp>
 #include <xushi2/common/limits.hpp>
 
 namespace xushi2::sim::obs_utils {
@@ -208,6 +209,24 @@ observable_enemy_slots(const Sim& sim, std::uint32_t viewer_slot) noexcept {
         out[i] = observable_enemy(sim, viewer_slot, i);
     }
     return out;
+}
+
+std::array<std::uint32_t, 3>
+find_team_ranger_slots(const MatchState& s, common::Team team) noexcept {
+    std::array<std::uint32_t, 3> slots{
+        static_cast<std::uint32_t>(s.heroes.size()),
+        static_cast<std::uint32_t>(s.heroes.size()),
+        static_cast<std::uint32_t>(s.heroes.size()),
+    };
+    std::uint32_t found = 0;
+    for (std::uint32_t i = 0; i < s.heroes.size() && found < 3; ++i) {
+        const auto& h = s.heroes[i];
+        if (h.present && h.team == team) {
+            slots[found++] = i;
+        }
+    }
+    X2_REQUIRE(found == 3, common::ErrorCode::InvalidHeroId);
+    return slots;
 }
 
 bool position_on_objective(common::Vec2 world_pos,

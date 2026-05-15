@@ -233,4 +233,22 @@ void build_actor_obs_phase1(const Sim& sim,
               common::ErrorCode::CapacityExceeded);
 }
 
+void build_actor_obs_team_phase1(const Sim& sim,
+                                 common::Team team,
+                                 float* out_buffer,
+                                 std::uint32_t out_capacity) noexcept {
+    X2_REQUIRE(out_buffer != nullptr, common::ErrorCode::CorruptState);
+    X2_REQUIRE(out_capacity >= 3U * kActorObsPhase1Dim,
+               common::ErrorCode::CapacityExceeded);
+    X2_REQUIRE(team == common::Team::A || team == common::Team::B,
+               common::ErrorCode::InvalidHeroId);
+
+    const auto slots = obs_utils::find_team_ranger_slots(sim.state(), team);
+    for (std::uint32_t i = 0; i < 3U; ++i) {
+        build_actor_obs_phase1(sim, slots[i],
+                               out_buffer + i * kActorObsPhase1Dim,
+                               kActorObsPhase1Dim);
+    }
+}
+
 }  // namespace xushi2::sim

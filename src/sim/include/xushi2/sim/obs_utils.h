@@ -91,6 +91,13 @@ VisibleEnemySlot visible_enemy_1v1(const MatchState& s,
 std::array<bool, kAgentsPerMatch>
 observable_enemy_slots(const Sim& sim, std::uint32_t viewer_slot) noexcept;
 
+// Return the three Ranger slot indices belonging to `team`, in ascending
+// slot order. Requires `team` to have exactly three present Rangers
+// (MatchConfig::team_size == 3); aborts otherwise. Shared by the critic
+// builder and the team-scoped actor obs builder.
+std::array<std::uint32_t, 3>
+find_team_ranger_slots(const MatchState& s, common::Team team) noexcept;
+
 // Geometry helper exposed because both actor and critic need it. Wraps the
 // private `inside_objective` used inside the sim tick pipeline.
 bool position_on_objective(common::Vec2 world_pos,

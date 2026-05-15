@@ -52,6 +52,26 @@ void build_actor_obs_phase1(const Sim& sim,
                             float* out_buffer,
                             std::uint32_t out_capacity) noexcept;
 
+// Build all three Phase-1 actor observations for a team in a single call.
+//
+// Contract:
+//  - Writes exactly `3 * kActorObsPhase1Dim` floats starting at
+//    out_buffer[0], row-major (slot i at offset i * kActorObsPhase1Dim).
+//  - Requires `out_capacity >= 3 * kActorObsPhase1Dim`; aborts otherwise.
+//  - Requires the team to have exactly three present Rangers, i.e. the
+//    Sim was constructed with `MatchConfig::team_size == 3`.
+//  - `team` must be `Team::A` or `Team::B`.
+//  - Rows correspond to the team's three Ranger slots in ascending slot
+//    order (same order as the centralized critic's own-team mirrors).
+//
+// Each row is identical to what `build_actor_obs_phase1` would have
+// written for that slot — this entry point exists to amortize the FFI
+// crossing on the MAPPO env's hot path.
+void build_actor_obs_team_phase1(const Sim& sim,
+                                 common::Team team,
+                                 float* out_buffer,
+                                 std::uint32_t out_capacity) noexcept;
+
 // Build the Phase-4 centralized-critic observation for the given team
 // perspective into the caller-provided `out_buffer` of capacity
 // `out_capacity` float32 entries.

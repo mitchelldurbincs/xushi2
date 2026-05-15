@@ -240,8 +240,7 @@ class Phase4MappoEnv(gym.Env):
         self._sim = None
 
     def _build_actor_obs_all(self) -> None:
-        for i, slot in enumerate(self._own_slots):
-            _cpp.build_actor_obs(self._sim, slot, self._actor_obs_buf[i])
+        _cpp.build_actor_obs_team(self._sim, self._learner_team, self._actor_obs_buf)
 
     def _make_info(self) -> dict[str, Any]:
         s = self._sim

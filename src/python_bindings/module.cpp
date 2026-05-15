@@ -322,6 +322,56 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         py::arg("sim"), py::arg("agent_slot"), py::arg("out"),
         "Write the Phase-1 actor observation for agent_slot into `out`.");
 
+    // Write all three Phase-1 actor observations for a team in a single FFI
+    // call. `out` must be a contiguous float32 buffer with capacity at least
+    // 3 * ACTOR_OBS_PHASE1_DIM. Accepts 1-D (>= 93 elements) or 2-D
+    // (rows == 3, cols >= ACTOR_OBS_PHASE1_DIM) layouts; rows are written
+    // contiguously in the underlying storage either way.
+    m.def(
+        "build_actor_obs_team",
+        [](const xushi2::sim::Sim& sim, xushi2::common::Team team,
+           py::array_t<float, py::array::c_style | py::array::forcecast> out) {
+            const std::uint32_t needed = 3U * xushi2::sim::kActorObsPhase1Dim;
+            std::uint32_t total = 0;
+            if (out.ndim() == 1) {
+                if (static_cast<std::uint32_t>(out.shape(0)) < needed) {
+                    throw std::invalid_argument(
+                        "out buffer length must be >= 3 * ACTOR_OBS_PHASE1_DIM");
+                }
+                total = static_cast<std::uint32_t>(out.shape(0));
+            } else if (out.ndim() == 2) {
+                if (out.shape(0) != 3 ||
+                    static_cast<std::uint32_t>(out.shape(1)) <
+                        xushi2::sim::kActorObsPhase1Dim) {
+                    throw std::invalid_argument(
+                        "out buffer must have shape (3, >= ACTOR_OBS_PHASE1_DIM)");
+                }
+                if (static_cast<std::uint32_t>(out.shape(1)) !=
+                    xushi2::sim::kActorObsPhase1Dim) {
+                    // Row-major contiguity makes padded rows ambiguous; reject
+                    // rather than silently smearing data across rows.
+                    throw std::invalid_argument(
+                        "out buffer row width must equal ACTOR_OBS_PHASE1_DIM");
+                }
+                total = static_cast<std::uint32_t>(out.shape(0) * out.shape(1));
+            } else {
+                throw std::invalid_argument(
+                    "out buffer must be 1-D or 2-D float32");
+            }
+            if (team != xushi2::common::Team::A &&
+                team != xushi2::common::Team::B) {
+                throw std::invalid_argument(
+                    "team must be Team.A or Team.B "
+                    "(Team.Neutral has no actor obs)");
+            }
+            xushi2::sim::build_actor_obs_team_phase1(
+                sim, team, out.mutable_data(), total);
+        },
+        py::arg("sim"), py::arg("team"), py::arg("out"),
+        "Write all three Phase-1 actor observations for `team` into `out` "
+        "in a single FFI call. Rows correspond to the team's three Ranger "
+        "slots in ascending slot order. Requires team_size == 3.");
+
     // Write the Phase-4 critic observation for `team_perspective` into the
     // caller-provided float32 numpy buffer. Team must be Team.A or Team.B.
     // Requires the Sim was constructed with MatchConfig::team_size == 3.

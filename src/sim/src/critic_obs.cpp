@@ -24,6 +24,7 @@
 #include <xushi2/common/assert.hpp>
 #include <xushi2/common/limits.hpp>
 #include <xushi2/common/types.h>
+#include <xushi2/sim/obs_utils.h>
 #include <xushi2/sim/sim.h>
 
 namespace xushi2::sim {
@@ -49,24 +50,6 @@ float clamp01(float v) noexcept {
 float norm_u32(std::uint32_t v) noexcept {
     constexpr float kTwoPow32 = 4294967296.0F;
     return 2.0F * (static_cast<float>(v) / kTwoPow32) - 1.0F;
-}
-
-std::array<std::uint32_t, 3> find_team_ranger_slots(
-        const MatchState& s, common::Team team) noexcept {
-    std::array<std::uint32_t, 3> slots{
-        static_cast<std::uint32_t>(s.heroes.size()),
-        static_cast<std::uint32_t>(s.heroes.size()),
-        static_cast<std::uint32_t>(s.heroes.size()),
-    };
-    std::uint32_t found = 0;
-    for (std::uint32_t i = 0; i < s.heroes.size() && found < 3; ++i) {
-        const auto& h = s.heroes[i];
-        if (h.present && h.team == team) {
-            slots[found++] = i;
-        }
-    }
-    X2_REQUIRE(found == 3, common::ErrorCode::InvalidHeroId);
-    return slots;
 }
 
 void emit_enemy_world_block(Writer& w,
@@ -140,7 +123,7 @@ void build_critic_obs(const Sim& sim,
     X2_REQUIRE(cfg.team_size == 3, common::ErrorCode::CorruptState);
 
     // 1) Three own-team actor mirrors, each kActorObsPhase1Dim floats.
-    const auto own_slots = find_team_ranger_slots(s, team_perspective);
+    const auto own_slots = obs_utils::find_team_ranger_slots(s, team_perspective);
     for (std::uint32_t i = 0; i < 3; ++i) {
         build_actor_obs_phase1(sim, own_slots[i],
                                out_buffer + i * kActorObsPhase1Dim,
@@ -153,7 +136,7 @@ void build_critic_obs(const Sim& sim,
     const common::Team enemy_team =
         (team_perspective == common::Team::A) ? common::Team::B
                                               : common::Team::A;
-    const auto enemy_slots = find_team_ranger_slots(s, enemy_team);
+    const auto enemy_slots = obs_utils::find_team_ranger_slots(s, enemy_team);
     for (std::uint32_t i = 0; i < 3; ++i) {
         emit_enemy_world_block(w, s.heroes[enemy_slots[i]], s.tick, cfg);
     }
