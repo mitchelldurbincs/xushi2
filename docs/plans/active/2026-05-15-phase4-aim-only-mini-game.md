@@ -85,3 +85,17 @@ Autopsy: Team A still fired almost continuously (`0.9996`) and moved while
 firing (`0.980`), but the synthetic aim skill did not transfer into full-env
 kill or score conversion. Do not queue aim-transfer variants without a new
 diagnostic that directly measures where the aim mapping is lost.
+
+## Retention Diagnostic
+
+Loaded the aim-only checkpoint, evaluated synthetic aim before and after the
+same 500-step `walk_and_shoot` BC pass used by `aim_transfer_v1`.
+
+- Before BC: `94.84/96` synthetic hits.
+- Before BC in full weak_basic: `0/50` wins, score `0/7`, kills `0/0`.
+- After BC: `0.02/96` synthetic hits.
+- After BC in full weak_basic: `50/50` draws, score `0/0`, kills `6/5`.
+
+Conclusion: standard full-env BC erases the synthetic aim mapping before PPO.
+The next transfer design must protect the aim skill or change the BC target;
+rerunning the same aim-transfer shape is invalid.
