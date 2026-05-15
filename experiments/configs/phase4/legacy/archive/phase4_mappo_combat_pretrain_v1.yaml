@@ -1,69 +1,88 @@
 phase: 4
-env:
-  # v8-combat-pretrain-v1 — PURE COMBAT STAGE.
-  #
-  # v7 (bot fire cooldown 30 + 30s rounds + LR 2e-6) proved the draw equilibrium
-  # is ROBUST against fire-rate changes. Even with 10:1 theoretical DPS
-  # advantage (bot fires every 30 ticks, we fire at bin=0.33), the bot
-  # consistently gets 7-12 kills per 50 episodes while we get 0-2.
-  #
-  # The bottleneck is AIM QUALITY, not fire rate or damage. Our BC heuristic
-  # aim (point at nearest visible enemy's current position) is too crude
-  # to hit moving targets. The bot's scripted aim is significantly better.
-  #
-  # This stage ISOLATES COMBAT LEARNING from 3v3 objective complexity.
-  # We use a stationary shooter opponent (hold_and_shoot) with extremely
-  # low damage and very slow fire rate, so agents survive long enough to
-  # learn aim refinement through PPO. Strong kill and damage rewards
-  # (with no death penalty) create pure combat incentive.
-  #
-  # No cap scoring, no timeout pressure, no death penalty.
-  # The ONLY rewards are combat: kill_bonus + damage_dealt.
-  # This lets PPO refine aim quality without the 3v3 objective noise.
-  #
-  # Once eval shows Team A kills > bot kills consistently, we warm-start
-  # this combat-capable checkpoint into the full 3v3 objective stage.
-  #
-  # Key insight from v7: bot aim > our aim. Nerfing bot fire rate
-  # cannot overcome aim quality gap. We must explicitly train aim.
-  opponent_bot: hold_and_shoot
-  score_per_second: 0.0
-  time_penalty_per_second: 0.0
-  death_penalty: 0.0
-  kill_bonus: 1.0
-  damage_dealt_per_second: 0.2
-  distance_shaping_coef: 0.0
-  on_point_shaping_coef: 0.0
-  revolver_damage_centi_hp: 250
-  revolver_fire_cooldown_ticks: 60
-  round_length_seconds: 60
+metadata:
+  phase: phase4
+  purpose: combat_pretrain
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+  - phase4_combat_curriculum
+  lineage: Isolated combat pretraining stage. Pure combat rewards, no objective pressure.
 
-mappo:
-  num_updates: 1500
-  # More aggressive LR than conservative v5 — we're not preserving a delicate
-  # cap-holding equilibrium. We're actively trying to improve combat skill.
+# v8-combat-pretrain-v1 -- ISOLATE COMBAT LEARNING FROM 3v3 OBJECTIVE.
+#
+# v7 (bot fire cooldown 30 + 30s rounds + LR 2e-6) proved the draw equilibrium
+# is ROBUST against fire-rate changes. Even with ~10:1 theoretical DPS
+# advantage, bot aim > our aim. The bottleneck is AIM QUALITY.
+#
+# This stage ISOLATES COMBAT LEARNING from 3v3 objective complexity.
+# Stationary shooter opponent, extremely low damage, very slow fire rate,
+# no death penalty, strong kill/damage rewards. Pure combat incentive.
+# Once eval shows Team A kills > bot kills consistently, warm-start into
+# the full 3v3 objective stage.
+
+env:
+  seed_base: 3519994490
+  opponent_bot: hold_and_shoot
+  learner_team: A
+  reward:
+    score_per_second: 0.0
+    time_penalty_per_second: 0.0
+    death_penalty: 0.0
+    kill_bonus: 1.0
+    damage_dealt_per_second: 0.2
+    distance_shaping_coef: 0.0
+    on_point_shaping_coef: 0.0
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 250
+      revolver_fire_cooldown_ticks: 60
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
   learning_rate: 5.0e-5
-  # Keep entropy high to encourage exploration of aim angles.
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
   entropy_coef: 0.02
-  team_spirit: 0.3
-  team_spirit_end: 1.0
-  team_spirit_ramp_updates: 1000
-  use_wandb: true
-  action_repeat: 3
-  # Warm-start from the proven cap-holder — gives initial movement behavior.
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 1500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_combat_pretrain_v1
+  # Warm-start from the proven cap-holder -- gives initial movement behavior.
   # The walk_and_shoot BC re-anchors cap-walking + firing + aiming.
-  warmup_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
   bc_pretrain_variant: walk_and_shoot
   bc_pretrain_steps: 500
-  num_envs: 64
-  batch_size: 256
-  total_timesteps: 115200000
-
-# Evaluate using the same reduced bot (hold_and_shoot), since this is a
-# combat-only stage. Success = Team A kills > bot kills with upward trend.
-eval:
-  num_eval_episodes: 50
-  eval_interval_updates: 50
-  opponent_bot: hold_and_shoot
-
-seed: 0xD1CEDA7A
