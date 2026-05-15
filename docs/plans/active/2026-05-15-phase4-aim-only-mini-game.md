@@ -71,3 +71,17 @@ Conclusion: Escape Protocol 5.4 is a positive diagnostic. The actor can learn
 visible-target aim in isolation. The next isolated test is full 3v3 weak_basic
 warm-started from the aim-only checkpoint, without combining auxiliary aim,
 per-action entropy, or invalid-fire masking.
+
+## Transfer Result
+
+`phase4_mappo_aim_transfer_v1` tested that transfer step in the full weak_basic
+3v3 objective environment. It ran to update 500 and failed: final eval was
+`0/50` wins, `50/50` draws, score `0/0`, and kills `0.0/3.0`.
+
+Replay: `data/replays/phase4_aim_transfer_v1_ckpt0500_stochastic.replay`.
+W&B: `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/9n07ntl5`.
+
+Autopsy: Team A still fired almost continuously (`0.9996`) and moved while
+firing (`0.980`), but the synthetic aim skill did not transfer into full-env
+kill or score conversion. Do not queue aim-transfer variants without a new
+diagnostic that directly measures where the aim mapping is lost.
