@@ -311,3 +311,33 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **This proves: for combat pretraining to work, the opponent MUST be where our agents actually are.** `hold_and_shoot` at spawn + our agents at cap = no combat range.
 
 **Next approach: use `basic` bot (walks to cap) with survivable DPS. Bot walks to the same location as our agents, guaranteeing close-range combat. 250 damage + 60-tick cooldown means bot cannot kill anyone even with 100% accuracy in 60s rounds. Our ~10× fire-rate advantage should produce hits through sheer volume at close range.
+
+## 2026-05-15 — Phase 4 v8_combat_pretrain_v2 (basic bot at cap, 250 damage, survivable DPS, done)
+
+**CATASTROPHIC FAILURE: basic bot + LR 5e-5 collapses into fleeing within 50 updates.**
+
+**BC phase:** 500 steps, loss 0.4707 → 0.0002. `walk_and_shoot` variant.
+
+**BC eval:** 0/50 wins, **50/50 draws**, score 0/0, mean_reward +1.000.
+
+**PPO eval at update 50:** 0/50 wins, **50/50 LOSSES**, score 0/37, kills 0/0, mean_reward **-11.000**.
+
+**Training progression (updates 5-50):**
+- `onpt` collapsed: 0.165 → 0.001 → 0.000 (agents abandoned the cap)
+- `dist` climbed: 0.340 → 0.523 → 0.519 (agents fled to map edges)
+- `move` dropped: 0.690 → 0.506 (stopped moving toward objective)
+- `bin` stable at 0.333 (still firing, but at empty space)
+
+**Root cause: same as every variant with LR ≥ 2e-6 against basic bot.** The `basic` bot has perfect aim. At close range on the cap, it hits our agents. PPO at 5e-5 rapidly learns "cap = getting shot = losing = RUN AWAY." By update 50, all agents are at map edges, bot caps uncontested (score 37-0), 50/50 losses.
+
+**The pure combat rewards (kill_bonus, damage_dealt) never triggered because agents never engaged.** They fled before any shots connected.
+
+**This proves AGAIN: the cap + basic bot + LR ≥ 2e-6 = guaranteed collapse into fleeing/losses within 50-325 updates. There is no window between "frozen draw" (1e-6) and "collapse" (2e-6).**
+
+## 2026-05-15 — Phase 4 v7_basic_reduced_bc_v5_high_entropy (30s, 1000dmg, basic, LR 1e-6, entropy 0.08, running)
+
+**Strategy: keep the STABLE v5 draw-equilibrium parameters but raise entropy to 0.08 (4× higher).**
+
+At LR 1e-6 the policy steps are tiny — cap-holding won't break. But high entropy adds noise to aim angles, potentially stumbling on better predictive aim (lead shots) that produces hits. Even tiny hit-rate improvements at 1000 damage can shift the equilibrium toward wins over hundreds of updates at this LR.
+
+If this also produces only draws at update 1000, the draw basin is deeper than entropy can escape.
