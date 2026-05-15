@@ -17,6 +17,13 @@ from train.mappo_metrics import rollout_metrics
 from train.mappo_rollout import collect_rollout, step_loss_mask
 from train.mappo_update import update_full_rollout
 from train.ppo_recurrent.losses import _masked_mean
+from train.recurrent_common import (
+    apply_global_seeds,
+    get_optimizer_learning_rate,
+    grad_group_norm,
+    next_update_sampling_state,
+    set_optimizer_learning_rate,
+)
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -54,8 +61,7 @@ class MappoTrainer:
         self.seed = int(seed)
         if cfg.torch_num_threads > 0:
             torch.set_num_threads(cfg.torch_num_threads)
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
+        apply_global_seeds(self.seed)
         self.vec_env = make_xushi_vector_env(
             [env_fn for _ in range(cfg.num_envs)],
             critic_obs_dim=(
@@ -67,11 +73,10 @@ class MappoTrainer:
         obs, initial_critic_obs, _infos = self.vec_env.reset(seed=self.seed)
         self.last_obs = torch.as_tensor(obs, dtype=torch.float32)
         self.last_critic_obs = self._critic_obs_from_np(initial_critic_obs)
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
+        apply_global_seeds(self.seed)
         self.model = MappoActorCritic(cfg)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.learning_rate)
-        self.current_learning_rate = cfg.learning_rate
+        set_optimizer_learning_rate(self.optimizer, cfg.learning_rate)
         self.h = self.model.init_hidden(cfg.num_envs * cfg.n_agents).view(
             cfg.num_envs, cfg.n_agents, cfg.gru_hidden
         )
@@ -103,9 +108,7 @@ class MappoTrainer:
         self.vec_env.close()
 
     def set_learning_rate(self, lr: float) -> None:
-        self.current_learning_rate = float(lr)
-        for group in self.optimizer.param_groups:
-            group["lr"] = self.current_learning_rate
+        set_optimizer_learning_rate(self.optimizer, lr)
 
     def set_team_spirit(self, value: float) -> None:
         """Push team_spirit value to every wrapped env via the vector wrapper.
@@ -115,13 +118,13 @@ class MappoTrainer:
         per-agent envs actually reweight their per-step rewards."""
         self.vec_env.set_team_spirit(float(value))
 
+    @property
+    def current_learning_rate(self) -> float:
+        return get_optimizer_learning_rate(self.optimizer)
+
     @staticmethod
     def _group_grad_norm(params: list[torch.nn.Parameter]) -> float:
-        total_sq = 0.0
-        for p in params:
-            if p.grad is not None:
-                total_sq += float(p.grad.detach().pow(2).sum().item())
-        return float(total_sq**0.5)
+        return grad_group_norm(params)
 
     def _critic_obs_from_np(self, critic_obs_np: np.ndarray) -> torch.Tensor:
         critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32)
@@ -162,7 +165,9 @@ class MappoTrainer:
         losses = []
         for _epoch in range(cfg.num_epochs):
             losses.append(self._update_full_rollout(rollout, ret_mean, ret_std))
-        self._update_counter += 1
+        self._update_counter = next_update_sampling_state(
+            self.seed, self._update_counter
+        ).update_counter
         metrics = {k: float(np.mean([m[k] for m in losses])) for k in losses[0]}
         metrics.update(rollout_metrics)
         return metrics

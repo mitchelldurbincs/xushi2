@@ -5,6 +5,7 @@ import torch.nn as nn
 
 from train.ppo_recurrent import metrics as metrics_lib
 from train.ppo_recurrent.losses import action_logprob_and_entropy, compute_ppo_loss
+from train.recurrent_common import next_update_sampling_state
 
 
 def update_ppo(trainer, rollout) -> dict[str, float]:
@@ -20,7 +21,8 @@ def update_ppo(trainer, rollout) -> dict[str, float]:
     else:
         ret_mean, ret_std = 0.0, 1.0
 
-    mb_seed = trainer.seed * 1_000_003 + (trainer._update_counter + 1)
+    sampling_state = next_update_sampling_state(trainer.seed, trainer._update_counter)
+    mb_seed = sampling_state.minibatch_seed
     metrics_sum = metrics_lib.init_metrics_sum()
     total_valid = 0.0
     num_minibatches = 0
@@ -46,7 +48,7 @@ def update_ppo(trainer, rollout) -> dict[str, float]:
         lr=trainer.current_learning_rate,
     )
     metrics_lib.add_post_update_diagnostics(metrics, rollout=rollout, model=trainer.model)
-    trainer._update_counter += 1
+    trainer._update_counter = sampling_state.update_counter
     return metrics
 
 
