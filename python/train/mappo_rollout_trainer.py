@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
-import torch.nn as nn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -12,11 +11,12 @@ if TYPE_CHECKING:
     import gymnasium as gym
 
 from train.mappo_advantage import compute_gae
-from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
+from train.mappo_model import MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
-from train.ppo_recurrent.losses import _masked_mean, compute_ppo_loss
-from xushi2.entity_obs import entity_obs_self_position
-from xushi2.obs_manifest import actor_field_slice
+from train.mappo_metrics import rollout_metrics
+from train.mappo_rollout import collect_rollout, step_loss_mask
+from train.mappo_update import update_full_rollout
+from train.ppo_recurrent.losses import _masked_mean
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -75,6 +75,7 @@ class MappoTrainer:
         self.h = self.model.init_hidden(cfg.num_envs * cfg.n_agents).view(
             cfg.num_envs, cfg.n_agents, cfg.gru_hidden
         )
+        self.rollout_cls = MappoRollout
         self._sampling_rng_state = torch.get_rng_state()
         self._update_counter = 0
         self._actor_params: list[torch.nn.Parameter] = []
@@ -129,89 +130,10 @@ class MappoTrainer:
         return critic_obs
 
     def collect_rollout(self) -> MappoRollout:
-        cfg = self.cfg
-        rollout = MappoRollout(cfg)
-        obs = self.last_obs
-        h = self.h
-        critic_obs = self.last_critic_obs
-        for t in range(cfg.rollout_len):
-            flat_obs = obs.reshape(cfg.num_envs * cfg.n_agents, cfg.obs_dim)
-            flat_h = h.reshape(cfg.num_envs * cfg.n_agents, cfg.gru_hidden)
-            with torch.no_grad():
-                prev_rng = torch.get_rng_state()
-                torch.set_rng_state(self._sampling_rng_state)
-                try:
-                    action, logprob, h_next = self.model.sample_action(flat_obs, flat_h)
-                    self._sampling_rng_state = torch.get_rng_state()
-                finally:
-                    torch.set_rng_state(prev_rng)
-                if cfg.value_per_agent:
-                    value = self.model.value(
-                        critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
-                    ).view(cfg.num_envs, cfg.n_agents)
-                else:
-                    value = self.model.value(critic_obs)
-            action_3d = action.view(cfg.num_envs, cfg.n_agents, cfg.action_dim)
-            action_np = action_3d.cpu().numpy()
-            next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, _infos = (
-                self.vec_env.step(action_np)
-            )
-            done_np = np.logical_or(terminated, truncated)
-            rollout.actor_obs[:, :, t] = obs
-            if cfg.value_per_agent:
-                rollout.critic_obs[:, :, t] = critic_obs
-            else:
-                rollout.critic_obs[:, t] = critic_obs
-            rollout.action[:, :, t] = action_3d
-            rollout.logprob[:, :, t] = logprob.view(cfg.num_envs, cfg.n_agents)
-            rollout.reward[:, :, t] = torch.as_tensor(reward_np, dtype=torch.float32)
-            rollout.agent_loss_mask[:, :, t] = self._step_loss_mask(_infos)
-            if cfg.value_per_agent:
-                rollout.value[:, :, t] = value
-            else:
-                rollout.value[:, t] = value
-            rollout.done[:, t] = torch.as_tensor(done_np, dtype=torch.float32)
-            h = h_next.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
-            rollout.h_init[:, :, t] = flat_h.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
-            for e, done in enumerate(done_np):
-                if bool(done):
-                    h[e] = 0.0
-            obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
-            critic_obs = self._critic_obs_from_np(next_critic_obs_np)
-        with torch.no_grad():
-            if cfg.value_per_agent:
-                rollout.last_value = self.model.value(
-                    critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
-                ).view(cfg.num_envs, cfg.n_agents)
-            else:
-                rollout.last_value = self.model.value(critic_obs)
-        rollout.last_done = rollout.done[:, -1].clone()
-        self.last_obs = obs
-        self.last_critic_obs = critic_obs
-        self.h = h
-        return rollout
+        return collect_rollout(self)
 
     def _step_loss_mask(self, infos: list[dict]) -> torch.Tensor:
-        cfg = self.cfg
-        static = torch.as_tensor(cfg.agent_loss_mask, dtype=torch.float32)
-        masks = torch.zeros(cfg.num_envs, cfg.n_agents, dtype=torch.float32)
-        for env_idx, info in enumerate(infos):
-            raw = info.get("loss_mask")
-            if raw is None:
-                final_info = info.get("final_info")
-                if isinstance(final_info, dict):
-                    raw = final_info.get("loss_mask")
-            if raw is None:
-                masks[env_idx] = static
-                continue
-            mask = torch.as_tensor(raw, dtype=torch.float32).reshape(-1)
-            if mask.numel() != cfg.n_agents:
-                raise ValueError(f"env loss_mask length must be {cfg.n_agents}, got {mask.numel()}")
-            mask = torch.clamp(mask, min=0.0) * static
-            if float(mask.sum().item()) <= 0.0:
-                raise ValueError("env loss_mask must leave at least one active agent")
-            masks[env_idx] = mask
-        return masks
+        return step_loss_mask(self.cfg, infos)
 
     def update(self, rollout: MappoRollout) -> dict[str, float]:
         cfg = self.cfg
@@ -246,187 +168,12 @@ class MappoTrainer:
         return metrics
 
     def _rollout_metrics(self, rollout: MappoRollout) -> dict[str, float]:
-        cfg = self.cfg
-        reward = rollout.reward
-        advantages = rollout.advantages
-        returns = rollout.returns
-        action = rollout.action
-        agent_mask = rollout.agent_loss_mask.expand_as(reward)
-        move_mag = torch.linalg.vector_norm(action[:, :, :, 0:2], dim=-1)
-        cont = action[:, :, :, : cfg.continuous_action_dim]
-        binary_start = cfg.continuous_action_dim
-        binary_end = binary_start + cfg.binary_action_dim
-        binary = action[:, :, :, binary_start:binary_end]
-        target = action[:, :, :, binary_end:] if cfg.target_action_dim > 0 else None
-
-        self_on_point_slice = actor_field_slice("self_on_point")
-        if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
-            obs_np = rollout.actor_obs.detach().cpu().numpy()
-            own_pos_np = entity_obs_self_position(obs_np)
-            own_pos = torch.as_tensor(
-                own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device
-            )
-            self_on_point = torch.zeros_like(own_pos[..., :1])
-        else:
-            own_pos = rollout.actor_obs[:, :, :, _OWN_POSITION_SLICE]
-            self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
-        distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
-
-        out = {
-            "active_agent_fraction": float(agent_mask.mean().item()),
-            "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
-            "rollout_reward_std": float(
-                _masked_mean(
-                    (reward - _masked_mean(reward, agent_mask)) ** 2,
-                    agent_mask,
-                )
-                .sqrt()
-                .item()
-            ),
-            "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
-            "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
-            "advantage_mean": float(advantages.mean().item()),
-            "advantage_std": float(advantages.std(unbiased=False).item()),
-            "advantage_min": float(advantages.min().item()),
-            "advantage_max": float(advantages.max().item()),
-            "return_mean": float(returns.mean().item()),
-            "return_std": float(returns.std(unbiased=False).item()),
-            "action_move_mag_mean": float(_masked_mean(move_mag, agent_mask).item()),
-            "action_cont_mean": float(
-                _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont)).item()
-            ),
-            "action_cont_std": float(
-                _masked_mean(
-                    (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
-                    agent_mask.unsqueeze(-1).expand_as(cont),
-                )
-                .sqrt()
-                .item()
-            ),
-            "mean_distance_to_objective": float(
-                _masked_mean(distance_to_objective, agent_mask).item()
-            ),
-            "self_on_point_fraction": float(
-                _masked_mean(
-                    self_on_point, agent_mask.unsqueeze(-1).expand_as(self_on_point)
-                ).item()
-            ),
-        }
-        if binary.numel() > 0:
-            out["action_binary_mean"] = float(
-                _masked_mean(binary, agent_mask.unsqueeze(-1).expand_as(binary)).item()
-            )
-        else:
-            out["action_binary_mean"] = 0.0
-        if target is not None and target.numel() > 0:
-            out["action_target_slot_mean"] = float(
-                _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
-            )
-        return out
-
-    def _action_logprob_and_entropy(
-        self,
-        mean: torch.Tensor,
-        log_std: torch.Tensor,
-        binary_logits: torch.Tensor,
-        target_logits: torch.Tensor | None,
-        action: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        cfg = self.cfg
-        base_end = cfg.continuous_action_dim + cfg.binary_action_dim
-        logp, ent = action_logprob_and_entropy(mean, log_std, binary_logits, action[:, :base_end])
-        if cfg.target_action_dim > 0:
-            if target_logits is None:
-                raise RuntimeError("target_action_dim requires target logits")
-            target = action[:, base_end].long().clamp(0, cfg.target_action_dim - 1)
-            dist = torch.distributions.Categorical(logits=target_logits)
-            logp = logp + dist.log_prob(target)
-            ent = ent + dist.entropy()
-        return logp, ent
+        return rollout_metrics(self.cfg, rollout)
 
     def _update_full_rollout(
         self, rollout: MappoRollout, return_mean: float, return_std: float
     ) -> dict[str, float]:
-        cfg = self.cfg
-        N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
-        flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
-        logprobs, entropies = [], []
-        h = flat_h
-        for t in range(L):
-            obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
-            mean, log_std, logits, target_logits, h = self.model.policy_outputs(obs_t, h)
-            target_logits = self.model._masked_target_logits(
-                target_logits, self.model._target_mask(obs_t)
-            )
-            action_t = rollout.action[:, :, t].reshape(N * A, cfg.action_dim)
-            logp, ent = self._action_logprob_and_entropy(
-                mean, log_std, logits, target_logits, action_t
-            )
-            logprobs.append(logp.view(N, A))
-            entropies.append(ent.view(N, A))
-            done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
-            h = h.view(N, A, cfg.gru_hidden)
-            h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
-        new_logprob = torch.stack(logprobs, dim=2)
-        entropy = torch.stack(entropies, dim=2)
-        valid_agent = rollout.agent_loss_mask.expand(N, A, L)
-        if cfg.value_per_agent:
-            value = (
-                self.model.value(
-                    rollout.critic_obs.permute(0, 2, 1, 3).reshape(N * L * A, cfg.critic_obs_dim)
-                )
-                .view(N, L, A)
-                .permute(0, 2, 1)
-            )
-            advantage = rollout.advantages
-        else:
-            value = self.model.value(rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)).view(
-                N, L
-            )
-            advantage = rollout.advantages[:, None, :].expand(N, A, L)
-        if cfg.value_per_agent:
-            value_mask = valid_agent
-        else:
-            value_mask = (valid_agent.sum(dim=1) > 0.0).to(valid_agent.dtype)
-
-        loss = compute_ppo_loss(
-            new_logprob=new_logprob,
-            old_logprob=rollout.logprob,
-            advantage=advantage,
-            value=value,
-            old_value=rollout.value,
-            return_=rollout.returns,
-            valid_mask=valid_agent,
-            clip_ratio=cfg.clip_ratio,
-            value_clip_ratio=cfg.value_clip_ratio,
-            value_coef=cfg.value_coef,
-            entropy_coef=cfg.entropy_coef,
-            entropy=entropy,
-            return_mean=return_mean,
-            return_std=return_std,
-            value_mask=value_mask,
-        )
-
-        self.optimizer.zero_grad()
-        loss.total_loss.backward()
-        actor_grad_norm = self._group_grad_norm(self._actor_params)
-        critic_grad_norm = self._group_grad_norm(self._critic_params)
-        trunk_grad_norm = self._group_grad_norm(self._trunk_params)
-        nn.utils.clip_grad_norm_(self.model.parameters(), cfg.max_grad_norm)
-        self.optimizer.step()
-
-        return {
-            "policy_loss": float(loss.policy_loss.item()),
-            "value_loss": float(loss.value_loss.item()),
-            "entropy": float(loss.entropy.item()),
-            "approx_kl": float(loss.approx_kl.item()),
-            "clip_fraction": float(loss.clip_fraction.item()),
-            "total_loss": float(loss.total_loss.item()),
-            "actor_grad_norm": actor_grad_norm,
-            "critic_grad_norm": critic_grad_norm,
-            "trunk_grad_norm": trunk_grad_norm,
-            "lr": self.current_learning_rate,
-        }
+        return update_full_rollout(self, rollout, return_mean, return_std)
 
 
 def make_mappo_config(config: dict) -> MappoConfig:
