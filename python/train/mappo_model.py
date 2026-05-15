@@ -23,6 +23,9 @@ from xushi2.obs_manifest import actor_field_slice
 
 _LOG2 = 0.6931471805599453
 _OWN_POSITION_SLICE = actor_field_slice("own_position")
+_ENEMY_ALIVE_SLICE = actor_field_slice("enemy_alive")
+_ENEMY_REL_POS_SLICE = actor_field_slice("enemy_relative_position")
+_ENEMY_HP_SLICE = actor_field_slice("enemy_hp")
 
 
 @dataclass(frozen=True)
@@ -80,6 +83,12 @@ class MappoConfig:
     # Escape Protocol 5.1: optional auxiliary supervised loss that predicts
     # the angle to the visible enemy from the actor path.
     aim_aux_coef: float = 0.0
+    # Phase 4 structural probe: internal three-way enemy target selection
+    # head. This does not change the simulator action space.
+    target_selection_dim: int = 0
+    target_conditioned_combat: bool = False
+    target_selection_aux_coef: float = 0.0
+    target_selection_aux_mode: str = "nearest_visible"
 
 
 @dataclass(frozen=True)
@@ -96,6 +105,16 @@ class MappoEvalStats:
     mean_team_b_score: float
     mean_team_a_kills: float
     mean_team_b_kills: float
+    team_a_hit_fire: float = 0.0
+    team_b_hit_fire: float = 0.0
+    team_a_visible_fire_rate: float = 0.0
+    team_b_visible_fire_rate: float = 0.0
+    team_a_aim_error_rad: float = 0.0
+    team_b_aim_error_rad: float = 0.0
+    team_a_target_entropy: float = 0.0
+    team_b_target_entropy: float = 0.0
+    team_a_damage_per_fire: float = 0.0
+    team_b_damage_per_fire: float = 0.0
 
 
 def compute_team_spirit(
@@ -221,10 +240,35 @@ class MappoActorCritic(nn.Module):
             raise ValueError(
                 "mask_fire_when_no_visible_enemy currently supports only flat observations"
             )
+        if (
+            cfg.target_conditioned_combat
+            or cfg.target_selection_dim > 0
+            or cfg.target_selection_aux_coef > 0.0
+        ):
+            if cfg.obs_encoder != "flat":
+                raise ValueError("target-conditioned combat currently supports only flat obs")
+            if cfg.target_selection_dim != 3:
+                raise ValueError("target-conditioned combat requires target_selection_dim=3")
+            if cfg.n_agents != 3:
+                raise ValueError("target-conditioned combat requires three Phase-4 agents")
+            if cfg.target_selection_aux_mode not in ("nearest_visible", "lowest_hp"):
+                raise ValueError(
+                    "target_selection_aux_mode must be 'nearest_visible' or 'lowest_hp'"
+                )
         self.actor_gru = nn.GRUCell(cfg.embed_dim, cfg.gru_hidden)
         self.actor_body = nn.Sequential(
             nn.Linear(cfg.gru_hidden, cfg.head_hidden),
             nn.ReLU(),
+        )
+        self.actor_target_selection_head = (
+            nn.Linear(cfg.head_hidden, cfg.target_selection_dim)
+            if cfg.target_selection_dim > 0
+            else None
+        )
+        self.actor_target_condition = (
+            nn.Sequential(nn.Linear(4, cfg.head_hidden), nn.ReLU())
+            if cfg.target_conditioned_combat
+            else None
         )
         self.actor_mean_head = nn.Linear(cfg.head_hidden, cfg.continuous_action_dim)
         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
@@ -257,8 +301,7 @@ class MappoActorCritic(nn.Module):
         torch.Tensor,
     ]:
         features, h_next = self.actor_head_features(obs, h)
-        mean = self.actor_mean_head(features)
-        logits = self.actor_binary_head(features)
+        mean, logits, _target_selection_logits = self.policy_heads_from_features(obs, features)
         target_logits = (
             self.actor_target_head(features) if self.actor_target_head is not None else None
         )
@@ -275,6 +318,36 @@ class MappoActorCritic(nn.Module):
         if self.actor_aim_aux_head is None:
             return None
         return self.actor_aim_aux_head(features).squeeze(-1)
+
+    def target_selection_logits_from_features(
+        self, features: torch.Tensor
+    ) -> torch.Tensor | None:
+        if self.actor_target_selection_head is None:
+            return None
+        return self.actor_target_selection_head(features)
+
+    def policy_heads_from_features(
+        self, obs: torch.Tensor, features: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        target_selection_logits = self.target_selection_logits_from_features(features)
+        head_features = features
+        target_context: _TargetContext | None = None
+        if self.actor_target_condition is not None:
+            target_context = target_selection_context(obs, self.cfg, target_selection_logits)
+            head_features = features + self.actor_target_condition(target_context.features)
+        mean = self.actor_mean_head(head_features)
+        logits = self.actor_binary_head(head_features)
+        if (
+            target_context is not None
+            and logits.shape[-1] > 0
+            and self.cfg.binary_action_dim > 0
+        ):
+            fire_gate = (target_context.selected_visible * target_context.confidence).clamp(
+                min=1.0e-3
+            )
+            logits = logits.clone()
+            logits[:, 0] = logits[:, 0] + fire_gate.log()
+        return mean, logits, target_selection_logits
 
     def _actor_features(self, obs: torch.Tensor) -> torch.Tensor:
         if self.cfg.obs_encoder == "flat":
@@ -397,11 +470,132 @@ def aim_aux_targets(
         target = torch.zeros(obs.shape[0], dtype=obs.dtype, device=obs.device)
         mask = torch.zeros(obs.shape[0], dtype=torch.bool, device=obs.device)
         return target, mask
-    enemy_alive = obs[:, 10] > 0.5
-    enemy_rel_pos = obs[:, 12:14]
+    enemy_alive = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    enemy_rel_pos = obs[:, _ENEMY_REL_POS_SLICE]
     rel_norm = torch.linalg.vector_norm(enemy_rel_pos, dim=-1)
     target = torch.atan2(enemy_rel_pos[:, 1], enemy_rel_pos[:, 0])
     return target, enemy_alive & (rel_norm > 1.0e-6)
+
+
+@dataclass(frozen=True)
+class _TargetContext:
+    features: torch.Tensor
+    confidence: torch.Tensor
+    selected_visible: torch.Tensor
+
+
+def _target_candidate_tensors(
+    obs: torch.Tensor, cfg: MappoConfig
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    own_pos = obs[:, _OWN_POSITION_SLICE]
+    enemy_alive = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    enemy_rel_pos = obs[:, _ENEMY_REL_POS_SLICE]
+    enemy_hp = obs[:, _ENEMY_HP_SLICE].squeeze(-1)
+    batch = obs.shape[0]
+    if batch % cfg.n_agents == 0:
+        groups = batch // cfg.n_agents
+        own_group = own_pos.view(groups, cfg.n_agents, 2)
+        enemy_pos = (own_pos + enemy_rel_pos).view(groups, cfg.n_agents, 2)
+        rel = enemy_pos[:, None, :, :] - own_group[:, :, None, :]
+        visible = enemy_alive.view(groups, cfg.n_agents)[:, None, :].expand(
+            groups, cfg.n_agents, cfg.n_agents
+        )
+        hp = enemy_hp.view(groups, cfg.n_agents)[:, None, :].expand(
+            groups, cfg.n_agents, cfg.n_agents
+        )
+        return (
+            rel.reshape(batch, cfg.n_agents, 2),
+            visible.reshape(batch, cfg.n_agents),
+            hp.reshape(batch, cfg.n_agents),
+            own_pos,
+        )
+    rel = enemy_rel_pos[:, None, :].expand(batch, cfg.n_agents, 2).clone()
+    visible = enemy_alive[:, None].expand(batch, cfg.n_agents).clone()
+    hp = enemy_hp[:, None].expand(batch, cfg.n_agents).clone()
+    return rel, visible, hp, own_pos
+
+
+def _masked_target_selection_logits(
+    logits: torch.Tensor, visible: torch.Tensor
+) -> torch.Tensor:
+    fallback = torch.ones_like(visible, dtype=torch.bool)
+    mask = torch.where(visible.any(dim=-1, keepdim=True), visible, fallback)
+    return logits.masked_fill(~mask, -1.0e9)
+
+
+def target_selection_context(
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    target_selection_logits: torch.Tensor | None,
+) -> _TargetContext:
+    rel, visible, _hp, _own_pos = _target_candidate_tensors(obs, cfg)
+    if target_selection_logits is None:
+        logits = torch.zeros(
+            obs.shape[0], cfg.target_selection_dim, dtype=obs.dtype, device=obs.device
+        )
+    else:
+        logits = target_selection_logits
+    weights = torch.softmax(_masked_target_selection_logits(logits, visible), dim=-1)
+    selected_rel = torch.sum(weights.unsqueeze(-1) * rel, dim=1)
+    confidence = weights.max(dim=-1).values
+    selected_visible = torch.sum(weights * visible.to(obs.dtype), dim=-1).clamp(0.0, 1.0)
+    rel_norm = torch.linalg.vector_norm(selected_rel, dim=-1, keepdim=True)
+    features = torch.cat(
+        (
+            selected_rel,
+            selected_visible.unsqueeze(-1),
+            confidence.unsqueeze(-1),
+        ),
+        dim=-1,
+    )
+    features = torch.cat((features[:, :2], features[:, 2:] * (rel_norm > 1.0e-6)), dim=-1)
+    return _TargetContext(
+        features=features,
+        confidence=confidence,
+        selected_visible=selected_visible,
+    )
+
+
+def target_selection_aux_targets(
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    rel, visible, hp, _own_pos = _target_candidate_tensors(obs, cfg)
+    valid = visible.any(dim=-1)
+    if cfg.target_selection_aux_mode == "lowest_hp":
+        scores = hp.masked_fill(~visible, float("inf"))
+        labels = scores.argmin(dim=-1)
+    else:
+        distances = torch.linalg.vector_norm(rel, dim=-1).masked_fill(~visible, float("inf"))
+        labels = distances.argmin(dim=-1)
+    if mask is not None:
+        valid = valid & (mask.reshape(-1) > 0.0)
+    return labels, valid
+
+
+def target_selection_aux_loss_and_accuracy(
+    logits: torch.Tensor | None,
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if logits is None:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, zero
+    labels, valid = target_selection_aux_targets(obs, cfg, mask=mask)
+    count = valid.to(obs.dtype).sum()
+    if float(count.item()) <= 0.0:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, count
+    rel, visible, _hp, _own_pos = _target_candidate_tensors(obs, cfg)
+    del rel, _hp, _own_pos
+    masked_logits = _masked_target_selection_logits(logits, visible)
+    loss = torch.nn.functional.cross_entropy(masked_logits[valid], labels[valid])
+    acc = (masked_logits[valid].argmax(dim=-1) == labels[valid]).to(obs.dtype).mean()
+    return loss, acc, count
 
 
 def wrapped_angle_error(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:

@@ -17,6 +17,7 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    target_selection_aux_loss_and_accuracy,
 )
 from train.phases import resolve_phase
 from train.ppo_recurrent.losses import (
@@ -96,6 +97,8 @@ class MappoTrainer:
                         "actor_mean_head",
                         "actor_binary_head",
                         "actor_target_head",
+                        "actor_target_selection_head",
+                        "actor_target_condition",
                         "actor_aim_aux_head",
                     )
                 )
@@ -409,13 +412,15 @@ class MappoTrainer:
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
+        target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
         h = flat_h
         for t in range(L):
             obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
             features, h = self.model.actor_head_features(obs_t, h)
-            mean = self.model.actor_mean_head(features)
+            mean, logits, target_selection_logits = self.model.policy_heads_from_features(
+                obs_t, features
+            )
             log_std = self.model.log_std
-            logits = self.model.actor_binary_head(features)
             logits = self.model.masked_binary_logits(obs_t, logits)
             target_logits = (
                 self.model.actor_target_head(features)
@@ -442,6 +447,14 @@ class MappoTrainer:
             aim_aux_losses.append(aim_loss)
             aim_aux_rmses.append(aim_rmse)
             aim_aux_counts.append(aim_count)
+            target_aux_loss, target_aux_acc, target_aux_count = (
+                target_selection_aux_loss_and_accuracy(
+                    target_selection_logits, obs_t, cfg, mask=flat_mask
+                )
+            )
+            target_aux_losses.append(target_aux_loss)
+            target_aux_accs.append(target_aux_acc)
+            target_aux_counts.append(target_aux_count)
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
@@ -457,6 +470,12 @@ class MappoTrainer:
             aim_aux_rmse = torch.stack(aim_aux_rmses).mean()
         else:
             aim_aux_rmse = rollout.actor_obs.new_tensor(0.0)
+        target_aux_loss = torch.stack(target_aux_losses).mean()
+        target_aux_count_total = torch.stack(target_aux_counts).sum()
+        if float(target_aux_count_total.item()) > 0.0:
+            target_aux_acc = torch.stack(target_aux_accs).mean()
+        else:
+            target_aux_acc = rollout.actor_obs.new_tensor(0.0)
         valid_agent = rollout.agent_loss_mask.expand(N, A, L)
         if cfg.value_per_agent:
             value = (
@@ -519,6 +538,7 @@ class MappoTrainer:
             + cfg.value_coef * value_loss
             - entropy_bonus
             + cfg.aim_aux_coef * aim_aux_loss
+            + cfg.target_selection_aux_coef * target_aux_loss
         )
 
         self.optimizer.zero_grad()
@@ -549,6 +569,9 @@ class MappoTrainer:
             "aim_aux_loss": float(aim_aux_loss.item()),
             "aim_aux_rmse": float(aim_aux_rmse.item()),
             "aim_aux_count": float(aim_aux_count_total.item()),
+            "target_selection_aux_loss": float(target_aux_loss.item()),
+            "target_selection_aux_accuracy": float(target_aux_acc.item()),
+            "target_selection_aux_count": float(target_aux_count_total.item()),
             "actor_grad_norm": actor_grad_norm,
             "critic_grad_norm": critic_grad_norm,
             "trunk_grad_norm": trunk_grad_norm,
@@ -634,4 +657,8 @@ def make_mappo_config(config: dict) -> MappoConfig:
         team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
         team_spirit_ramp_fraction=float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3)),
         aim_aux_coef=float(ppo_cfg.get("aim_aux_coef", 0.0)),
+        target_selection_dim=int(ppo_cfg.get("target_selection_dim", 0)),
+        target_conditioned_combat=bool(ppo_cfg.get("target_conditioned_combat", False)),
+        target_selection_aux_coef=float(ppo_cfg.get("target_selection_aux_coef", 0.0)),
+        target_selection_aux_mode=str(ppo_cfg.get("target_selection_aux_mode", "nearest_visible")),
     )

@@ -10,6 +10,7 @@ rationale.
 
 from __future__ import annotations
 
+import math
 from typing import Any, ClassVar
 
 import gymnasium as gym
@@ -18,7 +19,7 @@ from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.multi_enemy_obs import map_bounds_from_sim_cfg
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, critic_field_slice
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
 
@@ -165,7 +166,12 @@ class Phase4MappoEnv(gym.Env):
                     dtype=np.float32,
                 )
 
+        previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
+        combat_metrics = self._combat_metrics_before_step(actions)
+
         self._sim.step_decision(actions)
+        damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
+        self._attach_damage_metrics(combat_metrics, damage_delta)
 
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
         own_reward = r_a if self._learner_team_str == "A" else r_b
@@ -182,6 +188,7 @@ class Phase4MappoEnv(gym.Env):
         info["reward_team_a"] = float(np.asarray(r_a).sum())
         info["reward_team_b"] = float(np.asarray(r_b).sum())
         info["opponent_actions"] = opponent_actions.copy()
+        info["combat_metrics"] = combat_metrics
         return self._actor_obs_buf.copy(), reward, terminated, truncated, info
 
     @staticmethod
@@ -264,3 +271,112 @@ class Phase4MappoEnv(gym.Env):
             "winner": winner_str,
             "learner_team": self._learner_team_str,
         }
+
+    @staticmethod
+    def _angle_wrap(x: float) -> float:
+        return (x + math.pi) % (2.0 * math.pi) - math.pi
+
+    @staticmethod
+    def _team_for_slot(slot: int) -> str:
+        return "A" if slot < 3 else "B"
+
+    @staticmethod
+    def _team_slots(team: str) -> range:
+        return range(0, 3) if team == "A" else range(3, 6)
+
+    @staticmethod
+    def _enemy_slots_for(slot: int) -> range:
+        return range(3, 6) if slot < 3 else range(0, 3)
+
+    @staticmethod
+    def _slot_position(critic: np.ndarray, slot: int) -> np.ndarray:
+        if slot < 3:
+            return critic[critic_field_slice(f"slot{slot}/own_position")]
+        return critic[critic_field_slice(f"enemy{slot - 3}/world_position")]
+
+    @staticmethod
+    def _slot_aim_angle(critic: np.ndarray, slot: int) -> float:
+        if slot < 3:
+            unit = critic[critic_field_slice(f"slot{slot}/own_aim_unit")]
+        else:
+            unit = critic[critic_field_slice(f"enemy{slot - 3}/world_aim_unit")]
+        return math.atan2(float(unit[0]), float(unit[1]))
+
+    @staticmethod
+    def _slot_alive(critic: np.ndarray, slot: int) -> bool:
+        if slot < 3:
+            return float(critic[critic_field_slice(f"slot{slot}/own_hp")][0]) > 0.0
+        return bool(float(critic[critic_field_slice(f"enemy{slot - 3}/alive_flag")][0]) > 0.5)
+
+    def _nearest_visible_target(
+        self, critic: np.ndarray, slot: int
+    ) -> tuple[int | None, float | None]:
+        assert self._sim is not None
+        if not self._slot_alive(critic, slot):
+            return None, None
+        try:
+            visible = list(_cpp.observable_enemy_slots(self._sim, slot))
+        except Exception:
+            visible = [False] * _AGENTS_PER_MATCH
+        own_pos = self._slot_position(critic, slot)
+        aim_angle = self._slot_aim_angle(critic, slot)
+        best_slot: int | None = None
+        best_error: float | None = None
+        for enemy in self._enemy_slots_for(slot):
+            if not visible[enemy] or not self._slot_alive(critic, enemy):
+                continue
+            rel = self._slot_position(critic, enemy) - own_pos
+            target_angle = math.atan2(float(rel[1]), float(rel[0]))
+            error = abs(self._angle_wrap(aim_angle - target_angle))
+            if best_error is None or error < best_error:
+                best_error = error
+                best_slot = enemy
+        return best_slot, best_error
+
+    @staticmethod
+    def _empty_team_combat_metrics() -> dict[str, Any]:
+        return {
+            "fire_commands": 0,
+            "visible_fire_commands": 0,
+            "damage_hits": 0,
+            "damage_centi_hp": 0,
+            "aim_error_sum": 0.0,
+            "aim_error_count": 0,
+            "target_counts": {},
+        }
+
+    def _combat_metrics_before_step(self, actions: list[_cpp.Action]) -> dict[str, Any]:
+        assert self._sim is not None
+        critic = np.zeros(CRITIC_DIM, dtype=np.float32)
+        _cpp.build_critic_obs(self._sim, _cpp.Team.A, critic)
+        metrics = {
+            "A": self._empty_team_combat_metrics(),
+            "B": self._empty_team_combat_metrics(),
+        }
+        for slot, action in enumerate(actions):
+            if not action.primary_fire:
+                continue
+            team = self._team_for_slot(slot)
+            team_metrics = metrics[team]
+            team_metrics["fire_commands"] += 1
+            target_slot, aim_error = self._nearest_visible_target(critic, slot)
+            if target_slot is not None:
+                team_metrics["visible_fire_commands"] += 1
+                counts = team_metrics["target_counts"]
+                counts[target_slot] = int(counts.get(target_slot, 0)) + 1
+            if aim_error is not None:
+                team_metrics["aim_error_sum"] += float(aim_error)
+                team_metrics["aim_error_count"] += 1
+        return metrics
+
+    def _attach_damage_metrics(
+        self, combat_metrics: dict[str, Any], damage_delta: np.ndarray
+    ) -> None:
+        for team in ("A", "B"):
+            team_metrics = combat_metrics[team]
+            for slot in self._team_slots(team):
+                delta = int(damage_delta[slot])
+                if delta <= 0:
+                    continue
+                team_metrics["damage_hits"] += 1
+                team_metrics["damage_centi_hp"] += delta

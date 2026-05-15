@@ -14,6 +14,7 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    target_selection_aux_loss_and_accuracy,
 )
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
@@ -268,10 +269,14 @@ def bc_pretrain_walk_to_objective(
             aim_aux_losses = []
             aim_aux_rmses = []
             aim_aux_counts = []
+            target_aux_losses = []
+            target_aux_accs = []
+            target_aux_counts = []
             for t in range(obs_seq.shape[0]):
                 features, h = model.actor_head_features(obs_seq[t], h)
-                mean = model.actor_mean_head(features)
-                logits = model.actor_binary_head(features)
+                mean, logits, target_selection_logits = model.policy_heads_from_features(
+                    obs_seq[t], features
+                )
                 pred_cont = torch.tanh(mean)
                 target = target_seq[t]
                 cont_losses.append(
@@ -296,6 +301,14 @@ def bc_pretrain_walk_to_objective(
                 aim_aux_losses.append(aim_loss)
                 aim_aux_rmses.append(aim_rmse)
                 aim_aux_counts.append(aim_count)
+                target_aux_loss, target_aux_acc, target_aux_count = (
+                    target_selection_aux_loss_and_accuracy(
+                        target_selection_logits, obs_seq[t], cfg
+                    )
+                )
+                target_aux_losses.append(target_aux_loss)
+                target_aux_accs.append(target_aux_acc)
+                target_aux_counts.append(target_aux_count)
             cont_loss = torch.stack(cont_losses).mean()
             binary_loss = torch.stack(binary_losses).mean()
             aim_aux_loss = torch.stack(aim_aux_losses).mean()
@@ -305,7 +318,19 @@ def bc_pretrain_walk_to_objective(
                 if float(aim_aux_count.item()) > 0.0
                 else obs_seq.new_tensor(0.0)
             )
-            loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
+            target_aux_loss = torch.stack(target_aux_losses).mean()
+            target_aux_count = torch.stack(target_aux_counts).sum()
+            target_aux_acc = (
+                torch.stack(target_aux_accs).mean()
+                if float(target_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
+            loss = (
+                cont_loss
+                + 0.1 * binary_loss
+                + cfg.aim_aux_coef * aim_aux_loss
+                + cfg.target_selection_aux_coef * target_aux_loss
+            )
             opt.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(_bc_trainable_parameters(model), cfg.max_grad_norm)
@@ -316,7 +341,8 @@ def bc_pretrain_walk_to_objective(
                     f"loss={float(loss.item()):.4f} "
                     f"cont_loss={float(cont_loss.item()):.4f} "
                     f"binary_loss={float(binary_loss.item()):.4f} "
-                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f} "
+                    f"target_aux_acc={float(target_aux_acc.item()):.3f}",
                     flush=True,
                 )
 
@@ -371,6 +397,9 @@ def bc_pretrain_walk_and_shoot_to_objective(
             aim_aux_losses = []
             aim_aux_rmses = []
             aim_aux_counts = []
+            target_aux_losses = []
+            target_aux_accs = []
+            target_aux_counts = []
 
             sequences = [(obs_seq, target_seq)]
             if (
@@ -392,8 +421,9 @@ def bc_pretrain_walk_and_shoot_to_objective(
                 h = model.init_hidden(cfg.n_agents)
                 for t in range(seq_obs.shape[0]):
                     features, h = model.actor_head_features(seq_obs[t], h)
-                    mean = model.actor_mean_head(features)
-                    logits = model.actor_binary_head(features)
+                    mean, logits, target_selection_logits = model.policy_heads_from_features(
+                        seq_obs[t], features
+                    )
                     pred_cont = torch.tanh(mean)
                     target = seq_target[t]
                     cont_losses.append(
@@ -418,6 +448,14 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     aim_aux_losses.append(aim_loss)
                     aim_aux_rmses.append(aim_rmse)
                     aim_aux_counts.append(aim_count)
+                    target_aux_loss, target_aux_acc, target_aux_count = (
+                        target_selection_aux_loss_and_accuracy(
+                            target_selection_logits, seq_obs[t], cfg
+                        )
+                    )
+                    target_aux_losses.append(target_aux_loss)
+                    target_aux_accs.append(target_aux_acc)
+                    target_aux_counts.append(target_aux_count)
             cont_loss = torch.stack(cont_losses).mean()
             binary_loss = torch.stack(binary_losses).mean()
             aim_aux_loss = torch.stack(aim_aux_losses).mean()
@@ -427,7 +465,19 @@ def bc_pretrain_walk_and_shoot_to_objective(
                 if float(aim_aux_count.item()) > 0.0
                 else obs_seq.new_tensor(0.0)
             )
-            loss = cont_loss + 0.1 * binary_loss + cfg.aim_aux_coef * aim_aux_loss
+            target_aux_loss = torch.stack(target_aux_losses).mean()
+            target_aux_count = torch.stack(target_aux_counts).sum()
+            target_aux_acc = (
+                torch.stack(target_aux_accs).mean()
+                if float(target_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
+            loss = (
+                cont_loss
+                + 0.1 * binary_loss
+                + cfg.aim_aux_coef * aim_aux_loss
+                + cfg.target_selection_aux_coef * target_aux_loss
+            )
             opt.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(_bc_trainable_parameters(model), cfg.max_grad_norm)
@@ -438,6 +488,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     f"loss={float(loss.item()):.4f} "
                     f"cont_loss={float(cont_loss.item()):.4f} "
                     f"binary_loss={float(binary_loss.item()):.4f} "
-                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f}",
+                    f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f} "
+                    f"target_aux_acc={float(target_aux_acc.item()):.3f}",
                     flush=True,
                 )

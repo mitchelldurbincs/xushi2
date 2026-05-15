@@ -9,6 +9,8 @@ from train.mappo_model import (
     MappoActorCritic,
     aim_aux_loss_and_rmse,
     aim_aux_targets,
+    target_selection_aux_loss_and_accuracy,
+    target_selection_aux_targets,
     wrapped_angle_error,
 )
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
@@ -26,6 +28,8 @@ def _phase4_smoke_cfg(
     entropy_coef_aim: float | None = None,
     entropy_coef_binary: float | None = None,
     mask_fire_when_no_visible_enemy: bool = False,
+    target_conditioned_combat: bool = False,
+    target_selection_aux_coef: float = 0.0,
 ) -> dict:
     ppo = {
         "num_envs": 2,
@@ -48,6 +52,10 @@ def _phase4_smoke_cfg(
         "max_grad_norm": 0.5,
         "aim_aux_coef": aim_aux_coef,
         "mask_fire_when_no_visible_enemy": mask_fire_when_no_visible_enemy,
+        "target_conditioned_combat": target_conditioned_combat,
+        "target_selection_dim": 3 if target_conditioned_combat else 0,
+        "target_selection_aux_coef": target_selection_aux_coef,
+        "target_selection_aux_mode": "nearest_visible",
     }
     if entropy_coef_move is not None:
         ppo["entropy_coef_move"] = entropy_coef_move
@@ -148,6 +156,45 @@ def test_aux_aim_head_can_warm_start_from_checkpoint_without_head(tmp_path: Path
         "actor_aim_aux_head.bias",
     }
     assert result.unexpected_keys == []
+
+
+def test_target_selection_aux_targets_choose_nearest_visible_enemy(tmp_path: Path) -> None:
+    cfg = make_mappo_config(
+        _phase4_smoke_cfg(tmp_path, target_conditioned_combat=True, target_selection_aux_coef=0.5)
+    )
+    obs = torch.zeros(3, cfg.obs_dim)
+    obs[:, 6:8] = torch.tensor([[0.0, 0.0], [0.5, 0.0], [2.0, 0.0]])
+    obs[:, 10] = 1.0
+    obs[:, 12:14] = torch.tensor([[3.0, 0.0], [1.0, 0.0], [4.0, 0.0]])
+
+    labels, valid = target_selection_aux_targets(obs, cfg)
+
+    assert valid.tolist() == [True, True, True]
+    assert labels.tolist() == [1, 1, 1]
+
+
+def test_target_conditioned_policy_adds_internal_target_head(tmp_path: Path) -> None:
+    cfg = make_mappo_config(
+        _phase4_smoke_cfg(tmp_path, target_conditioned_combat=True, target_selection_aux_coef=0.5)
+    )
+    model = MappoActorCritic(cfg)
+    obs = torch.zeros(3, cfg.obs_dim)
+    obs[:, 10] = 1.0
+    obs[:, 12] = 1.0
+    h = model.init_hidden(3)
+
+    features, _h = model.actor_head_features(obs, h)
+    mean, logits, target_logits = model.policy_heads_from_features(obs, features)
+    loss, acc, count = target_selection_aux_loss_and_accuracy(target_logits, obs, cfg)
+
+    assert model.actor_target_selection_head is not None
+    assert mean.shape == (3, cfg.continuous_action_dim)
+    assert logits.shape == (3, cfg.binary_action_dim)
+    assert target_logits is not None
+    assert target_logits.shape == (3, 3)
+    assert count.item() == 3
+    assert loss.item() >= 0.0
+    assert 0.0 <= acc.item() <= 1.0
 
 
 def test_mappo_update_logs_aux_aim_metrics(tmp_path: Path) -> None:

@@ -88,17 +88,26 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     init_ckpt = run_cfg.get("init_from_checkpoint")
     if init_ckpt:
         raw = torch.load(init_ckpt, map_location="cpu", weights_only=False)
-        if cfg.aim_aux_coef > 0.0:
+        if (
+            cfg.aim_aux_coef > 0.0
+            or cfg.target_selection_dim > 0
+            or cfg.target_conditioned_combat
+        ):
             load_result = trainer.model.load_state_dict(raw["model_state_dict"], strict=False)
             unexpected = list(load_result.unexpected_keys)
+            allowed_missing_prefixes = ["actor_aim_aux_head."]
+            if cfg.target_selection_dim > 0:
+                allowed_missing_prefixes.append("actor_target_selection_head.")
+            if cfg.target_conditioned_combat:
+                allowed_missing_prefixes.append("actor_target_condition.")
             missing = [
                 key
                 for key in load_result.missing_keys
-                if not key.startswith("actor_aim_aux_head.")
+                if not any(key.startswith(prefix) for prefix in allowed_missing_prefixes)
             ]
             if missing or unexpected:
                 raise RuntimeError(
-                    "warm-start checkpoint mismatch outside auxiliary aim head: "
+                    "warm-start checkpoint mismatch outside new auxiliary/target heads: "
                     f"missing={missing}, unexpected={unexpected}"
                 )
         else:
@@ -179,13 +188,37 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 f"wins={eval_stats.wins}/{eval_stats.episodes} "
                 f"draws={eval_stats.draws}/{eval_stats.episodes} "
                 f"score={eval_stats.mean_team_a_score:.2f}/"
-                f"{eval_stats.mean_team_b_score:.2f}",
+                f"{eval_stats.mean_team_b_score:.2f} "
+                f"hit_fire={eval_stats.team_a_hit_fire:.4f}/"
+                f"{eval_stats.team_b_hit_fire:.4f} "
+                f"aim_err={eval_stats.team_a_aim_error_rad:.3f}/"
+                f"{eval_stats.team_b_aim_error_rad:.3f}",
                 flush=True,
             )
             wandb_logger.log(
                 {f"bc_eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
                 step=0,
             )
+            bc_gate = run_cfg.get("bc_combat_gate")
+            if bc_gate:
+                min_hit_fire = float(bc_gate.get("min_team_a_hit_fire", 0.0))
+                max_aim_error = float(bc_gate.get("max_team_a_aim_error_rad", float("inf")))
+                passed = (
+                    eval_stats.team_a_hit_fire > min_hit_fire
+                    and eval_stats.team_a_aim_error_rad < max_aim_error
+                )
+                print(
+                    f"[{phase_label}/mappo] bc_combat_gate "
+                    f"passed={passed} "
+                    f"team_a_hit_fire={eval_stats.team_a_hit_fire:.4f}"
+                    f">{min_hit_fire:.4f} "
+                    f"team_a_aim_error={eval_stats.team_a_aim_error_rad:.3f}"
+                    f"<{max_aim_error:.3f}",
+                    flush=True,
+                )
+                wandb_logger.log({"bc_eval/combat_gate_passed": float(passed)}, step=0)
+                if not passed:
+                    total_updates = 0
         for update_idx in range(1, total_updates + 1):
             lr = lr_for_update(
                 update_idx,
@@ -251,7 +284,17 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"score={eval_stats.mean_team_a_score:.2f}/"
                     f"{eval_stats.mean_team_b_score:.2f} "
                     f"kills={eval_stats.mean_team_a_kills:.1f}/"
-                    f"{eval_stats.mean_team_b_kills:.1f}",
+                    f"{eval_stats.mean_team_b_kills:.1f} "
+                    f"hit_fire={eval_stats.team_a_hit_fire:.4f}/"
+                    f"{eval_stats.team_b_hit_fire:.4f} "
+                    f"vis_fire={eval_stats.team_a_visible_fire_rate:.3f}/"
+                    f"{eval_stats.team_b_visible_fire_rate:.3f} "
+                    f"aim_err={eval_stats.team_a_aim_error_rad:.3f}/"
+                    f"{eval_stats.team_b_aim_error_rad:.3f} "
+                    f"target_H={eval_stats.team_a_target_entropy:.3f}/"
+                    f"{eval_stats.team_b_target_entropy:.3f} "
+                    f"dmg_fire={eval_stats.team_a_damage_per_fire:.1f}/"
+                    f"{eval_stats.team_b_damage_per_fire:.1f}",
                     flush=True,
                 )
                 wandb_logger.log(

@@ -611,3 +611,38 @@ does not improve hit/fire, target concentration, or score over
 `aim_target_bc_v1`.
 
 **Report:** `docs/reports/phase4_next_experiment_recommendation.md`.
+
+## 2026-05-15 — Phase 4 target-conditioned combat head probe
+
+**Question:** can an internal target-selection head and target-conditioned
+aim/fire path improve weak_basic combat composition without changing rules,
+opponent, rewards, damage, round length, action space, or observation space?
+
+**Implementation:** added opt-in Phase 4 MAPPO target conditioning:
+`actor_target_selection_head` emits three enemy-slot logits, the actor
+reconstructs three enemy candidate positions from the ordered team observation
+batch, aim/fire heads condition on the soft selected target, and BC/PPO can add
+a nearest-visible target-selection auxiliary loss. Eval now logs Team A/B
+hit/fire, visible-fire rate, nearest-visible aim error, target concentration
+entropy, and damage per fire command.
+
+**Run:** config
+`experiments/configs/phase4/probe/phase4_mappo_target_cond_v1.yaml`, seed
+`3519994490`, weak_basic, `1000` damage, `30s` rounds, LR `1e-6`, entropy
+`0.02`, aim-only checkpoint warm start, walk-and-shoot BC with mini-game
+aim-target replacement. BC used `500` steps with `256` BC batch and `256`
+aim-rehearsal batch to fit the interactive runtime.
+
+**BC gate result:** BC completed `500/500` steps. Target auxiliary accuracy
+rose from `0.188` to `0.829`. Post-BC weak_basic eval was still scoreless:
+mean_reward `+0.534`, wins `0/50`, draws `50/50`, score `0.00/0.00`. Team A/B
+hit/fire was `0.0398/0.0635`; Team A/B nearest-visible aim error was printed
+as `1.300/0.624` rad. The strict gate required Team A hit/fire `>0.025` and
+Team A aim error `<1.3`; hit/fire passed, aim error was just above threshold,
+so the gate failed and PPO did not start.
+
+**Conclusion:** target selection is learnable and improves Team A hit/fire
+relative to the previous replay-autopsy range, but it does not reduce full-env
+aim error enough or escape the scoreless weak_basic draw basin. This config is
+falsified at the BC gate. Report:
+`docs/reports/phase4_target_conditioned_combat_probe.md`.
