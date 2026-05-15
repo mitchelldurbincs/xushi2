@@ -58,3 +58,15 @@ Implemented in commit draft following this plan:
   `cd python && .venv/bin/pytest tests/test_mappo_aux_aim.py tests/test_phase_registry.py::test_phase4_smoke_config_builds_mappo_config tests/test_mappo_warm_start.py::test_mappo_warm_starts_from_init_checkpoint tests/test_mappo_loss_mask.py -q`
   and
   `cd python && .venv/bin/ruff check train/mappo_model.py train/mappo_rollout_trainer.py train/mappo_bc_pretrain.py train/mappo_eval_checkpoint.py tests/test_mappo_aux_aim.py`.
+
+## Probe Result
+
+`phase4_mappo_aux_aim_v1` ran to the configured 500-update stop point. The
+auxiliary head learned the supervised target (`aim_aux_rmse` `1.7855` ->
+`0.0076` during BC pretrain), but final eval remained 0/50 wins, 50/50 draws,
+score 0/0, kills 1.0/6.0. Stochastic replay was dumped to
+`data/replays/phase4_aux_aim_v1_ckpt0500_stochastic.replay`.
+
+Conclusion: the isolated Escape Protocol 5.1 auxiliary aim head is falsified as
+a Phase 4 fix. Do not continue with coefficient variants; use a different
+Section 5 architecture intervention or escalate for review.

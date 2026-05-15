@@ -390,3 +390,25 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **Cheap diagnostic before creating the run config:** in-memory `phase4_mappo_weak_basic_v1 + aim_aux_coef=1.0`, warm-started from `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, trained 500 `walk_and_shoot` BC steps. Fixed-batch auxiliary RMSE dropped **1.8154 → 0.0079 rad**. This satisfies Escape Protocol 5.1's auxiliary loss target (<0.1 rad RMSE) and justifies an isolated PPO probe.
 
 **New config:** `experiments/configs/phase4/probe/phase4_mappo_aux_aim_v1.yaml`. The only intended lever versus `weak_basic_v1` is `ppo.aim_aux_coef: 1.0`. Metadata includes hypothesis, falsification criteria, `max_updates_if_no_signal: 500`, and the diagnostic result. Falsification: if BC aux RMSE does not stay <0.1 rad or update-500 eval is still 50/50 draws, score 0/0, kills no better than weak_basic_v1's 4.0/4.0.
+
+## 2026-05-15 — Phase 4 aux_aim_v1 PPO run (stopped at update 500)
+
+**Result: auxiliary aim prediction learned the supervised target, but did not break the draw basin.** The run reached its configured `max_updates_if_no_signal: 500` stop point with 50/50 draws, score 0/0, and kills worse than `weak_basic_v1`.
+
+**Identity:** commit `a07d73dc214d80d66ebcc2f3a0d0ea633561a448`, config `experiments/configs/phase4/probe/phase4_mappo_aux_aim_v1.yaml`, seed `3519994490`, W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/r41572eu`, checkpoint `runs/phase4_mappo_aux_aim_v1/mappo/ckpt_0500.pt`, stochastic replay `data/replays/phase4_aux_aim_v1_ckpt0500_stochastic.replay`.
+
+**Auxiliary-head diagnostic inside the run:** BC pretrain `aim_aux_rmse` dropped from `1.7855` at step 1 to `0.0076` at step 500, comfortably below the Escape Protocol 5.1 target of 0.1 rad. The architecture probe therefore succeeded at representation supervision but failed at policy improvement.
+
+**Eval progression:**
+- BC eval: 0/50 wins, 50/50 draws, score 0/0, mean_reward +0.986.
+- Update 50: 0/50 wins, 50/50 draws, score 0/0, kills 6.0/6.0, mean_reward +0.986.
+- Update 100: 0/50 wins, 50/50 draws, score 0/0, kills 5.0/5.0, mean_reward +0.492.
+- Update 150: 0/50 wins, 50/50 draws, score 0/0, kills 7.0/3.0, mean_reward +1.000.
+- Update 200: 0/50 wins, 50/50 draws, score 0/0, kills 1.0/6.0, mean_reward -0.716.
+- Update 300: 0/50 wins, 50/50 draws, score 0/0, kills 1.0/6.0, mean_reward -0.677.
+- Update 400: 0/50 wins, 50/50 draws, score 0/0, kills 1.0/6.0, mean_reward -0.678.
+- Update 500: 0/50 wins, 50/50 draws, score 0/0, kills 1.0/6.0, mean_reward -0.678.
+
+**Behavioral autopsy from stochastic replay:** Team A still fires almost continuously (`primary_fire` rate 0.9987 over 5 dumped episodes), so the failure is not an inactive fire head. Team A also moves while firing (`move_mean` 0.659, moving-while-firing rate 0.982), so this is not a stationary policy. The replay action dump lacks target identity, so focus fire cannot be measured directly; given all policy agents fire nearly every decision and score remains 0/0, the observable behavior is consistent with indiscriminate spray rather than useful target selection. Training `onpt` continued to oscillate (`0.27` to `0.69` in late updates) and never produced objective conversion. Per-agent kills and bot body/headshot attribution are unavailable in current metrics.
+
+**Conclusion:** Escape Protocol 5.1 auxiliary aim prediction is falsified as an isolated Phase 4 fix. It solves the auxiliary representation objective but does not change the PPO behavior enough to score, and the final kill exchange regressed to 1.0/6.0. Do not continue with more aux-coefficient variants. The next Phase 4 action should be a different Escape Protocol Section 5 architecture intervention, or human escalation before adding more Phase 4 configs.
