@@ -355,3 +355,11 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 **This proves: after 13+ variants across every tested lever (damage, round length, fire rate, BC pretraining, LR, entropy), the draw basin is genuinely inescapable with current hyperparameters against the `basic` bot.** The only remaining untested opponent-design hypothesis is a genuinely weaker combatant.
 
 **Next approach: `weak_basic` bot — walks to cap like `basic` but adds deterministic ±0.5 rad (~±28.6°) aim noise. Same fire rate, same movement, same cap-contesting, but misses frequently. This is the missing curriculum rung: a bot that contests the objective, is weak enough to beat, and still forces combat.**
+
+## 2026-05-15 — Phase 4 weak_basic_v1 diagnostic shortcut (warm-start + BC-only, no PPO)
+
+**Escape Protocol diagnostic before the 1000-update run:** evaluated the existing `phase4_mappo_weak_basic_v1` hypothesis without PPO by loading `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, applying the config's 500-step `walk_and_shoot` BC pretrain, then running 50 eval episodes against `weak_basic`.
+
+**Result:** 0/50 wins, 0/50 losses, 50/50 draws, score 0/0, mean_reward +1.000, kills 6.0/5.0, final_tick 900, trunc=50.
+
+**Interpretation:** BC alone still cannot convert cap-and-fire behavior into score, so this does not clear the draw basin. It is nevertheless a positive diagnostic signal for the `weak_basic` curriculum hypothesis: Team A led kills 6.0/5.0 against the noisy-aim bot, unlike the recent `basic` runs where the bot typically led kills or collapsed us into losses. This satisfies the config's early signal criterion ("Team A kills > bot kills") and justifies spending PPO updates, with `metadata.max_updates_if_no_signal=500` as the stop point if score/wins do not appear.
