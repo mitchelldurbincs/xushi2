@@ -49,7 +49,7 @@ __all__ = ["VALID_OPPONENT_BOTS", "XushiEnv"]
 # allowed by xushi2.runner so one failure mode (typo) fails the same
 # way in both entry points.
 VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
-    {"walk_to_objective", "hold_and_shoot", "basic", "noop"}
+    {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic", "noop"}
 )
 
 _TEAM_A_RANGER_SLOT = 0

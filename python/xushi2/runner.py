@@ -13,7 +13,9 @@ from dataclasses import dataclass
 
 from . import xushi2_cpp as _cpp
 
-_VALID_BOTS = frozenset({"walk_to_objective", "hold_and_shoot", "basic", "noop"})
+_VALID_BOTS = frozenset(
+    {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic", "noop"}
+)
 
 _REQUIRED_MECHANICS_KEYS = frozenset(
     {

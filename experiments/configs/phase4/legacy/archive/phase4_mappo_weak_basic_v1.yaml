@@ -6,6 +6,9 @@ metadata:
   expected_runtime: long
   gate_relevance:
   - phase4_combat_curriculum
+  hypothesis: "The draw basin persists because the basic bot's perfect aim is too strong; weak_basic keeps objective pressure but adds deterministic ±0.5 rad aim noise, so agents should survive long enough to convert existing cap-and-fire behavior into nonzero score or wins."
+  falsification_criteria: "By update 500, eval still shows 50/50 draws, score 0/0, and Team A kills below or equal to the v5 draw-basin range; by update 1000, no reproducible score > 0 or wins."
+  max_updates_if_no_signal: 500
   lineage: "First run with new `weak_basic` bot — walks to cap like `basic` but aims with ±0.5 rad (~±28.6°) deterministic noise. This creates the missing curriculum rung: a bot that contests the objective, is weak enough to beat, and still forces combat."
   provenance: C++ bot patch in src/bots/ adding WeakBasicBot class.
 

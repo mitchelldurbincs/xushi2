@@ -31,6 +31,7 @@ EXPECTED_DECISIONS = 300
     "bot_a,bot_b",
     [
         ("basic", "basic"),
+        ("weak_basic", "weak_basic"),
         ("walk_to_objective", "walk_to_objective"),
         ("hold_and_shoot", "hold_and_shoot"),
         ("noop", "noop"),
