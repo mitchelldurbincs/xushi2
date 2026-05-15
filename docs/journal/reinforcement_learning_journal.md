@@ -334,10 +334,24 @@ Short, dated lessons learned while training xushi2 policies. Reference for futur
 
 **This proves AGAIN: the cap + basic bot + LR ≥ 2e-6 = guaranteed collapse into fleeing/losses within 50-325 updates. There is no window between "frozen draw" (1e-6) and "collapse" (2e-6).**
 
-## 2026-05-15 — Phase 4 v7_basic_reduced_bc_v5_high_entropy (30s, 1000dmg, basic, LR 1e-6, entropy 0.08, running)
+## 2026-05-15 — Phase 4 v7_basic_reduced_bc_v5_high_entropy (30s, 1000dmg, basic, LR 1e-6, entropy 0.08, stopped at update ~340)
 
-**Strategy: keep the STABLE v5 draw-equilibrium parameters but raise entropy to 0.08 (4× higher).**
+**RESULT: Draw basin is completely invariant to entropy. 4× higher entropy produced identical results to v5.**
 
-At LR 1e-6 the policy steps are tiny — cap-holding won't break. But high entropy adds noise to aim angles, potentially stumbling on better predictive aim (lead shots) that produces hits. Even tiny hit-rate improvements at 1000 damage can shift the equilibrium toward wins over hundreds of updates at this LR.
+**BC phase:** 500 steps, loss 0.4707 → 0.0002. `walk_and_shoot` variant.
 
-If this also produces only draws at update 1000, the draw basin is deeper than entropy can escape.
+**BC eval:** 0/50 wins, **50/50 draws**, score 0/0, mean_reward +1.000.
+
+**PPO evals (updates 50-340):**
+- Update 50: 0/50 wins, 0/50 losses, **50/50 draws**, score 0/0, kills **4.0/6.0**, mean_reward +0.959, onpt=0.528, bin=0.333
+- Update 150: same — 0/50 wins, 50/50 draws, score 0/0, kills **4.0/6.0**, mean_reward +0.959
+- Update 250: same — 0/50 wins, 50/50 draws, score 0/0, kills **4.0/6.0**, mean_reward +0.959, onpt=0.458, bin=0.333
+- Update 300: same — 0/50 wins, 50/50 draws, score 0/0, kills **4.0/6.0**, mean_reward +0.958, onpt=0.456, bin=0.333
+
+**Training progression (updates 200-340):** Entropy ~1.90-1.91, bin=0.331-0.333, onpt oscillating 0.09-0.60, dist oscillating 0.10-0.36. No meaningful trend.
+
+**Root cause: the draw basin at 30s/1000dmg/basic/LR 1e-6 is completely invariant to entropy changes.** v5 (entropy 0.02) and v5_high_entropy (entropy 0.08) produced identical metrics through 340 updates. The noisy aim angles from higher entropy are uncorrelated with actual enemy motion — misses stay misses. The policy deterministically repeats the same crude aim angles regardless of entropy scale.
+
+**This proves: after 13+ variants across every tested lever (damage, round length, fire rate, BC pretraining, LR, entropy), the draw basin is genuinely inescapable with current hyperparameters against the `basic` bot.** The only remaining untested opponent-design hypothesis is a genuinely weaker combatant.
+
+**Next approach: `weak_basic` bot — walks to cap like `basic` but adds deterministic ±0.5 rad (~±28.6°) aim noise. Same fire rate, same movement, same cap-contesting, but misses frequently. This is the missing curriculum rung: a bot that contests the objective, is weak enough to beat, and still forces combat.**
