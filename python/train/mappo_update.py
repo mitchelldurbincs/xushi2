@@ -76,71 +76,6 @@ def compute_policy_trajectory_logprob_entropy(trainer, rollout) -> tuple[torch.T
     return torch.stack(logprobs, dim=2), torch.stack(entropies, dim=2)
 
 
-def compute_policy_loss(cfg, rollout, batch: MappoBatchTensors, *, return_mean: float, return_std: float):
-    """Compute PPO clipped policy objective.
-
-    Inputs:
-        rollout.logprob: [N, A, L]
-        batch.new_logprob: [N, A, L]
-        batch.advantage: [N, A, L]
-        batch.valid_agent_mask: [N, A, L]
-        batch.entropy: [N, A, L]
-
-    Returns:
-        PpoLoss namedtuple with policy/value/entropy/kl/clip stats and total loss scalar.
-    """
-
-    return compute_ppo_loss(
-        new_logprob=batch.new_logprob,
-        old_logprob=rollout.logprob,
-        advantage=batch.advantage,
-        value=batch.value,
-        old_value=rollout.value,
-        return_=rollout.returns,
-        valid_mask=batch.valid_agent_mask,
-        clip_ratio=cfg.clip_ratio,
-        value_clip_ratio=cfg.value_clip_ratio,
-        value_coef=cfg.value_coef,
-        entropy_coef=cfg.entropy_coef,
-        entropy=batch.entropy,
-        return_mean=return_mean,
-        return_std=return_std,
-        value_mask=batch.value_mask,
-    )
-
-
-def compute_value_loss(cfg, rollout, batch: MappoBatchTensors, *, return_mean: float, return_std: float):
-    """Compute full PPO objective including value regression terms.
-
-    Inputs:
-        batch.value: [N, A, L] or [N, L]
-        rollout.value: same leading shape semantics as batch.value
-        rollout.returns: same leading shape semantics as batch.value
-        batch.value_mask: [N, A, L] or [N, L]
-
-    Returns:
-        PpoLoss namedtuple with total_loss for backward pass.
-    """
-
-    return compute_ppo_loss(
-        new_logprob=batch.new_logprob,
-        old_logprob=rollout.logprob,
-        advantage=batch.advantage,
-        value=batch.value,
-        old_value=rollout.value,
-        return_=rollout.returns,
-        valid_mask=batch.valid_agent_mask,
-        clip_ratio=cfg.clip_ratio,
-        value_clip_ratio=cfg.value_clip_ratio,
-        value_coef=cfg.value_coef,
-        entropy_coef=cfg.entropy_coef,
-        entropy=batch.entropy,
-        return_mean=return_mean,
-        return_std=return_std,
-        value_mask=batch.value_mask,
-    )
-
-
 def apply_optimizer_step(trainer, total_loss: torch.Tensor) -> tuple[float, float, float]:
     """Apply backward + optimizer step and capture grad norms.
 
@@ -195,13 +130,24 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
     # PPO Eq. (1-2): evaluate recurrent policy over trajectory, collect pi_theta(a_t|s_t) and entropy.
     batch = _build_batch_tensors(trainer, rollout)
 
-    # PPO Eq. (3): clipped surrogate policy objective with entropy regularization.
-    policy_loss_terms = compute_policy_loss(trainer.cfg, rollout, batch, return_mean=return_mean, return_std=return_std)
-
-    # PPO Eq. (4): clipped value objective + combined total objective.
-    loss = compute_value_loss(trainer.cfg, rollout, batch, return_mean=return_mean, return_std=return_std)
-    # Keep policy-objective computation explicit in staged pipeline; both objectives should agree on policy stats.
-    _ = policy_loss_terms.policy_loss
+    cfg = trainer.cfg
+    loss = compute_ppo_loss(
+        new_logprob=batch.new_logprob,
+        old_logprob=rollout.logprob,
+        advantage=batch.advantage,
+        value=batch.value,
+        old_value=rollout.value,
+        return_=rollout.returns,
+        valid_mask=batch.valid_agent_mask,
+        clip_ratio=cfg.clip_ratio,
+        value_clip_ratio=cfg.value_clip_ratio,
+        value_coef=cfg.value_coef,
+        entropy_coef=cfg.entropy_coef,
+        entropy=batch.entropy,
+        return_mean=return_mean,
+        return_std=return_std,
+        value_mask=batch.value_mask,
+    )
 
     # Optimization: backward, grad metrics, global grad clip, optimizer step.
     actor_grad_norm, critic_grad_norm, trunk_grad_norm = apply_optimizer_step(trainer, loss.total_loss)
