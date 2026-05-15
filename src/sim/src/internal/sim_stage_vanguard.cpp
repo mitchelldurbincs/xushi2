@@ -50,8 +50,7 @@ void stage_vanguard_warhammer(const TickContext& ctx,
         if (!v.present || !v.alive || v.kind != common::HeroKind::Vanguard)
             continue;
         const auto& a = ctx.actions[i];
-        if (ctx.aim_consumed[i] || !a.primary_fire || v.vanguard_barrier_active ||
-            v.weapon.fire_cooldown_ticks > 0)
+        if (!a.primary_fire || v.vanguard_barrier_active || v.weapon.fire_cooldown_ticks > 0)
             continue;
         int best_slot = nearest_enemy_in_cone_with_los(ctx.state,
                                                        i,
