@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
     import gymnasium as gym
 
+from train.device import resolve_device
 from train.mappo_advantage import compute_gae
 from train.mappo_model import _OWN_POSITION_SLICE, MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
@@ -21,30 +22,35 @@ from xushi2.vector_env import make_xushi_vector_env
 
 
 class MappoRollout:
-    def __init__(self, cfg: MappoConfig) -> None:
+    def __init__(self, cfg: MappoConfig, device: torch.device | str | None = None) -> None:
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
-        self.actor_obs = torch.zeros(N, A, L, cfg.obs_dim)
+        self.device = resolve_device(cfg.device if device is None else device)
+        dev = self.device
+        self.actor_obs = torch.zeros(N, A, L, cfg.obs_dim, device=dev)
         if cfg.value_per_agent:
-            self.critic_obs = torch.zeros(N, A, L, cfg.critic_obs_dim)
-            self.value = torch.zeros(N, A, L)
-            self.advantages = torch.zeros(N, A, L)
-            self.returns = torch.zeros(N, A, L)
-            self.last_value = torch.zeros(N, A)
+            self.critic_obs = torch.zeros(N, A, L, cfg.critic_obs_dim, device=dev)
+            self.value = torch.zeros(N, A, L, device=dev)
+            self.advantages = torch.zeros(N, A, L, device=dev)
+            self.returns = torch.zeros(N, A, L, device=dev)
+            self.last_value = torch.zeros(N, A, device=dev)
         else:
-            self.critic_obs = torch.zeros(N, L, cfg.critic_obs_dim)
-            self.value = torch.zeros(N, L)
-            self.advantages = torch.zeros(N, L)
-            self.returns = torch.zeros(N, L)
-            self.last_value = torch.zeros(N)
-        self.action = torch.zeros(N, A, L, cfg.action_dim)
-        self.logprob = torch.zeros(N, A, L)
-        self.reward = torch.zeros(N, A, L)
-        self.done = torch.zeros(N, L)
-        self.h_init = torch.zeros(N, A, L, cfg.gru_hidden)
-        self.last_done = torch.zeros(N)
+            self.critic_obs = torch.zeros(N, L, cfg.critic_obs_dim, device=dev)
+            self.value = torch.zeros(N, L, device=dev)
+            self.advantages = torch.zeros(N, L, device=dev)
+            self.returns = torch.zeros(N, L, device=dev)
+            self.last_value = torch.zeros(N, device=dev)
+        self.action = torch.zeros(N, A, L, cfg.action_dim, device=dev)
+        self.logprob = torch.zeros(N, A, L, device=dev)
+        self.reward = torch.zeros(N, A, L, device=dev)
+        self.done = torch.zeros(N, L, device=dev)
+        self.h_init = torch.zeros(N, A, L, cfg.gru_hidden, device=dev)
+        self.last_done = torch.zeros(N, device=dev)
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
         self.agent_loss_mask = (
-            torch.as_tensor(raw_mask, dtype=torch.float32).view(1, A, 1).expand(N, A, L).clone()
+            torch.as_tensor(raw_mask, dtype=torch.float32, device=dev)
+            .view(1, A, 1)
+            .expand(N, A, L)
+            .clone()
         )
 
 
@@ -52,6 +58,7 @@ class MappoTrainer:
     def __init__(self, env_fn: Callable[[], gym.Env], cfg: MappoConfig, seed: int) -> None:
         self.cfg = cfg
         self.seed = int(seed)
+        self.device = resolve_device(cfg.device)
         if cfg.torch_num_threads > 0:
             torch.set_num_threads(cfg.torch_num_threads)
         torch.manual_seed(self.seed)
@@ -65,11 +72,11 @@ class MappoTrainer:
             backend=cfg.vector_env,
         )
         obs, initial_critic_obs, _infos = self.vec_env.reset(seed=self.seed)
-        self.last_obs = torch.as_tensor(obs, dtype=torch.float32)
+        self.last_obs = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
         self.last_critic_obs = self._critic_obs_from_np(initial_critic_obs)
         torch.manual_seed(self.seed)
         np.random.seed(self.seed)
-        self.model = MappoActorCritic(cfg)
+        self.model = MappoActorCritic(cfg).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.learning_rate)
         self.current_learning_rate = cfg.learning_rate
         self.h = self.model.init_hidden(cfg.num_envs * cfg.n_agents).view(
@@ -116,21 +123,21 @@ class MappoTrainer:
 
     @staticmethod
     def _group_grad_norm(params: list[torch.nn.Parameter]) -> float:
-        total_sq = 0.0
-        for p in params:
-            if p.grad is not None:
-                total_sq += float(p.grad.detach().pow(2).sum().item())
-        return float(total_sq**0.5)
+        # One device->host sync at the end instead of one per parameter.
+        sums = [p.grad.detach().pow(2).sum() for p in params if p.grad is not None]
+        if not sums:
+            return 0.0
+        return float(torch.stack(sums).sum().sqrt().item())
 
     def _critic_obs_from_np(self, critic_obs_np: np.ndarray) -> torch.Tensor:
-        critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32)
+        critic_obs = torch.as_tensor(critic_obs_np, dtype=torch.float32, device=self.device)
         if self.cfg.value_per_agent:
             return critic_obs.view(self.cfg.num_envs, self.cfg.n_agents, self.cfg.critic_obs_dim)
         return critic_obs
 
     def collect_rollout(self) -> MappoRollout:
         cfg = self.cfg
-        rollout = MappoRollout(cfg)
+        rollout = MappoRollout(cfg, device=self.device)
         obs = self.last_obs
         h = self.h
         critic_obs = self.last_critic_obs
@@ -152,7 +159,7 @@ class MappoTrainer:
                 else:
                     value = self.model.value(critic_obs)
             action_3d = action.view(cfg.num_envs, cfg.n_agents, cfg.action_dim)
-            action_np = action_3d.cpu().numpy()
+            action_np = action_3d.detach().cpu().numpy()
             next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, _infos = (
                 self.vec_env.step(action_np)
             )
@@ -164,19 +171,23 @@ class MappoTrainer:
                 rollout.critic_obs[:, t] = critic_obs
             rollout.action[:, :, t] = action_3d
             rollout.logprob[:, :, t] = logprob.view(cfg.num_envs, cfg.n_agents)
-            rollout.reward[:, :, t] = torch.as_tensor(reward_np, dtype=torch.float32)
+            rollout.reward[:, :, t] = torch.as_tensor(
+                reward_np, dtype=torch.float32, device=self.device
+            )
             rollout.agent_loss_mask[:, :, t] = self._step_loss_mask(_infos)
             if cfg.value_per_agent:
                 rollout.value[:, :, t] = value
             else:
                 rollout.value[:, t] = value
-            rollout.done[:, t] = torch.as_tensor(done_np, dtype=torch.float32)
+            rollout.done[:, t] = torch.as_tensor(
+                done_np, dtype=torch.float32, device=self.device
+            )
             h = h_next.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
             rollout.h_init[:, :, t] = flat_h.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
             for e, done in enumerate(done_np):
                 if bool(done):
                     h[e] = 0.0
-            obs = torch.as_tensor(next_obs_np, dtype=torch.float32)
+            obs = torch.as_tensor(next_obs_np, dtype=torch.float32, device=self.device)
             critic_obs = self._critic_obs_from_np(next_critic_obs_np)
         with torch.no_grad():
             if cfg.value_per_agent:
@@ -193,8 +204,8 @@ class MappoTrainer:
 
     def _step_loss_mask(self, infos: list[dict]) -> torch.Tensor:
         cfg = self.cfg
-        static = torch.as_tensor(cfg.agent_loss_mask, dtype=torch.float32)
-        masks = torch.zeros(cfg.num_envs, cfg.n_agents, dtype=torch.float32)
+        static = torch.as_tensor(cfg.agent_loss_mask, dtype=torch.float32, device=self.device)
+        masks = torch.zeros(cfg.num_envs, cfg.n_agents, dtype=torch.float32, device=self.device)
         for env_idx, info in enumerate(infos):
             raw = info.get("loss_mask")
             if raw is None:
@@ -204,7 +215,7 @@ class MappoTrainer:
             if raw is None:
                 masks[env_idx] = static
                 continue
-            mask = torch.as_tensor(raw, dtype=torch.float32).reshape(-1)
+            mask = torch.as_tensor(raw, dtype=torch.float32, device=self.device).reshape(-1)
             if mask.numel() != cfg.n_agents:
                 raise ValueError(f"env loss_mask length must be {cfg.n_agents}, got {mask.numel()}")
             mask = torch.clamp(mask, min=0.0) * static
@@ -272,56 +283,52 @@ class MappoTrainer:
             self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
         distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
 
-        out = {
-            "active_agent_fraction": float(agent_mask.mean().item()),
-            "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
-            "rollout_reward_std": float(
-                _masked_mean(
-                    (reward - _masked_mean(reward, agent_mask)) ** 2,
-                    agent_mask,
-                )
-                .sqrt()
-                .item()
-            ),
-            "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
-            "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
-            "advantage_mean": float(advantages.mean().item()),
-            "advantage_std": float(advantages.std(unbiased=False).item()),
-            "advantage_min": float(advantages.min().item()),
-            "advantage_max": float(advantages.max().item()),
-            "return_mean": float(returns.mean().item()),
-            "return_std": float(returns.std(unbiased=False).item()),
-            "action_move_mag_mean": float(_masked_mean(move_mag, agent_mask).item()),
-            "action_cont_mean": float(
-                _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont)).item()
-            ),
-            "action_cont_std": float(
-                _masked_mean(
-                    (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
-                    agent_mask.unsqueeze(-1).expand_as(cont),
-                )
-                .sqrt()
-                .item()
-            ),
-            "mean_distance_to_objective": float(
-                _masked_mean(distance_to_objective, agent_mask).item()
-            ),
-            "self_on_point_fraction": float(
-                _masked_mean(
-                    self_on_point, agent_mask.unsqueeze(-1).expand_as(self_on_point)
-                ).item()
-            ),
-        }
-        if binary.numel() > 0:
-            out["action_binary_mean"] = float(
-                _masked_mean(binary, agent_mask.unsqueeze(-1).expand_as(binary)).item()
-            )
-        else:
+        cont_mask = agent_mask.unsqueeze(-1).expand_as(cont)
+        binary_mask = agent_mask.unsqueeze(-1).expand_as(binary) if binary.numel() > 0 else None
+        target_mask = (
+            agent_mask.unsqueeze(-1).expand_as(target)
+            if (target is not None and target.numel() > 0)
+            else None
+        )
+        self_on_point_mask = agent_mask.unsqueeze(-1).expand_as(self_on_point)
+
+        with torch.no_grad():
+            reward_mean = _masked_mean(reward, agent_mask)
+            reward_active = reward[agent_mask > 0.0]
+            cont_mean = _masked_mean(cont, cont_mask)
+            tensor_metrics: dict[str, torch.Tensor] = {
+                "active_agent_fraction": agent_mask.mean(),
+                "rollout_reward_mean": reward_mean,
+                "rollout_reward_std": _masked_mean(
+                    (reward - reward_mean) ** 2, agent_mask
+                ).sqrt(),
+                "rollout_reward_min": reward_active.min(),
+                "rollout_reward_max": reward_active.max(),
+                "advantage_mean": advantages.mean(),
+                "advantage_std": advantages.std(unbiased=False),
+                "advantage_min": advantages.min(),
+                "advantage_max": advantages.max(),
+                "return_mean": returns.mean(),
+                "return_std": returns.std(unbiased=False),
+                "action_move_mag_mean": _masked_mean(move_mag, agent_mask),
+                "action_cont_mean": cont_mean,
+                "action_cont_std": _masked_mean(
+                    (cont - cont_mean) ** 2, cont_mask
+                ).sqrt(),
+                "mean_distance_to_objective": _masked_mean(distance_to_objective, agent_mask),
+                "self_on_point_fraction": _masked_mean(self_on_point, self_on_point_mask),
+            }
+            if binary_mask is not None:
+                tensor_metrics["action_binary_mean"] = _masked_mean(binary, binary_mask)
+            if target_mask is not None:
+                tensor_metrics["action_target_slot_mean"] = _masked_mean(target, target_mask)
+
+        # Stack + single .item() so we incur one host sync instead of N.
+        keys = list(tensor_metrics.keys())
+        stacked = torch.stack([tensor_metrics[k] for k in keys]).cpu().tolist()
+        out: dict[str, float] = {k: float(v) for k, v in zip(keys, stacked, strict=False)}
+        if "action_binary_mean" not in out:
             out["action_binary_mean"] = 0.0
-        if target is not None and target.numel() > 0:
-            out["action_target_slot_mean"] = float(
-                _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
-            )
         return out
 
     def _action_logprob_and_entropy(
@@ -425,18 +432,23 @@ class MappoTrainer:
             clip_fraction = _masked_mean(
                 ((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_agent
             )
-        return {
-            "policy_loss": float(policy_loss.item()),
-            "value_loss": float(value_loss.item()),
-            "entropy": float(entropy_mean.item()),
-            "approx_kl": float(approx_kl.item()),
-            "clip_fraction": float(clip_fraction.item()),
-            "total_loss": float(total_loss.item()),
-            "actor_grad_norm": actor_grad_norm,
-            "critic_grad_norm": critic_grad_norm,
-            "trunk_grad_norm": trunk_grad_norm,
-            "lr": self.current_learning_rate,
-        }
+        scalar_keys = (
+            "policy_loss",
+            "value_loss",
+            "entropy",
+            "approx_kl",
+            "clip_fraction",
+            "total_loss",
+        )
+        scalars = torch.stack(
+            [policy_loss, value_loss, entropy_mean, approx_kl, clip_fraction, total_loss]
+        ).detach().cpu().tolist()
+        out = {k: float(v) for k, v in zip(scalar_keys, scalars, strict=False)}
+        out["actor_grad_norm"] = actor_grad_norm
+        out["critic_grad_norm"] = critic_grad_norm
+        out["trunk_grad_norm"] = trunk_grad_norm
+        out["lr"] = self.current_learning_rate
+        return out
 
 
 def make_mappo_config(config: dict) -> MappoConfig:
@@ -445,6 +457,11 @@ def make_mappo_config(config: dict) -> MappoConfig:
         raise ValueError(f"MAPPO trainer only supports phases 4-11, got phase={phase!r}")
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
+    run_cfg = config.get("run", {})
+    # ``run.device`` wins (it's where other infra-level toggles live);
+    # ``ppo.device`` is accepted as a fallback for symmetry with the rest of
+    # the PPO block.
+    device = str(run_cfg.get("device", ppo_cfg.get("device", "cpu")))
     obs_encoder = str(model_cfg.get("obs_encoder", "flat"))
     n_agents = int(phase_spec["n_agents"])
     raw_agent_loss_mask = ppo_cfg.get("agent_loss_mask", [1.0] * n_agents)
@@ -498,4 +515,5 @@ def make_mappo_config(config: dict) -> MappoConfig:
         team_spirit_initial=float(ppo_cfg.get("team_spirit_initial", 0.0)),
         team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
         team_spirit_ramp_fraction=float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3)),
+        device=device,
     )

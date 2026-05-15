@@ -51,6 +51,7 @@ def evaluate_policy_stats(
     """
     was_training = model.training
     model.eval()
+    device = next(model.parameters()).device
     rewards: list[float] = []
     final_ticks: list[int] = []
     team_a_scores: list[float] = []
@@ -72,7 +73,7 @@ def evaluate_policy_stats(
             term = False
             trunc = False
             while not done:
-                obs_t = torch.as_tensor(obs, dtype=torch.float32).view(1, -1)
+                obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).view(1, -1)
                 with torch.no_grad():
                     action_t, h = model.greedy_action(obs_t, h)
                 action = action_t.squeeze(0).cpu().numpy()

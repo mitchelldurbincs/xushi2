@@ -22,8 +22,9 @@ def _validate_agent_loss_mask(mask: torch.Tensor, cfg: MappoConfig) -> None:
 
 
 def compute_gae(rollout: "MappoRollout", cfg: MappoConfig) -> None:
+    device = rollout.advantages.device
     if cfg.value_per_agent:
-        last_gae = torch.zeros(cfg.num_envs, cfg.n_agents)
+        last_gae = torch.zeros(cfg.num_envs, cfg.n_agents, device=device)
         for t in reversed(range(cfg.rollout_len)):
             if t == cfg.rollout_len - 1:
                 next_value = rollout.last_value
@@ -44,7 +45,7 @@ def compute_gae(rollout: "MappoRollout", cfg: MappoConfig) -> None:
     _validate_agent_loss_mask(rollout.agent_loss_mask, cfg)
     active_count = rollout.agent_loss_mask.sum(dim=1).clamp(min=1.0)
     reward = (rollout.reward * rollout.agent_loss_mask).sum(dim=1) / active_count
-    last_gae = torch.zeros(cfg.num_envs)
+    last_gae = torch.zeros(cfg.num_envs, device=device)
     for t in reversed(range(cfg.rollout_len)):
         if t == cfg.rollout_len - 1:
             next_value = rollout.last_value

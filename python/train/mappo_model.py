@@ -70,6 +70,9 @@ class MappoConfig:
     team_spirit_initial: float = 0.0
     team_spirit_final: float = 0.0
     team_spirit_ramp_fraction: float = 0.3
+    # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
+    # else CPU). Resolved to ``torch.device`` once in the trainer.
+    device: str = "cpu"
 
 
 @dataclass(frozen=True)
