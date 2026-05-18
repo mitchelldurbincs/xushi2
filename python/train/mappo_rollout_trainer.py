@@ -18,11 +18,12 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    mode_aux_loss_and_accuracy,
     target_selection_aux_loss_and_accuracy,
     target_selection_aux_metrics,
 )
-from train.phases import resolve_phase
 from train.mappo_rollout import collect_rollout, step_loss_mask
+from train.phases import resolve_phase
 from train.ppo_recurrent.losses import (
     _masked_mean,
     action_logprob_and_entropy_parts,
@@ -115,6 +116,7 @@ class MappoTrainer:
                         "actor_target_selection_head",
                         "actor_target_condition",
                         "actor_aim_aux_head",
+                        "actor_mode_head",
                     )
                 )
                 or name == "log_std"
@@ -348,6 +350,8 @@ class MappoTrainer:
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
+        mode_aux_losses, mode_aux_accs, mode_aux_counts = [], [], []
+        p_combat_parts = []
         target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
         target_aux_metric_parts: dict[str, list[torch.Tensor]] = {
             "target_selection_label_entropy": [],
@@ -361,6 +365,10 @@ class MappoTrainer:
             mean, logits, target_selection_logits = self.model.policy_heads_from_features(
                 obs_t, features
             )
+            mode_logits = self.model.mode_logits_from_features(features)
+            p_combat = self.model.combat_probability(mode_logits)
+            if p_combat is not None:
+                p_combat_parts.append(p_combat.mean())
             log_std = self.model.log_std
             logits = self.model.masked_binary_logits(obs_t, logits)
             target_logits = (
@@ -388,6 +396,12 @@ class MappoTrainer:
             aim_aux_losses.append(aim_loss)
             aim_aux_rmses.append(aim_rmse)
             aim_aux_counts.append(aim_count)
+            mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
+                mode_logits, obs_t, cfg, mask=flat_mask
+            )
+            mode_aux_losses.append(mode_loss)
+            mode_aux_accs.append(mode_acc)
+            mode_aux_counts.append(mode_count)
             target_aux_loss, target_aux_acc, target_aux_count = (
                 target_selection_aux_loss_and_accuracy(
                     target_selection_logits, obs_t, cfg, mask=flat_mask
@@ -415,6 +429,17 @@ class MappoTrainer:
             aim_aux_rmse = torch.stack(aim_aux_rmses).mean()
         else:
             aim_aux_rmse = rollout.actor_obs.new_tensor(0.0)
+        mode_aux_loss = torch.stack(mode_aux_losses).mean()
+        mode_aux_count_total = torch.stack(mode_aux_counts).sum()
+        if float(mode_aux_count_total.item()) > 0.0:
+            mode_aux_acc = torch.stack(mode_aux_accs).mean()
+        else:
+            mode_aux_acc = rollout.actor_obs.new_tensor(0.0)
+        mean_p_combat = (
+            torch.stack(p_combat_parts).mean()
+            if p_combat_parts
+            else rollout.actor_obs.new_tensor(0.0)
+        )
         target_aux_loss = torch.stack(target_aux_losses).mean()
         target_aux_count_total = torch.stack(target_aux_counts).sum()
         if float(target_aux_count_total.item()) > 0.0:
@@ -487,6 +512,7 @@ class MappoTrainer:
             + cfg.value_coef * value_loss
             - entropy_bonus
             + cfg.aim_aux_coef * aim_aux_loss
+            + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
             + cfg.target_selection_aux_coef * target_aux_loss
         )
 
@@ -518,6 +544,10 @@ class MappoTrainer:
             "aim_aux_loss": float(aim_aux_loss.item()),
             "aim_aux_rmse": float(aim_aux_rmse.item()),
             "aim_aux_count": float(aim_aux_count_total.item()),
+            "mode_aux_loss": float(mode_aux_loss.item()),
+            "mode_accuracy": float(mode_aux_acc.item()),
+            "mode_aux_count": float(mode_aux_count_total.item()),
+            "mean_p_combat": float(mean_p_combat.item()),
             "target_selection_aux_loss": float(target_aux_loss.item()),
             "target_selection_aux_accuracy": float(target_aux_acc.item()),
             "target_selection_aux_count": float(target_aux_count_total.item()),
@@ -619,6 +649,8 @@ def make_mappo_config(config: dict) -> MappoConfig:
         team_spirit_final=float(ppo_cfg.get("team_spirit_final", 0.0)),
         team_spirit_ramp_fraction=float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3)),
         aim_aux_coef=float(ppo_cfg.get("aim_aux_coef", 0.0)),
+        mode_gated_combat=bool(ppo_cfg.get("mode_gated_combat", False)),
+        mode_aux_coef=float(ppo_cfg.get("mode_aux_coef", 0.3)),
         target_selection_dim=int(ppo_cfg.get("target_selection_dim", 0)),
         target_conditioned_combat=bool(ppo_cfg.get("target_conditioned_combat", False)),
         target_selection_aux_coef=float(ppo_cfg.get("target_selection_aux_coef", 0.0)),

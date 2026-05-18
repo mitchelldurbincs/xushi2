@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
-from train.mappo_model import MappoActorCritic, MappoConfig
+from train.mappo_model import MappoActorCritic, MappoConfig, mode_aux_loss_and_accuracy
 from train.phases import _make_phase4_env
 from xushi2.obs_manifest import actor_field_slice
 
@@ -147,6 +147,8 @@ def composition_rehearsal_losses(
     move_losses: list[torch.Tensor] = []
     aim_losses: list[torch.Tensor] = []
     fire_losses: list[torch.Tensor] = []
+    mode_losses: list[torch.Tensor] = []
+    mode_accs: list[torch.Tensor] = []
 
     h = student_model.init_hidden(cfg.n_agents).to(device)
     for t in range(objective_obs_seq.shape[0]):
@@ -154,6 +156,7 @@ def composition_rehearsal_losses(
         mean, _logits, _target_selection_logits = student_model.policy_heads_from_features(
             objective_obs_seq[t], features
         )
+        mode_logits = student_model.mode_logits_from_features(features)
         pred_cont = torch.tanh(mean)
         move_losses.append(
             torch.nn.functional.mse_loss(
@@ -161,6 +164,12 @@ def composition_rehearsal_losses(
                 objective_teacher_cont_seq[t, :, list(_MOVE_ACTION_INDICES)],
             )
         )
+        objective_mode = torch.zeros(cfg.n_agents, dtype=torch.long, device=device)
+        mode_loss, mode_acc, _mode_count = mode_aux_loss_and_accuracy(
+            mode_logits, objective_obs_seq[t], cfg, labels=objective_mode
+        )
+        mode_losses.append(mode_loss)
+        mode_accs.append(mode_acc)
 
     h = student_model.init_hidden(cfg.n_agents).to(device)
     for t in range(combat_obs_seq.shape[0]):
@@ -168,6 +177,7 @@ def composition_rehearsal_losses(
         mean, logits, _target_selection_logits = student_model.policy_heads_from_features(
             combat_obs_seq[t], features
         )
+        mode_logits = student_model.mode_logits_from_features(features)
         pred_cont = torch.tanh(mean)
         aim_losses.append(
             torch.nn.functional.mse_loss(
@@ -181,15 +191,27 @@ def composition_rehearsal_losses(
                 combat_teacher_binary_seq[t, :, _PRIMARY_FIRE_BINARY_INDEX],
             )
         )
+        combat_mode = torch.ones(cfg.n_agents, dtype=torch.long, device=device)
+        mode_loss, mode_acc, _mode_count = mode_aux_loss_and_accuracy(
+            mode_logits, combat_obs_seq[t], cfg, labels=combat_mode
+        )
+        mode_losses.append(mode_loss)
+        mode_accs.append(mode_acc)
 
     move_loss = torch.stack(move_losses).mean()
     aim_loss = torch.stack(aim_losses).mean()
     fire_loss = torch.stack(fire_losses).mean()
-    loss = move_loss + aim_loss + fire_loss
+    mode_loss = torch.stack(mode_losses).mean()
+    mode_acc = torch.stack(mode_accs).mean()
+    loss = move_loss + aim_loss + fire_loss + (
+        cfg.mode_aux_coef * mode_loss if cfg.mode_gated_combat else 0.0
+    )
     return loss, {
         "move_loss": move_loss.detach(),
         "aim_loss": aim_loss.detach(),
         "fire_loss": fire_loss.detach(),
+        "mode_loss": mode_loss.detach(),
+        "mode_accuracy": mode_acc.detach(),
     }
 
 
@@ -250,6 +272,8 @@ def composition_rehearsal_pretrain(
             "move_loss": float(parts["move_loss"].item()),
             "aim_loss": float(parts["aim_loss"].item()),
             "fire_loss": float(parts["fire_loss"].item()),
+            "mode_loss": float(parts["mode_loss"].item()),
+            "mode_accuracy": float(parts["mode_accuracy"].item()),
         }
         if step == 1 or step == steps or step % max(1, steps // 5) == 0:
             print(
@@ -257,7 +281,8 @@ def composition_rehearsal_pretrain(
                 f"loss={last_metrics['loss']:.4f} "
                 f"move_loss={last_metrics['move_loss']:.4f} "
                 f"aim_loss={last_metrics['aim_loss']:.4f} "
-                f"fire_loss={last_metrics['fire_loss']:.4f}",
+                f"fire_loss={last_metrics['fire_loss']:.4f} "
+                f"mode_acc={last_metrics['mode_accuracy']:.3f}",
                 flush=True,
             )
     return last_metrics

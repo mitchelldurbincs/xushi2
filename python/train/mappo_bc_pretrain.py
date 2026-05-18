@@ -14,6 +14,8 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    mode_aux_loss_and_accuracy,
+    mode_aux_targets,
     target_selection_aux_loss_and_accuracy,
 )
 from xushi2.entity_obs import entity_obs_self_position
@@ -275,11 +277,15 @@ def bc_pretrain_walk_to_objective(
             target_aux_losses = []
             target_aux_accs = []
             target_aux_counts = []
+            mode_aux_losses = []
+            mode_aux_accs = []
+            mode_aux_counts = []
             for t in range(obs_seq.shape[0]):
                 features, h = model.actor_head_features(obs_seq[t], h)
                 mean, logits, target_selection_logits = model.policy_heads_from_features(
                     obs_seq[t], features
                 )
+                mode_logits = model.mode_logits_from_features(features)
                 pred_cont = torch.tanh(mean)
                 target = target_seq[t]
                 cont_losses.append(
@@ -312,6 +318,15 @@ def bc_pretrain_walk_to_objective(
                 target_aux_losses.append(target_aux_loss)
                 target_aux_accs.append(target_aux_acc)
                 target_aux_counts.append(target_aux_count)
+                mode_target = torch.zeros(
+                    obs_seq.shape[1], dtype=torch.long, device=obs_seq.device
+                )
+                mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
+                    mode_logits, obs_seq[t], cfg, labels=mode_target
+                )
+                mode_aux_losses.append(mode_loss)
+                mode_aux_accs.append(mode_acc)
+                mode_aux_counts.append(mode_count)
             cont_loss = torch.stack(cont_losses).mean()
             binary_loss = torch.stack(binary_losses).mean()
             aim_aux_loss = torch.stack(aim_aux_losses).mean()
@@ -328,10 +343,18 @@ def bc_pretrain_walk_to_objective(
                 if float(target_aux_count.item()) > 0.0
                 else obs_seq.new_tensor(0.0)
             )
+            mode_aux_loss = torch.stack(mode_aux_losses).mean()
+            mode_aux_count = torch.stack(mode_aux_counts).sum()
+            mode_aux_acc = (
+                torch.stack(mode_aux_accs).mean()
+                if float(mode_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
             loss = (
                 cont_loss
                 + 0.1 * binary_loss
                 + cfg.aim_aux_coef * aim_aux_loss
+                + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
                 + cfg.target_selection_aux_coef * target_aux_loss
             )
             opt.zero_grad()
@@ -344,6 +367,7 @@ def bc_pretrain_walk_to_objective(
                     f"loss={float(loss.item()):.4f} "
                     f"cont_loss={float(cont_loss.item()):.4f} "
                     f"binary_loss={float(binary_loss.item()):.4f} "
+                    f"mode_acc={float(mode_aux_acc.item()):.3f} "
                     f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f} "
                     f"target_aux_acc={float(target_aux_acc.item()):.3f}",
                     flush=True,
@@ -406,6 +430,9 @@ def bc_pretrain_walk_and_shoot_to_objective(
             target_aux_losses = []
             target_aux_accs = []
             target_aux_counts = []
+            mode_aux_losses = []
+            mode_aux_accs = []
+            mode_aux_counts = []
 
             sequences = [(obs_seq, target_seq)]
             if (
@@ -432,6 +459,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     mean, logits, target_selection_logits = model.policy_heads_from_features(
                         seq_obs[t], features
                     )
+                    mode_logits = model.mode_logits_from_features(features)
                     pred_cont = torch.tanh(mean)
                     target = seq_target[t]
                     cont_losses.append(
@@ -464,6 +492,13 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     target_aux_losses.append(target_aux_loss)
                     target_aux_accs.append(target_aux_acc)
                     target_aux_counts.append(target_aux_count)
+                    mode_labels, _mode_valid = mode_aux_targets(seq_obs[t], cfg)
+                    mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
+                        mode_logits, seq_obs[t], cfg, labels=mode_labels
+                    )
+                    mode_aux_losses.append(mode_loss)
+                    mode_aux_accs.append(mode_acc)
+                    mode_aux_counts.append(mode_count)
             cont_loss = torch.stack(cont_losses).mean()
             binary_loss = torch.stack(binary_losses).mean()
             aim_aux_loss = torch.stack(aim_aux_losses).mean()
@@ -480,10 +515,18 @@ def bc_pretrain_walk_and_shoot_to_objective(
                 if float(target_aux_count.item()) > 0.0
                 else obs_seq.new_tensor(0.0)
             )
+            mode_aux_loss = torch.stack(mode_aux_losses).mean()
+            mode_aux_count = torch.stack(mode_aux_counts).sum()
+            mode_aux_acc = (
+                torch.stack(mode_aux_accs).mean()
+                if float(mode_aux_count.item()) > 0.0
+                else obs_seq.new_tensor(0.0)
+            )
             loss = (
                 cont_loss
                 + 0.1 * binary_loss
                 + cfg.aim_aux_coef * aim_aux_loss
+                + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
                 + cfg.target_selection_aux_coef * target_aux_loss
             )
             opt.zero_grad()
@@ -496,6 +539,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
                     f"loss={float(loss.item()):.4f} "
                     f"cont_loss={float(cont_loss.item()):.4f} "
                     f"binary_loss={float(binary_loss.item()):.4f} "
+                    f"mode_acc={float(mode_aux_acc.item()):.3f} "
                     f"aim_aux_rmse={float(aim_aux_rmse.item()):.4f} "
                     f"target_aux_acc={float(target_aux_acc.item()):.3f}",
                     flush=True,

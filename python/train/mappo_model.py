@@ -90,6 +90,8 @@ class MappoConfig:
     target_selection_aux_coef: float = 0.0
     target_selection_aux_mode: str = "nearest_visible"
     target_selection_objective_proximity_coef: float = 0.1
+    mode_gated_combat: bool = False
+    mode_aux_coef: float = 0.3
     # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
     # else CPU). Resolved to ``torch.device`` once in the trainer.
     device: str = "cpu"
@@ -123,6 +125,10 @@ class MappoEvalStats:
     team_b_target_selection_entropy: float = 0.0
     team_a_damage_per_fire: float = 0.0
     team_b_damage_per_fire: float = 0.0
+    mean_p_combat: float = 0.0
+    mode_accuracy: float = 0.0
+    intentional_fire_fraction: float = 0.0
+    objective_focus_fraction: float = 0.0
 
 
 def compute_team_spirit(
@@ -291,6 +297,9 @@ class MappoActorCritic(nn.Module):
         )
         self.actor_mean_head = nn.Linear(cfg.head_hidden, cfg.continuous_action_dim)
         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
+        self.actor_mode_head = (
+            nn.Linear(cfg.head_hidden, 2) if cfg.mode_gated_combat else None
+        )
         self.actor_target_head = (
             nn.Linear(cfg.head_hidden, cfg.target_action_dim) if cfg.target_action_dim > 0 else None
         )
@@ -345,6 +354,36 @@ class MappoActorCritic(nn.Module):
             return None
         return self.actor_target_selection_head(features)
 
+    def mode_logits_from_features(self, features: torch.Tensor) -> torch.Tensor | None:
+        if self.actor_mode_head is None:
+            return None
+        return self.actor_mode_head(features)
+
+    @staticmethod
+    def combat_probability(mode_logits: torch.Tensor | None) -> torch.Tensor | None:
+        if mode_logits is None:
+            return None
+        return torch.softmax(mode_logits, dim=-1)[:, 1]
+
+    def gated_binary_logits(
+        self,
+        logits: torch.Tensor,
+        mode_logits: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if (
+            not self.cfg.mode_gated_combat
+            or mode_logits is None
+            or logits.shape[-1] == 0
+        ):
+            return logits
+        p_fire_raw = torch.sigmoid(logits[:, 0])
+        p_combat = self.combat_probability(mode_logits)
+        assert p_combat is not None
+        p_fire_actual = (p_fire_raw * p_combat).clamp(1.0e-6, 1.0 - 1.0e-6)
+        out = logits.clone()
+        out[:, 0] = torch.logit(p_fire_actual)
+        return out
+
     def policy_heads_from_features(
         self, obs: torch.Tensor, features: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
@@ -356,6 +395,7 @@ class MappoActorCritic(nn.Module):
             head_features = features + self.actor_target_condition(target_context.features)
         mean = self.actor_mean_head(head_features)
         logits = self.actor_binary_head(head_features)
+        mode_logits = self.mode_logits_from_features(head_features)
         if (
             target_context is not None
             and logits.shape[-1] > 0
@@ -366,6 +406,7 @@ class MappoActorCritic(nn.Module):
             )
             logits = logits.clone()
             logits[:, 0] = logits[:, 0] + fire_gate.log()
+        logits = self.gated_binary_logits(logits, mode_logits)
         return mean, logits, target_selection_logits
 
     def _actor_features(self, obs: torch.Tensor) -> torch.Tensor:
@@ -494,6 +535,52 @@ def aim_aux_targets(
     rel_norm = torch.linalg.vector_norm(enemy_rel_pos, dim=-1)
     target = torch.atan2(enemy_rel_pos[:, 1], enemy_rel_pos[:, 0])
     return target, enemy_alive & (rel_norm > 1.0e-6)
+
+
+def mode_aux_targets(
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Heuristic mode labels: close visible enemy => combat, else objective."""
+    labels = torch.zeros(obs.shape[0], dtype=torch.long, device=obs.device)
+    valid = torch.ones(obs.shape[0], dtype=torch.bool, device=obs.device)
+    if cfg.obs_encoder == "flat":
+        enemy_alive = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+        enemy_rel_pos = obs[:, _ENEMY_REL_POS_SLICE]
+        close = torch.linalg.vector_norm(enemy_rel_pos, dim=-1) <= 0.4
+        labels = torch.where(enemy_alive & close, torch.ones_like(labels), labels)
+    if mask is not None:
+        valid = valid & (mask.reshape(-1) > 0.0)
+    return labels, valid
+
+
+def mode_aux_loss_and_accuracy(
+    logits: torch.Tensor | None,
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+    labels: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    if logits is None:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, zero
+    if labels is None:
+        labels, valid = mode_aux_targets(obs, cfg, mask=mask)
+    else:
+        labels = labels.to(device=obs.device, dtype=torch.long).reshape(-1)
+        valid = torch.ones(obs.shape[0], dtype=torch.bool, device=obs.device)
+        if mask is not None:
+            valid = valid & (mask.reshape(-1) > 0.0)
+    count = valid.to(obs.dtype).sum()
+    if float(count.item()) <= 0.0:
+        zero = obs.new_tensor(0.0)
+        return zero, zero, count
+    loss = torch.nn.functional.cross_entropy(logits[valid], labels[valid])
+    acc = (logits[valid].argmax(dim=-1) == labels[valid]).to(obs.dtype).mean()
+    return loss, acc, count
 
 
 @dataclass(frozen=True)

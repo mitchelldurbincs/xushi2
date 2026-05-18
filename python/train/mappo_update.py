@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from train.mappo_model import target_selection_aux_loss_and_accuracy
+from train.mappo_model import mode_aux_loss_and_accuracy, target_selection_aux_loss_and_accuracy
 from train.ppo_recurrent.losses import action_logprob_and_entropy, compute_ppo_loss
 
 
@@ -43,7 +43,10 @@ def action_logprob_entropy(cfg, mean, log_std, binary_logits, target_logits, act
     return logp, ent
 
 
-def compute_policy_trajectory_logprob_entropy(trainer, rollout) -> tuple[torch.Tensor, torch.Tensor]:
+def compute_policy_trajectory_logprob_entropy(
+    trainer,
+    rollout,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Run recurrent policy over rollout and return trajectory log-probabilities/entropy.
 
     Args:
@@ -65,7 +68,10 @@ def compute_policy_trajectory_logprob_entropy(trainer, rollout) -> tuple[torch.T
     for t in range(L):
         obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
         mean, log_std, logits, target_logits, h = trainer.model.policy_outputs(obs_t, h)
-        target_logits = trainer.model._masked_target_logits(target_logits, trainer.model._target_mask(obs_t))
+        target_logits = trainer.model._masked_target_logits(
+            target_logits,
+            trainer.model._target_mask(obs_t),
+        )
         action_t = rollout.action[:, :, t].reshape(N * A, cfg.action_dim)
         logp, ent = action_logprob_entropy(cfg, mean, log_std, logits, target_logits, action_t)
         logprobs.append(logp.view(N, A))
@@ -106,14 +112,21 @@ def _build_batch_tensors(trainer, rollout) -> MappoBatchTensors:
     valid_agent = rollout.agent_loss_mask.expand(N, A, L)
     if cfg.value_per_agent:
         value = (
-            trainer.model.value(rollout.critic_obs.permute(0, 2, 1, 3).reshape(N * L * A, cfg.critic_obs_dim))
+            trainer.model.value(
+                rollout.critic_obs.permute(0, 2, 1, 3).reshape(
+                    N * L * A,
+                    cfg.critic_obs_dim,
+                )
+            )
             .view(N, L, A)
             .permute(0, 2, 1)
         )
         advantage = rollout.advantages
         value_mask = valid_agent
     else:
-        value = trainer.model.value(rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)).view(N, L)
+        value = trainer.model.value(
+            rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)
+        ).view(N, L)
         advantage = rollout.advantages[:, None, :].expand(N, A, L)
         value_mask = (valid_agent.sum(dim=1) > 0.0).to(valid_agent.dtype)
 
@@ -127,8 +140,13 @@ def _build_batch_tensors(trainer, rollout) -> MappoBatchTensors:
     )
 
 
-def update_full_rollout(trainer, rollout, return_mean: float, return_std: float) -> dict[str, float]:
-    # PPO Eq. (1-2): evaluate recurrent policy over trajectory, collect pi_theta(a_t|s_t) and entropy.
+def update_full_rollout(
+    trainer,
+    rollout,
+    return_mean: float,
+    return_std: float,
+) -> dict[str, float]:
+    # PPO Eq. (1-2): evaluate recurrent policy over trajectory.
     batch = _build_batch_tensors(trainer, rollout)
 
     cfg = trainer.cfg
@@ -151,7 +169,9 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
     )
 
     target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
-    if cfg.target_selection_aux_coef > 0.0:
+    mode_aux_losses, mode_aux_accs, mode_aux_counts = [], [], []
+    p_combat_parts = []
+    if cfg.target_selection_aux_coef > 0.0 or cfg.mode_gated_combat:
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
         for t in range(L):
@@ -160,7 +180,17 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
             _mean, _logits, target_selection_logits = trainer.model.policy_heads_from_features(
                 obs_t, features
             )
+            mode_logits = trainer.model.mode_logits_from_features(features)
+            p_combat = trainer.model.combat_probability(mode_logits)
+            if p_combat is not None:
+                p_combat_parts.append(p_combat.mean())
             flat_mask = rollout.agent_loss_mask[:, :, t].reshape(N * A)
+            mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
+                mode_logits, obs_t, cfg, mask=flat_mask
+            )
+            mode_aux_losses.append(mode_loss)
+            mode_aux_accs.append(mode_acc)
+            mode_aux_counts.append(mode_count)
             aux_loss, aux_acc, aux_count = target_selection_aux_loss_and_accuracy(
                 target_selection_logits, obs_t, cfg, mask=flat_mask
             )
@@ -182,7 +212,29 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
         target_aux_loss = rollout.actor_obs.new_tensor(0.0)
         target_aux_acc = rollout.actor_obs.new_tensor(0.0)
         target_aux_count = rollout.actor_obs.new_tensor(0.0)
-    total_loss = loss.total_loss + cfg.target_selection_aux_coef * target_aux_loss
+    if mode_aux_losses:
+        mode_aux_loss = torch.stack(mode_aux_losses).mean()
+        mode_aux_count = torch.stack(mode_aux_counts).sum()
+        mode_aux_acc = (
+            torch.stack(mode_aux_accs).mean()
+            if float(mode_aux_count.item()) > 0.0
+            else rollout.actor_obs.new_tensor(0.0)
+        )
+        mean_p_combat = (
+            torch.stack(p_combat_parts).mean()
+            if p_combat_parts
+            else rollout.actor_obs.new_tensor(0.0)
+        )
+    else:
+        mode_aux_loss = rollout.actor_obs.new_tensor(0.0)
+        mode_aux_acc = rollout.actor_obs.new_tensor(0.0)
+        mode_aux_count = rollout.actor_obs.new_tensor(0.0)
+        mean_p_combat = rollout.actor_obs.new_tensor(0.0)
+    total_loss = (
+        loss.total_loss
+        + cfg.target_selection_aux_coef * target_aux_loss
+        + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
+    )
 
     # Optimization: backward, grad metrics, global grad clip, optimizer step.
     actor_grad_norm, critic_grad_norm, trunk_grad_norm = apply_optimizer_step(trainer, total_loss)
@@ -212,5 +264,9 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
     out["target_selection_aux_loss"] = float(target_aux_loss.detach().cpu().item())
     out["target_selection_aux_accuracy"] = float(target_aux_acc.detach().cpu().item())
     out["target_selection_aux_count"] = float(target_aux_count.detach().cpu().item())
+    out["mode_aux_loss"] = float(mode_aux_loss.detach().cpu().item())
+    out["mode_accuracy"] = float(mode_aux_acc.detach().cpu().item())
+    out["mode_aux_count"] = float(mode_aux_count.detach().cpu().item())
+    out["mean_p_combat"] = float(mean_p_combat.detach().cpu().item())
     out["lr"] = trainer.current_learning_rate
     return out

@@ -1084,3 +1084,54 @@ fire `1.000/1.000`, aim error `1.565/1.625`, nearest-aim target entropy
 collapses in full `weak_basic_v2` 3v3. The stop condition was met at update 50:
 zero score, zero wins, on-point below `0.25`, and hit/fire below `0.02`.
 Result is falsified / done, not blocked.
+
+## 2026-05-18 — Phase 4 explicit combat/objective mode-gated probe
+
+**Reason/config:** tested the hypothesis that full 3v3 transfer collapses
+because the actor lacks an explicit fight-vs-cap decision. Added an
+`actor_mode_head` and ran
+`experiments/configs/phase4/probe/phase4_mappo_mode_gated_v1.yaml`, full
+`weak_basic_v2` 3v3, seed `3519994490`, warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`. The config enables
+`mode_gated_combat: true`, `mode_aux_coef: 0.3`, and compatible team-focus
+target conditioning with `target_selection_aux_coef: 0.3`. Implementation
+base before commit: `cd8cbee789cf1896ebaa64bb15be6b620048fdcf`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/u8361ulr`, final
+checkpoint
+`python/runs/phase4_mappo_mode_gated_v1/mappo/ckpt_final.pt`, update-50
+checkpoint
+`python/runs/phase4_mappo_mode_gated_v1/mappo/ckpt_0050.pt`. No replay was
+produced by this training run.
+
+**Preflight/tests:** `make build-cpp` passed. `make py-install` passed.
+`cd python && .venv/bin/pytest tests/test_mappo_mode_gate.py -xvs` passed
+(`4 passed`). `cd python && .venv/bin/pytest
+tests/test_mappo_composition_rehearsal.py tests/test_mappo_aux_aim.py
+tests/test_mappo_focus_fire.py -x` passed (`24 passed`).
+
+**BC:** warm-start loaded with `strict=False`; the new missing
+`actor_mode_head.{weight,bias}` entries were accepted by the new-head
+allowlist. Walk-and-shoot BC reached step 500 with loss `0.0045`, continuous
+loss `0.0025`, binary loss `0.0025`, mode accuracy `1.000`, target-selection
+accuracy `1.000`. BC eval remained poor: mean reward `-11.000`, `0W/50L/0D`,
+score `0.00/1.93`, Team A/B hit-fire `0.0145/0.2907`, mean combat mode
+probability `0.892`, mode accuracy `0.988`.
+
+**PPO result:** update 50 was ambiguous, so the run continued to update 100:
+eval mean reward `-1.000`, `0W/0L/50D`, score `0.00/0.00`, kills `3.0/3.0`,
+Team A/B hit-fire `0.0151/0.2791`, recent rollout on-point `0.519`, mean
+combat probability `0.885`, mode accuracy `0.984`, intentional-fire fraction
+`0.885`, objective-focus fraction `0.046`. Final update 100 remained draw-only:
+mean reward `-1.000`, `0W/0L/50D`, score `0.00/0.00`, kills `3.0/3.0`,
+Team A/B hit-fire `0.0157/0.2791`, visible fire `0.953/1.000`, aim error
+`1.562/1.129`, same-target fraction `0.959`, focus entropy `0.077`, mean
+combat probability `0.887`, mode accuracy `0.981`, intentional-fire fraction
+`0.887`, objective-focus fraction `0.046`.
+
+**Conclusion:** explicit mode gating did not clear Phase 4. It preserved enough
+objective contact to avoid update-50 falsification and produced kills, but it
+collapsed into high combat-mode probability and still produced zero score and
+zero wins. Result is not cleared / evidence insufficient for the hypothesis,
+not blocked.

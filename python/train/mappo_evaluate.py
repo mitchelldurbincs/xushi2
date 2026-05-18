@@ -13,8 +13,10 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoEvalStats,
     _eval_outcome_counts,
+    mode_aux_targets,
     target_selection_policy_metrics,
 )
+from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -106,6 +108,12 @@ def evaluate_mappo(
         "A": {"entropy_sum": 0.0, "same_sum": 0.0, "count": 0},
         "B": {"entropy_sum": 0.0, "same_sum": 0.0, "count": 0},
     }
+    mode_total = 0
+    mode_correct = 0
+    p_combat_sum = 0.0
+    intentional_fire_count = 0
+    objective_focus_count = 0
+    self_on_point_slice = actor_field_slice("self_on_point")
 
     vec_env = make_xushi_vector_env(
         [env_fn for _ in range(num_envs)],
@@ -153,7 +161,37 @@ def evaluate_mappo(
                                 ].item()
                             )
                             focus_totals[team]["count"] += 1
+                if cfg.mode_gated_combat:
+                    features, _ = model.actor_head_features(flat_obs, flat_h)
+                    mode_logits = model.mode_logits_from_features(features)
+                    p_combat = model.combat_probability(mode_logits)
+                    if p_combat is not None:
+                        labels, valid = mode_aux_targets(flat_obs, cfg)
+                        valid_count = int(valid.sum().item())
+                        if valid_count > 0:
+                            mode_total += valid_count
+                            mode_correct += int(
+                                (
+                                    mode_logits[valid].argmax(dim=-1) == labels[valid]
+                                ).sum().item()
+                            )
+                            p_combat_sum += float(p_combat[valid].sum().item())
                 action, h_next = model.greedy_action(flat_obs, flat_h)
+                if cfg.mode_gated_combat:
+                    mode_logits = model.mode_logits_from_features(
+                        model.actor_head_features(flat_obs, flat_h)[0]
+                    )
+                    p_combat = model.combat_probability(mode_logits)
+                    if p_combat is not None:
+                        fire_start = cfg.continuous_action_dim
+                        fire_taken = action[:, fire_start] > 0.5
+                        objective_focus = p_combat < 0.5
+                        if cfg.obs_encoder == "flat":
+                            on_point = flat_obs[:, self_on_point_slice].squeeze(-1) > 0.5
+                        else:
+                            on_point = torch.zeros_like(objective_focus)
+                        intentional_fire_count += int(((p_combat > 0.5) & fire_taken).sum().item())
+                        objective_focus_count += int((objective_focus & on_point).sum().item())
             action_3d = action.view(num_envs, cfg.n_agents, cfg.action_dim)
             action_np = action_3d.cpu().numpy()
             next_obs_np, reward_np, term, trunc, _critic, infos = vec_env.step(action_np)
@@ -204,6 +242,7 @@ def evaluate_mappo(
     combat_b = _combat_summary(combat_totals["B"])
     focus_a_count = max(1, int(focus_totals["A"]["count"]))
     focus_b_count = max(1, int(focus_totals["B"]["count"]))
+    mode_den = max(1, mode_total)
     return MappoEvalStats(
         mean_reward=float(np.mean(rewards)) if rewards else 0.0,
         episodes=len(rewards),
@@ -233,6 +272,10 @@ def evaluate_mappo(
         / focus_b_count,
         team_a_damage_per_fire=float(combat_a["damage_per_fire"]),
         team_b_damage_per_fire=float(combat_b["damage_per_fire"]),
+        mean_p_combat=float(p_combat_sum) / float(mode_den),
+        mode_accuracy=float(mode_correct) / float(mode_den),
+        intentional_fire_fraction=float(intentional_fire_count) / float(mode_den),
+        objective_focus_fraction=float(objective_focus_count) / float(mode_den),
     )
 
 
@@ -268,4 +311,8 @@ def eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
         "team_b_target_selection_entropy": float(stats.team_b_target_selection_entropy),
         "team_a_damage_per_fire": float(stats.team_a_damage_per_fire),
         "team_b_damage_per_fire": float(stats.team_b_damage_per_fire),
+        "mean_p_combat": float(stats.mean_p_combat),
+        "mode_accuracy": float(stats.mode_accuracy),
+        "intentional_fire_fraction": float(stats.intentional_fire_fraction),
+        "objective_focus_fraction": float(stats.objective_focus_fraction),
     }

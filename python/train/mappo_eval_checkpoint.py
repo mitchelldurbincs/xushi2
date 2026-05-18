@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 
+from train.common_orchestration import LoopConfig, run_training_loop
 from train.composition_rehearsal import (
     build_phase4_env_fn_with_overrides,
     composition_rehearsal_pretrain,
@@ -27,7 +28,6 @@ from train.mappo_matrix_eval import (
 )
 from train.mappo_model import MappoActorCritic, compute_team_spirit
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.common_orchestration import LoopConfig, run_training_loop
 from train.phases import resolve_phase
 from train.wandb_logger import make_logger
 from xushi2.snapshot_retention import SnapshotRetention
@@ -99,6 +99,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             cfg.aim_aux_coef > 0.0
             or cfg.target_selection_dim > 0
             or cfg.target_conditioned_combat
+            or cfg.mode_gated_combat
         ):
             load_result = trainer.model.load_state_dict(raw["model_state_dict"], strict=False)
             unexpected = list(load_result.unexpected_keys)
@@ -107,6 +108,8 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 allowed_missing_prefixes.append("actor_target_selection_head.")
             if cfg.target_conditioned_combat:
                 allowed_missing_prefixes.append("actor_target_condition.")
+            if cfg.mode_gated_combat:
+                allowed_missing_prefixes.append("actor_mode_head.")
             missing = [
                 key
                 for key in load_result.missing_keys
@@ -312,7 +315,9 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 f"same_tgt={eval_stats.team_a_same_target_fraction:.3f}/"
                 f"{eval_stats.team_b_same_target_fraction:.3f} "
                 f"focus_H={eval_stats.team_a_target_selection_entropy:.3f}/"
-                f"{eval_stats.team_b_target_selection_entropy:.3f}",
+                f"{eval_stats.team_b_target_selection_entropy:.3f} "
+                f"pcombat={eval_stats.mean_p_combat:.3f} "
+                f"mode_acc={eval_stats.mode_accuracy:.3f}",
                 flush=True,
             )
             wandb_logger.log(
@@ -361,16 +366,47 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 return metrics
 
             def evaluate_step(self, update_idx: int, lr: float):
-                return evaluate_mappo(trainer.model, env_fn, episodes=eval_episodes, seed=seed_base + 100_000 + update_idx)
+                return evaluate_mappo(
+                    trainer.model,
+                    env_fn,
+                    episodes=eval_episodes,
+                    seed=seed_base + 100_000 + update_idx,
+                )
 
             def checkpoint_payload(self, update_idx: int) -> dict:
-                return {"update_idx": update_idx, "path": output_dir / f"ckpt_{update_idx:04d}.pt"}
+                return {
+                    "update_idx": update_idx,
+                    "path": output_dir / f"ckpt_{update_idx:04d}.pt",
+                }
 
             def on_log(self, update_idx: int, lr: float, metrics: dict[str, float]) -> None:
-                wandb_logger.log({f"train/{k}": float(v) for k, v in metrics.items()}, step=update_idx)
+                wandb_logger.log(
+                    {f"train/{k}": float(v) for k, v in metrics.items()},
+                    step=update_idx,
+                )
                 wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
                 print(
-                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} policy_loss={metrics['policy_loss']:.3f} value_loss={metrics['value_loss']:.3f} entropy={metrics['entropy']:.3f} rew={metrics['rollout_reward_mean']:+.3f}/{metrics['rollout_reward_std']:.3f} adv={metrics['advantage_mean']:+.3f}/{metrics['advantage_std']:.3f} move={metrics['action_move_mag_mean']:.3f} bin={metrics['action_binary_mean']:.3f} dist={metrics['mean_distance_to_objective']:.3f} onpt={metrics['self_on_point_fraction']:.3f} same_tgt={metrics.get('target_selection_same_target_fraction', 0.0):.3f} focus_H={metrics.get('target_selection_label_entropy', 0.0):.3f} fallback={metrics.get('target_selection_fallback_rate', 0.0):.3f} gn={metrics['actor_grad_norm']:.2e}/{metrics['critic_grad_norm']:.2e}/{metrics['trunk_grad_norm']:.2e} lr={lr:.2e} ts={metrics['team_spirit']:.2f}",
+                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} "
+                    f"policy_loss={metrics['policy_loss']:.3f} "
+                    f"value_loss={metrics['value_loss']:.3f} "
+                    f"entropy={metrics['entropy']:.3f} "
+                    f"rew={metrics['rollout_reward_mean']:+.3f}/"
+                    f"{metrics['rollout_reward_std']:.3f} "
+                    f"adv={metrics['advantage_mean']:+.3f}/"
+                    f"{metrics['advantage_std']:.3f} "
+                    f"move={metrics['action_move_mag_mean']:.3f} "
+                    f"bin={metrics['action_binary_mean']:.3f} "
+                    f"dist={metrics['mean_distance_to_objective']:.3f} "
+                    f"onpt={metrics['self_on_point_fraction']:.3f} "
+                    f"pcombat={metrics.get('mean_p_combat', 0.0):.3f} "
+                    f"mode_acc={metrics.get('mode_accuracy', 0.0):.3f} "
+                    f"same_tgt={metrics.get('target_selection_same_target_fraction', 0.0):.3f} "
+                    f"focus_H={metrics.get('target_selection_label_entropy', 0.0):.3f} "
+                    f"fallback={metrics.get('target_selection_fallback_rate', 0.0):.3f} "
+                    f"gn={metrics['actor_grad_norm']:.2e}/"
+                    f"{metrics['critic_grad_norm']:.2e}/"
+                    f"{metrics['trunk_grad_norm']:.2e} "
+                    f"lr={lr:.2e} ts={metrics['team_spirit']:.2f}",
                     flush=True,
                 )
 
@@ -401,29 +437,78 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"{eval_stats.team_b_same_target_fraction:.3f} "
                     f"focus_H={eval_stats.team_a_target_selection_entropy:.3f}/"
                     f"{eval_stats.team_b_target_selection_entropy:.3f} "
+                    f"pcombat={eval_stats.mean_p_combat:.3f} "
+                    f"mode_acc={eval_stats.mode_accuracy:.3f} "
+                    f"intent_fire={eval_stats.intentional_fire_fraction:.3f} "
+                    f"obj_focus={eval_stats.objective_focus_fraction:.3f} "
                     f"dmg_fire={eval_stats.team_a_damage_per_fire:.1f}/"
                     f"{eval_stats.team_b_damage_per_fire:.1f}",
                     flush=True,
                 )
-                wandb_logger.log({f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()}, step=update_idx)
+                wandb_logger.log(
+                    {f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
+                    step=update_idx,
+                )
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())
                     best_eval_update_idx = update_idx
-                    best_eval_stats = {"wins": int(eval_stats.wins), "losses": int(eval_stats.losses), "draws": int(eval_stats.draws), "score_team_a": float(eval_stats.mean_team_a_score), "score_team_b": float(eval_stats.mean_team_b_score), "kills_team_a": float(eval_stats.mean_team_a_kills), "kills_team_b": float(eval_stats.mean_team_b_kills)}
+                    best_eval_stats = {
+                        "wins": int(eval_stats.wins),
+                        "losses": int(eval_stats.losses),
+                        "draws": int(eval_stats.draws),
+                        "score_team_a": float(eval_stats.mean_team_a_score),
+                        "score_team_b": float(eval_stats.mean_team_b_score),
+                        "kills_team_a": float(eval_stats.mean_team_a_kills),
+                        "kills_team_b": float(eval_stats.mean_team_b_kills),
+                    }
                 if run_cfg.get("eval_gate"):
-                    run_eval_gate(phase_label=phase_label, stats=eval_stats, gate_cfg=EvalGateConfig.from_dict(dict(run_cfg.get("eval_gate", {}))), output_dir=output_dir)
+                    run_eval_gate(
+                        phase_label=phase_label,
+                        stats=eval_stats,
+                        gate_cfg=EvalGateConfig.from_dict(dict(run_cfg.get("eval_gate", {}))),
+                        output_dir=output_dir,
+                    )
                 return False
 
             def on_checkpoint(self, update_idx: int, payload: dict) -> None:
                 checkpoint_path = payload["path"]
-                torch.save({"model_state_dict": trainer.model.state_dict(), "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__}}, checkpoint_path)
+                torch.save(
+                    {
+                        "model_state_dict": trainer.model.state_dict(),
+                        "config": {
+                            "phase": phase,
+                            "env": ckpt_env_cfg,
+                            "mappo": cfg.__dict__,
+                        },
+                    },
+                    checkpoint_path,
+                )
                 if retention is not None:
-                    manifest = retention.record_checkpoint(checkpoint_path, update=update_idx, score=last_eval)
-                    print(f"[{phase_label}/mappo] snapshot_pool latest={len(manifest['latest'])} historical={len(manifest['historical'])} anchor={len(manifest['anchor'])}", flush=True)
+                    manifest = retention.record_checkpoint(
+                        checkpoint_path,
+                        update=update_idx,
+                        score=last_eval,
+                    )
+                    print(
+                        f"[{phase_label}/mappo] snapshot_pool "
+                        f"latest={len(manifest['latest'])} "
+                        f"historical={len(manifest['historical'])} "
+                        f"anchor={len(manifest['anchor'])}",
+                        flush=True,
+                    )
 
         run_training_loop(
-            LoopConfig(total_updates=total_updates, eval_every=eval_every, checkpoint_every=checkpoint_every, log_every=int(run_cfg.get("log_every", 1)), base_lr=cfg.learning_rate, lr_schedule=cfg.lr_schedule, lr_final_ratio=cfg.lr_final_ratio, warmup_updates=cfg.warmup_updates),
+            LoopConfig(
+                total_updates=total_updates,
+                eval_every=eval_every,
+                checkpoint_every=checkpoint_every,
+                log_every=int(run_cfg.get("log_every", 1)),
+                base_lr=cfg.learning_rate,
+                lr_schedule=cfg.lr_schedule,
+                lr_final_ratio=cfg.lr_final_ratio,
+                warmup_updates=cfg.warmup_updates,
+            ),
             _MappoHooks(),
         )
     finally:

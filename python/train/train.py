@@ -51,6 +51,10 @@ def load_config(path: Path) -> dict:
             )
             run_cfg.setdefault("composition_objective_env", {})
             run_cfg.setdefault("composition_combat_env", {})
+        ppo_cfg = config.setdefault("ppo", {})
+        if isinstance(ppo_cfg, dict):
+            ppo_cfg.setdefault("mode_gated_combat", False)
+            ppo_cfg.setdefault("mode_aux_coef", 0.3)
     return config
 
 
