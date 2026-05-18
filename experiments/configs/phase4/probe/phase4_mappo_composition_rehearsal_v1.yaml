@@ -1,0 +1,100 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: composition_rehearsal
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+  - phase4_composition_rehearsal
+  hypothesis: "Multi-teacher BC can preserve objective movement from v6.5 and combat aim/fire from combat_1v1_v2 in one Phase 4 MAPPO policy before PPO starts."
+  falsification_criteria: "Falsified if composition BC fails objective on-point retention, combat_1v1 kills, or full weak_basic_v2 hit/fire and aim-error gates."
+  max_updates_if_no_signal: 50
+  lineage: "Strategy 1 from 2026-05-18 Phase 4 strategic proposal."
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 500
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_composition_rehearsal_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  composition_pretrain: true
+  composition_pretrain_steps: 1000
+  composition_objective_teacher_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  composition_combat_teacher_checkpoint: runs/phase4_mappo_combat_1v1_v2/mappo/ckpt_final.pt
+  composition_objective_batch_size: 256
+  composition_combat_batch_size: 256
+  composition_eval_episodes: 50
+  composition_objective_env:
+    opponent_bot: weak_basic_v2
+  composition_combat_env:
+    mini_game: combat_1v1
+    mini_game_config:
+      episode_decisions: 64
+      target_distance: 0.45
+      target_angle_limit: 0.8
+      target_drift: 0.08
+      hit_tolerance: 0.12
+      target_hp: 3
+      hit_reward: 1.0
+      kill_reward: 4.0
+      miss_penalty: 0.15
+      no_fire_penalty: 0.02
+      aim_error_coef: 0.05
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 0

@@ -6,6 +6,12 @@ from pathlib import Path
 
 import torch
 
+from train.composition_rehearsal import (
+    build_phase4_env_fn_with_overrides,
+    composition_rehearsal_pretrain,
+    load_frozen_mappo_teacher,
+    run_composition_diagnostics,
+)
 from train.mappo_bc_pretrain import (
     bc_pretrain_walk_and_shoot_to_objective,
     bc_pretrain_walk_to_objective,
@@ -21,8 +27,8 @@ from train.mappo_matrix_eval import (
 )
 from train.mappo_model import MappoActorCritic, compute_team_spirit
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.phases import resolve_phase
 from train.common_orchestration import LoopConfig, run_training_loop
+from train.phases import resolve_phase
 from train.wandb_logger import make_logger
 from xushi2.snapshot_retention import SnapshotRetention
 
@@ -124,8 +130,98 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     best_eval_stats: dict[str, float | int] | None = None
     last_eval = float("nan")
     try:
+        composition_gate_passed = True
+        if bool(run_cfg.get("composition_pretrain", False)):
+            objective_teacher_ckpt = run_cfg.get("composition_objective_teacher_checkpoint")
+            combat_teacher_ckpt = run_cfg.get("composition_combat_teacher_checkpoint")
+            if not objective_teacher_ckpt:
+                raise ValueError(
+                    "run.composition_objective_teacher_checkpoint is required when "
+                    "composition_pretrain is true"
+                )
+            if not combat_teacher_ckpt:
+                raise ValueError(
+                    "run.composition_combat_teacher_checkpoint is required when "
+                    "composition_pretrain is true"
+                )
+            objective_teacher = load_frozen_mappo_teacher(objective_teacher_ckpt)
+            combat_teacher = load_frozen_mappo_teacher(combat_teacher_ckpt)
+            objective_env_fn = build_phase4_env_fn_with_overrides(
+                ckpt_env_cfg,
+                dict(run_cfg.get("composition_objective_env", {})),
+            )
+            combat_env_fn = build_phase4_env_fn_with_overrides(
+                ckpt_env_cfg,
+                dict(run_cfg.get("composition_combat_env", {})),
+            )
+            full_eval_env_fn = build_phase4_env_fn_with_overrides(
+                ckpt_env_cfg,
+                {
+                    "opponent_bot": "weak_basic_v2",
+                    "mini_game": None,
+                    "mini_game_config": {},
+                },
+            )
+            metrics = composition_rehearsal_pretrain(
+                trainer.model,
+                objective_teacher,
+                combat_teacher,
+                objective_env_fn,
+                combat_env_fn,
+                {
+                    "steps": int(run_cfg.get("composition_pretrain_steps", 1000)),
+                    "objective_batch_size": int(
+                        run_cfg.get("composition_objective_batch_size", 256)
+                    ),
+                    "combat_batch_size": int(
+                        run_cfg.get("composition_combat_batch_size", 256)
+                    ),
+                    "learning_rate": float(
+                        run_cfg.get(
+                            "composition_learning_rate",
+                            run_cfg.get("bc_learning_rate", 1.0e-3),
+                        )
+                    ),
+                    "seed": seed_base + 40_000,
+                    "log_label": phase_label,
+                },
+            )
+            if metrics:
+                wandb_logger.log(
+                    {f"composition_pretrain/{k}": float(v) for k, v in metrics.items()},
+                    step=0,
+                )
+            diagnostics = run_composition_diagnostics(
+                trainer.model,
+                objective_env_fn=objective_env_fn,
+                combat_env_fn=combat_env_fn,
+                full_env_fn=full_eval_env_fn,
+                episodes=int(run_cfg.get("composition_eval_episodes", eval_episodes)),
+                seed=seed_base + 80_000,
+            )
+            composition_gate_passed = diagnostics.passed
+            print(
+                f"[{phase_label}/mappo] composition_gate "
+                f"passed={diagnostics.passed} "
+                f"objective_onpt={diagnostics.objective_on_point:.3f}>0.250 "
+                f"objective_losses={diagnostics.objective_losses}<=0 "
+                f"combat_kills={diagnostics.combat_kills:.2f}>=12.00 "
+                f"full_hit_fire={diagnostics.full_hit_fire:.4f}>0.0200 "
+                f"full_aim_error={diagnostics.full_aim_error:.3f}<1.550",
+                flush=True,
+            )
+            wandb_logger.log(
+                {
+                    f"composition_eval/{k}": float(v)
+                    for k, v in diagnostics.metrics.items()
+                },
+                step=0,
+            )
+            if not composition_gate_passed:
+                total_updates = 0
+
         bc_steps = int(run_cfg.get("bc_pretrain_steps", 0))
-        if bc_steps > 0:
+        if bc_steps > 0 and composition_gate_passed:
             bc_variant = str(run_cfg.get("bc_pretrain_variant", "walk_to_objective"))
             bc_kwargs = {
                 "steps": bc_steps,

@@ -29,7 +29,19 @@ class NormalizedEntryConfig:
 
 def load_config(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
+        config = yaml.safe_load(fh)
+    if isinstance(config, dict):
+        run_cfg = config.setdefault("run", {})
+        if isinstance(run_cfg, dict):
+            run_cfg.setdefault("composition_pretrain", False)
+            run_cfg.setdefault("composition_pretrain_steps", 1000)
+            run_cfg.setdefault("composition_objective_teacher_checkpoint", None)
+            run_cfg.setdefault("composition_combat_teacher_checkpoint", None)
+            run_cfg.setdefault("composition_objective_batch_size", 256)
+            run_cfg.setdefault("composition_combat_batch_size", 256)
+            run_cfg.setdefault("composition_objective_env", {})
+            run_cfg.setdefault("composition_combat_env", {})
+    return config
 
 
 def _enable_usr1_traceback_dump() -> None:
