@@ -909,3 +909,38 @@ error `1.137`. The checkpoint manifest selected update 350 as best eval
 **Conclusion:** the lowered gate allows PPO to run, but PPO did not produce
 objective scoring or wins. Evidence supports treating Option 1 as BC-gate
 pass / PPO outcome insufficient rather than a Phase 4 gate clear.
+
+## 2026-05-18 — Phase 4 composition_rehearsal_v2_2000 BC gate
+
+**Reason/config:** tested Option 2 from the composition rehearsal follow-up:
+copy v1 to
+`experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v2_2000.yaml`,
+extend `composition_pretrain_steps` from `1000` to `2000`, keep the original
+full 3v3 hit/fire gate `0.02`, and start from the objective teacher checkpoint
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` rather than the v1
+composition checkpoint. Config/setup commit at launch:
+`72a76188bfcf177098a76686d0ca8f8fa27dbb7d`, seed `1779134702`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/dv1wzk0y`, output
+directory `runs/phase4_mappo_composition_rehearsal_v2_2000`, final checkpoint
+`runs/phase4_mappo_composition_rehearsal_v2_2000/mappo/ckpt_final.pt`. No
+replay artifact was produced by this training command.
+
+**Preflight:** `make build-cpp && make py-install` passed.
+`cd python && .venv/bin/pytest tests/test_mappo_composition_rehearsal.py -xvs`
+passed (`5 passed`). `cd python && .venv/bin/pytest tests/test_mappo_aux_aim.py
+-xvs` passed (`13 passed`).
+
+**BC gate:** failed after 2000 composition rehearsal steps, so PPO was skipped.
+Objective on-point narrowly passed: `0.264` > `0.250`, but objective losses
+failed: `50` > `0`. Combat retention passed with `13.00` kills >= `12.00`.
+Full 3v3 hit/fire failed: `0.0173` < original gate `0.0200`. Full 3v3 aim
+error passed: `1.295` < `1.550`.
+
+**PPO trajectory:** none. The checkpoint manifest has no best eval update and
+aliases `ckpt_final.pt` to `ckpt_last.pt` because no PPO eval ran.
+
+**Conclusion:** extending rehearsal to 2000 steps did not clear the original
+BC gate and also damaged objective-match outcome retention. Option 2 is
+falsified at BC, not blocked.
