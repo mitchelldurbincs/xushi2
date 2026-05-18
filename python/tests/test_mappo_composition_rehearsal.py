@@ -256,5 +256,6 @@ def test_config_loading_adds_composition_defaults_and_probe_config_loads() -> No
     assert run_cfg["composition_pretrain_steps"] == 1000
     assert run_cfg["composition_objective_batch_size"] == 256
     assert run_cfg["composition_combat_batch_size"] == 256
+    assert run_cfg["composition_gate"]["hit_fire_gate"] == 0.02
     assert run_cfg["composition_objective_env"]["opponent_bot"] == "weak_basic_v2"
     assert run_cfg["composition_combat_env"]["mini_game"] == "combat_1v1"

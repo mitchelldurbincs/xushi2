@@ -337,7 +337,14 @@ def run_composition_diagnostics(
     full_env_fn: Callable[[], gym.Env],
     episodes: int,
     seed: int,
+    gate: dict[str, Any] | None = None,
 ) -> CompositionDiagnostics:
+    gate_cfg = dict(gate or {})
+    min_objective_on_point = float(gate_cfg.get("objective_on_point_gate", 0.25))
+    max_objective_losses = int(gate_cfg.get("objective_losses_gate", 0))
+    min_combat_kills = float(gate_cfg.get("combat_kills_gate", 12.0))
+    min_full_hit_fire = float(gate_cfg.get("hit_fire_gate", 0.02))
+    max_full_aim_error = float(gate_cfg.get("aim_error_gate", 1.55))
     objective_stats = evaluate_mappo(model, objective_env_fn, episodes=episodes, seed=seed)
     objective_on_point = evaluate_objective_on_point(
         model, objective_env_fn, episodes=episodes, seed=seed + 10_000
@@ -345,11 +352,11 @@ def run_composition_diagnostics(
     combat_stats = evaluate_mappo(model, combat_env_fn, episodes=episodes, seed=seed + 20_000)
     full_stats = evaluate_mappo(model, full_env_fn, episodes=episodes, seed=seed + 30_000)
     passed = (
-        objective_on_point > 0.25
-        and objective_stats.losses <= 0
-        and combat_stats.mean_team_a_kills >= 12.0
-        and full_stats.team_a_hit_fire > 0.02
-        and full_stats.team_a_aim_error_rad < 1.55
+        objective_on_point > min_objective_on_point
+        and objective_stats.losses <= max_objective_losses
+        and combat_stats.mean_team_a_kills >= min_combat_kills
+        and full_stats.team_a_hit_fire > min_full_hit_fire
+        and full_stats.team_a_aim_error_rad < max_full_aim_error
     )
     metrics: dict[str, float] = {
         "objective_on_point": objective_on_point,
@@ -357,6 +364,11 @@ def run_composition_diagnostics(
         "combat_kills": float(combat_stats.mean_team_a_kills),
         "full_hit_fire": float(full_stats.team_a_hit_fire),
         "full_aim_error": float(full_stats.team_a_aim_error_rad),
+        "gate_objective_on_point": min_objective_on_point,
+        "gate_objective_losses": float(max_objective_losses),
+        "gate_combat_kills": min_combat_kills,
+        "gate_hit_fire": min_full_hit_fire,
+        "gate_aim_error": max_full_aim_error,
         "passed": float(passed),
     }
     metrics.update(

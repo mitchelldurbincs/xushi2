@@ -198,16 +198,23 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 full_env_fn=full_eval_env_fn,
                 episodes=int(run_cfg.get("composition_eval_episodes", eval_episodes)),
                 seed=seed_base + 80_000,
+                gate=dict(run_cfg.get("composition_gate", {})),
             )
             composition_gate_passed = diagnostics.passed
+            gate_metrics = diagnostics.metrics
             print(
                 f"[{phase_label}/mappo] composition_gate "
                 f"passed={diagnostics.passed} "
-                f"objective_onpt={diagnostics.objective_on_point:.3f}>0.250 "
-                f"objective_losses={diagnostics.objective_losses}<=0 "
-                f"combat_kills={diagnostics.combat_kills:.2f}>=12.00 "
-                f"full_hit_fire={diagnostics.full_hit_fire:.4f}>0.0200 "
-                f"full_aim_error={diagnostics.full_aim_error:.3f}<1.550",
+                f"objective_onpt={diagnostics.objective_on_point:.3f}>"
+                f"{gate_metrics['gate_objective_on_point']:.3f} "
+                f"objective_losses={diagnostics.objective_losses}<="
+                f"{gate_metrics['gate_objective_losses']:.0f} "
+                f"combat_kills={diagnostics.combat_kills:.2f}>="
+                f"{gate_metrics['gate_combat_kills']:.2f} "
+                f"full_hit_fire={diagnostics.full_hit_fire:.4f}>"
+                f"{gate_metrics['gate_hit_fire']:.4f} "
+                f"full_aim_error={diagnostics.full_aim_error:.3f}<"
+                f"{gate_metrics['gate_aim_error']:.3f}",
                 flush=True,
             )
             wandb_logger.log(

@@ -39,6 +39,16 @@ def load_config(path: Path) -> dict:
             run_cfg.setdefault("composition_combat_teacher_checkpoint", None)
             run_cfg.setdefault("composition_objective_batch_size", 256)
             run_cfg.setdefault("composition_combat_batch_size", 256)
+            run_cfg.setdefault(
+                "composition_gate",
+                {
+                    "objective_on_point_gate": 0.25,
+                    "objective_losses_gate": 0,
+                    "combat_kills_gate": 12.0,
+                    "hit_fire_gate": 0.02,
+                    "aim_error_gate": 1.55,
+                },
+            )
             run_cfg.setdefault("composition_objective_env", {})
             run_cfg.setdefault("composition_combat_env", {})
     return config
