@@ -867,3 +867,45 @@ updates or replay generation.
 preserved objective occupancy and the simplified 1v1 combat kill count, but did
 not preserve enough full 3v3 combat conversion to clear the hit/fire gate.
 Escalate to human review for the next strategy decision.
+
+## 2026-05-18 — Phase 4 composition_rehearsal_v1_lowgate PPO
+
+**Reason/config:** tested Option 1 from the composition rehearsal follow-up:
+copy v1 to
+`experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v1_lowgate.yaml`,
+lower only the full 3v3 hit/fire BC gate from `0.02` to `0.015`, and
+warm-start from
+`runs/phase4_mappo_composition_rehearsal_v1/mappo/ckpt_final.pt`. Config/setup
+commit at launch: `e60dfbe1b8873c5c4608091fb952f91a20883ad3`, seed
+`1779134701`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/7bieksp0`, output
+directory `runs/phase4_mappo_composition_rehearsal_v1_lowgate`, final
+checkpoint
+`runs/phase4_mappo_composition_rehearsal_v1_lowgate/mappo/ckpt_final.pt`.
+No replay artifact was produced by this training command.
+
+**Preflight:** `make build-cpp && make py-install` passed.
+`cd python && .venv/bin/pytest tests/test_mappo_composition_rehearsal.py -xvs`
+passed (`5 passed`). `cd python && .venv/bin/pytest tests/test_mappo_aux_aim.py
+-xvs` passed (`13 passed`). An initial module-entry retry from `python/`
+failed before training because root-relative checkpoint paths resolved under
+`python/runs`; the successful run used the root console script.
+
+**BC gate:** passed after the warm-started 1000-step composition rehearsal:
+objective on-point `0.518` > `0.250`, objective losses `0` <= `0`, combat
+kills `12.60` >= `12.00`, full 3v3 Team A hit/fire `0.0152` > lowered gate
+`0.0150`, full 3v3 aim error `1.161` < `1.550`.
+
+**PPO trajectory:** ran all 500 updates. Eval stayed draw-only throughout:
+update 50 `0W/0L/50D`, score `0.00/0.00`, kills `0.0/3.0`, Team A hit/fire
+`0.0140`, aim error `1.094`; update 250 `0W/0L/50D`, score `0.00/0.00`,
+kills `0.0/0.0`, hit/fire `0.0135`, aim error `1.218`; update 500
+`0W/0L/50D`, score `0.00/0.00`, kills `1.0/0.0`, hit/fire `0.0140`, aim
+error `1.137`. The checkpoint manifest selected update 350 as best eval
+(`0W/0L/50D`, score `0.00/0.00`, kills `1.0/2.0`, mean reward about `-1.0`).
+
+**Conclusion:** the lowered gate allows PPO to run, but PPO did not produce
+objective scoring or wins. Evidence supports treating Option 1 as BC-gate
+pass / PPO outcome insufficient rather than a Phase 4 gate clear.
