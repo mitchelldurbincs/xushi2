@@ -795,3 +795,39 @@ eval was update 80 with `13.16` kills per 64-decision episode; final eval was
 as a positive diagnostic. Phase 4's full 3v3 failure is therefore not a basic
 inability to learn the duel reward under Phase 4 tensors; the next unanswered
 question is transfer/composition back into full 3v3 objective play.
+
+## 2026-05-18 — Phase 4 combat_1v1_transfer_v1 full 3v3 probe
+
+**Reason/config:** after `combat_1v1_v2` cleared the simplified duel gate, this
+tested the direct scale-back-up path: warm-start full 3v3 `weak_basic_v2` from
+`runs/phase4_mappo_combat_1v1_v2/mappo/ckpt_final.pt`, skip BC to avoid
+erasing the synthetic combat mapping, and cap PPO at 50 updates.
+Config: `experiments/configs/phase4/probe/phase4_mappo_combat_1v1_transfer_v1.yaml`.
+
+**Run:** seed `3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/29bskhax`, checkpoint
+`runs/phase4_mappo_combat_1v1_transfer_v1/mappo/ckpt_0050.pt`, stochastic
+replay `data/replays/phase4_combat_1v1_transfer_v1_ckpt0050_stochastic.replay`,
+replay diagnostic
+`runs/phase4_replay_combat_diagnostics/phase4_combat_1v1_transfer_v1_ckpt0050_stochastic.json`.
+
+**Result:** direct transfer failed. Update-50 eval was mean_reward `-11.000`,
+wins `0/50`, losses `50/50`, draws `0/50`, score `0.00/37.00`, kills
+`0.0/0.0`, Team A/B hit/fire `0.0000/0.0000`, and aim error `1.574/1.341`.
+Training metrics showed no objective competence: on-point contact collapsed to
+`0.000` by late updates and distance rose to `1.410`.
+
+**Replay diagnostic:** the stochastic replay confirmed spray without
+conversion. Team A fired `8602` times with visible targets but produced only
+`4` damage hits (`0.00047` damage hits per fire command), `0` kill deltas, and
+mean nearest-visible aim error `1.581` rad. Team B fired only `450` times and
+also produced no kills in the stochastic sample, but won by uncontested
+objective score.
+
+**Conclusion:** the solved 1v1 combat mini-game does not directly transfer to
+full 3v3 objective play. At this point the original priority queue is
+exhausted: target-conditioned combat failed its BC gate, hold-and-shoot v2/v3
+were already falsified, weak_basic_v2 manufactured a kill edge without score,
+the 1v1 simplification was solved, and direct transfer from that simplified
+skill collapsed objective competence. The remaining work is a new composition
+design, not another run from the current hypothesis queue.
