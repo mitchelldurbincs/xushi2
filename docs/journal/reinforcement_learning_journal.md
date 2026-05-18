@@ -831,3 +831,39 @@ were already falsified, weak_basic_v2 manufactured a kill edge without score,
 the 1v1 simplification was solved, and direct transfer from that simplified
 skill collapsed objective competence. The remaining work is a new composition
 design, not another run from the current hypothesis queue.
+
+## 2026-05-18 — Phase 4 composition_rehearsal_v1 BC gate
+
+**Reason/config:** tested opt-in multi-teacher composition rehearsal before PPO:
+objective teacher `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` and combat
+teacher `runs/phase4_mappo_combat_1v1_v2/mappo/ckpt_final.pt` distilled into a
+single student policy initialized from the objective checkpoint. Config:
+`experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v1.yaml`,
+commit `81dcfe7a4fb4a7d309c48234dd79655b5d56c578`, seed `3519994490`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/oeld227b`, output
+directory `runs/phase4_mappo_composition_rehearsal_v1`, final checkpoint
+`runs/phase4_mappo_composition_rehearsal_v1/mappo/ckpt_final.pt`.
+
+**Preflight:** `make build-cpp && make py-install` passed.
+`pytest tests/test_mappo_composition_rehearsal.py -xvs` passed (`5 passed`).
+`pytest tests/test_mappo_aux_aim.py -xvs` passed (`13 passed`). The literal
+string-path smoke command for `load_config` failed because the helper expects a
+`Path`; the equivalent `Path(...)` check passed with `composition_pretrain=True`.
+
+**BC gate:** failed after 1000 composition rehearsal steps, so PPO was skipped.
+Objective retention passed: on-point `0.68278`, wins/losses/draws `0/0/50`,
+score `0.00/0.00`, kills `0.0/0.0`. Combat retention passed: mean kills
+`12.78` per 64-decision episode. Full 3v3 diagnostic failed on hit/fire:
+Team A hit/fire `0.01676` versus the `0.02` gate, aim error `1.18534` rad,
+wins/losses/draws `0/0/50`, score `0.00/0.00`, kills `0.0/0.0`. Team B full
+diagnostic hit/fire was `0.32222` with aim error `1.50110` rad.
+
+**PPO trajectory:** none. The BC gate failed and the run exited before PPO
+updates or replay generation.
+
+**Conclusion:** falsified at the BC stage. Composition rehearsal as implemented
+preserved objective occupancy and the simplified 1v1 combat kill count, but did
+not preserve enough full 3v3 combat conversion to clear the hit/fire gate.
+Escalate to human review for the next strategy decision.
