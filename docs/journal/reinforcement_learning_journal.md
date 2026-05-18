@@ -772,3 +772,26 @@ checkpoint. Eval kills/score: update 20 `2.16`, 40 `2.52`, 60 `2.60`, 80
 the first 200-update budget. This is a partial positive diagnostic and justifies
 one continuation run before declaring the simplified combat hypothesis
 exhausted.
+
+## 2026-05-18 — Phase 4 combat_1v1_v2 continuation run
+
+**Reason/config:** `combat_1v1_v1` ended at `10.44/12` mean kills and was still
+improving, so `experiments/configs/phase4/probe/phase4_mappo_combat_1v1_v2.yaml`
+continued from `runs/phase4_mappo_combat_1v1_v1/mappo/ckpt_final.pt` for 100
+updates with LR `1e-4`.
+
+**Run:** seed `3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/0exrak0h`, final
+checkpoint `runs/phase4_mappo_combat_1v1_v2/mappo/ckpt_final.pt`, checkpoint
+manifest `runs/phase4_mappo_combat_1v1_v2/mappo/checkpoint_manifest.json`.
+
+**Result:** the simplified 1v1 combat gate cleared at update 40 and stayed
+above threshold. Eval mean Team A kills/score: update 20 `11.50`, update 40
+`12.68`, update 60 `12.08`, update 80 `13.16`, update 100 `12.98`. The best
+eval was update 80 with `13.16` kills per 64-decision episode; final eval was
+`12.98`, above the `12` success threshold.
+
+**Conclusion:** the simplified 1v1 combat mini-game is solved enough to count
+as a positive diagnostic. Phase 4's full 3v3 failure is therefore not a basic
+inability to learn the duel reward under Phase 4 tensors; the next unanswered
+question is transfer/composition back into full 3v3 objective play.
