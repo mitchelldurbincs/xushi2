@@ -50,6 +50,10 @@ def _make_phase4_env(
         from envs import Phase4AimOnlyMappoEnv
 
         return Phase4AimOnlyMappoEnv(**dict(mini_game_cfg or {}))
+    if mini_game == "combat_1v1":
+        from envs import Phase4Combat1v1MappoEnv
+
+        return Phase4Combat1v1MappoEnv(**dict(mini_game_cfg or {}))
     if mini_game not in (None, ""):
         raise ValueError(f"unknown phase4 mini_game {mini_game!r}")
 

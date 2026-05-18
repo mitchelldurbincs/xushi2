@@ -733,3 +733,42 @@ remaining bottleneck is objective conversion/timing under combat, not merely
 opponent strength. Proceeding to a simplified 1v1 combat diagnostic is
 justified; more weak-opponent 3v3 tuning is unlikely to explain the scoreless
 basin.
+
+## 2026-05-18 — Phase 4 combat_1v1_v1 mini-game run
+
+**Reason:** Priority 4 after target-conditioned combat failed the BC gate,
+hold-and-shoot cap shaping was already falsified, and `weak_basic_v2` produced
+a kill edge but no 3v3 score or wins. The full Phase 4 env intentionally owns
+`team_size=3`, so this implemented a separate `env.mini_game: combat_1v1`
+route that preserves Phase 4 actor/critic/action tensor shapes while
+activating only one learner slot against one visible duel target.
+
+**Implementation/config:** added `Phase4Combat1v1MappoEnv`, registry routing,
+tests, and `experiments/configs/phase4/probe/phase4_mappo_combat_1v1_v1.yaml`.
+The synthetic target drifts in aim space, has `3` HP, and respawns after kills.
+Reward is direct: hit reward, kill bonus, miss/no-fire penalties, and a small
+aim-error penalty. This changes only the synthetic mini-game path, not sim
+rules, rewards, observation/action spaces, replay format, or MAPPO/PPO.
+
+**Run:** seed `3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/inuw33u7`, final
+checkpoint `runs/phase4_mappo_combat_1v1_v1/mappo/ckpt_final.pt`, checkpoint
+manifest `runs/phase4_mappo_combat_1v1_v1/mappo/checkpoint_manifest.json`.
+No C++ replay artifact was produced because this is a Python synthetic
+mini-game, not a text replay over the native simulator.
+
+**Verification:** focused tests for `combat_1v1` and existing `aim_only`
+routing passed (`9 passed`), `ruff check` on touched Python files passed,
+Path-based config load passed, and `git diff --check` passed.
+
+**Eval trajectory:** mean Team A kills per 64-decision episode rose from
+`2.16` at update 20 to `10.44` at update 200. The configured success threshold
+was `12`; the run did not clear it, but it was still improving at the final
+checkpoint. Eval kills/score: update 20 `2.16`, 40 `2.52`, 60 `2.60`, 80
+`2.06`, 100 `3.28`, 120 `6.88`, 140 `8.92`, 160 `9.26`, 180 `8.76`, 200
+`10.44`.
+
+**Conclusion:** the simplified 1v1 combat skill is learnable but not solved by
+the first 200-update budget. This is a partial positive diagnostic and justifies
+one continuation run before declaring the simplified combat hypothesis
+exhausted.
