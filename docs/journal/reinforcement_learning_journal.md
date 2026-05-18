@@ -944,3 +944,51 @@ aliases `ckpt_final.pt` to `ckpt_last.pt` because no PPO eval ran.
 **Conclusion:** extending rehearsal to 2000 steps did not clear the original
 BC gate and also damaged objective-match outcome retention. Option 2 is
 falsified at BC, not blocked.
+
+## 2026-05-18 — Phase 4 cap_duel_v1 and transfer
+
+**Reason/config:** implemented Strategy 2 from the Phase 4 strategic proposal:
+a Phase 4-compatible `cap_duel` mini-game with one active learner, one
+scripted recontesting enemy near the objective, and score ticks only when the
+learner is on point while the enemy is dead or displaced. Probe config:
+`experiments/configs/phase4/probe/phase4_mappo_cap_duel_v1.yaml`, warm-started
+from objective checkpoint `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`.
+Transfer config:
+`experiments/configs/phase4/probe/phase4_mappo_cap_duel_transfer_v1.yaml`,
+warm-started from solved cap-duel checkpoint
+`runs/phase4_mappo_cap_duel_v1/mappo/ckpt_0075.pt`. Seed `3519994490`. Base
+commit at launch: `d58af34ac731bd858166ba8a645f74d4658103f7`; implementation
+commit: this changeset.
+
+**Run:** cap-duel W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/jicvzf48`, local
+checkpoint `python/runs/phase4_mappo_cap_duel_v1/mappo/ckpt_0075.pt`. Transfer
+W&B `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/2up9mfvb`, final
+checkpoint
+`python/runs/phase4_mappo_cap_duel_transfer_v1/mappo/ckpt_final.pt`, replay
+`replays/phase4_cap_duel_transfer_v1_final.replay`. The cap-duel mini-game run
+does not emit simulator replay artifacts.
+
+**Preflight/tests:** `make build-cpp && make py-install` passed.
+`cd python && .venv/bin/pytest tests/test_phase4_cap_duel_mappo.py tests/test_phase4_combat_1v1_mappo.py`
+passed (`9 passed`).
+
+**Cap-duel probe:** solved before the 300-update falsification limit. Update
+25 eval was still zero-signal (`0W/0L/50D`, score `0.00/0.00`, kills
+`0.0/0.0`). Update 50 eval solved: `50W/0L/0D`, mean reward `+5.130`, score
+`12.00/0.00`, kills `1.0/0.0`, mean final tick `24.1`. Update 75 remained
+solved: `50W/0L/0D`, mean reward `+5.202`, score `12.00/0.00`, kills
+`1.0/0.0`, mean final tick `17.5`. The run was intentionally interrupted
+after update 75 because the probe had met the "solved or 300 updates" stop
+condition.
+
+**Transfer probe:** falsified at update 50 on full `weak_basic_v2` 3v3.
+Final eval: mean reward `-11.000`, `0W/50L/0D`, score `0.00/37.00`, kills
+`0.0/0.0`, Team A/B hit-fire `0.0017/0.0444`, visible fire `1.000/1.000`,
+aim error `1.564/1.550`, target entropy `0.856/0.674`, damage/fire
+`1.7/44.4`. Recent training rollout on-point contact was `0.001`, below the
+`0.25` falsification threshold.
+
+**Conclusion:** cap-duel is learnable and gives a clean middle-rung signal,
+but the solved synthetic skill did not transfer to full 3v3. Strategy 2 is
+mini-game positive / transfer falsified, not blocked.

@@ -1,0 +1,77 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: cap_duel_micro_curriculum
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+  - phase4_objective_combat_composition
+  hypothesis: "A Phase 4-compatible one-active-agent cap duel can teach the policy to convert a local combat advantage into objective score before returning to full 3v3."
+  falsification_criteria: "Falsified if update 300 greedy eval has zero Team A score and zero wins in cap_duel."
+  max_updates_if_no_signal: 300
+  lineage: "Strategy 2 from docs/reports/2026-05-18-phase4-strategic-proposal.md."
+  provenance: "Phase4CapDuelMappoEnv mini-game implementation."
+
+env:
+  seed_base: 3519994490
+  opponent_bot: noop
+  learner_team: A
+  mini_game: cap_duel
+  mini_game_config:
+    episode_decisions: 96
+    enemy_hp: 3
+    point_radius: 0.18
+    score_ticks_to_clear: 12
+    enemy_recontest_delay: 12
+    hit_tolerance: 0.12
+  reward: {}
+  sim:
+    round_length_seconds: 30
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 96
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 3.0e-4
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.2
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.97
+  gae_lambda: 0.92
+  entropy_coef: 0.01
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+
+run:
+  total_updates: 300
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_cap_duel_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt

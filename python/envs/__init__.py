@@ -5,6 +5,7 @@ from __future__ import annotations
 from envs.memory_toy import MemoryToyEnv
 from envs.phase3_ranger import Phase3RangerEnv
 from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
+from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
 from envs.phase4_combat_1v1_mappo import Phase4Combat1v1MappoEnv
 from envs.phase4_mappo import Phase4MappoEnv
 from envs.phase5_entity_mappo import Phase5EntityMappoEnv
@@ -19,6 +20,7 @@ __all__ = [
     "MemoryToyEnv",
     "Phase3RangerEnv",
     "Phase4AimOnlyMappoEnv",
+    "Phase4CapDuelMappoEnv",
     "Phase4Combat1v1MappoEnv",
     "Phase4MappoEnv",
     "Phase5EntityMappoEnv",
