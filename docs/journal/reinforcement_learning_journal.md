@@ -1004,8 +1004,8 @@ entropy. Probe config:
 warm-started from
 `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, full `weak_basic_v2` 3v3,
 seed `3519994490`. Base commit at launch:
-`6e25e724f64d0e94d8700ed55fd4e9357c039a9a`; implementation commit: this
-changeset.
+`6e25e724f64d0e94d8700ed55fd4e9357c039a9a`; implementation commit:
+`c015256d` (`Add Phase 4 focus-fire target conditioning`).
 
 **Run:** W&B
 `https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/50wfu032`, final
