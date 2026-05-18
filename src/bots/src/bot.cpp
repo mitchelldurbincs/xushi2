@@ -126,6 +126,29 @@ class WeakBasicBot final : public IBot {
     std::string name() const override { return "weak_basic"; }
 };
 
+class WeakBasicV2Bot final : public IBot {
+   public:
+    common::Action decide(const sim::MatchState& state,
+                          const sim::MatchConfig& config,
+                          int agent_index) override {
+        const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
+        if (self == nullptr) {
+            return common::Action{};
+        }
+        constexpr float kAimNoiseScale = 1.5F;  // ±1.5 rad (~±86°)
+        constexpr std::uint32_t kFireCadenceTicks = 60;
+        const float noise =
+            deterministic_unit_noise(state.tick, agent_index) * kAimNoiseScale;
+        common::Action walk = internal::walk_to_objective(*self, config.map);
+        common::Action shoot = internal::hold_and_shoot(state, *self, noise);
+        walk.aim_delta = shoot.aim_delta;
+        walk.primary_fire = shoot.primary_fire &&
+                            (state.tick % kFireCadenceTicks == 0U);
+        return walk;
+    }
+    std::string name() const override { return "weak_basic_v2"; }
+};
+
 class NoopBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& /*state*/,
@@ -152,6 +175,10 @@ std::unique_ptr<IBot> make_basic_bot() {
 
 std::unique_ptr<IBot> make_weak_basic_bot() {
     return std::make_unique<WeakBasicBot>();
+}
+
+std::unique_ptr<IBot> make_weak_basic_v2_bot() {
+    return std::make_unique<WeakBasicV2Bot>();
 }
 
 std::unique_ptr<IBot> make_noop_bot() {

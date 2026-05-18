@@ -32,6 +32,7 @@ EXPECTED_DECISIONS = 300
     [
         ("basic", "basic"),
         ("weak_basic", "weak_basic"),
+        ("weak_basic_v2", "weak_basic_v2"),
         ("walk_to_objective", "walk_to_objective"),
         ("hold_and_shoot", "hold_and_shoot"),
         ("noop", "noop"),

@@ -646,3 +646,90 @@ relative to the previous replay-autopsy range, but it does not reduce full-env
 aim error enough or escape the scoreless weak_basic draw basin. This config is
 falsified at the BC gate. Report:
 `docs/reports/phase4_target_conditioned_combat_probe.md`.
+
+## 2026-05-18 — Phase 4 target_cond_v1 required rerun
+
+**Reason:** autonomous experiment-runner priority requested the
+target-conditioned combat head run first if no ready/running target-conditioned
+task existed on the board. A fresh kanban task `t_19e3b695b96` was created and
+run from repo root so checkpoint paths resolved correctly.
+
+**Preflight:** `make build-cpp`, `make py-install`,
+`python/.venv/bin/python -m pytest python/tests/test_mappo_aux_aim.py -xvs`,
+and a `Path(...)`-based `load_config` check passed. The documented string-form
+`load_config(...)` one-liner is stale because `load_config` now expects a
+`Path`.
+
+**Run:** commit `0d22c3e`, config
+`experiments/configs/phase4/probe/phase4_mappo_target_cond_v1.yaml`, seed
+`3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/rwnuphfj`, checkpoint
+manifest `runs/phase4_mappo_target_cond_v1/mappo/checkpoint_manifest.json`.
+
+**BC gate result:** BC completed `500/500` steps. Target auxiliary accuracy
+rose from `0.188` at step 1 to `0.828` at step 500. Post-BC eval was still
+scoreless: mean_reward `-0.732`, wins `0/50`, losses `0/50`, draws `50/50`,
+score `0.00/0.00`, kills `5.0/5.0`. Team A/B hit/fire was `0.0383/0.0716`.
+Team A/B nearest-visible aim error was `1.308/1.129` rad. The strict BC gate
+failed because Team A aim error did not satisfy `<1.300`, so PPO did not start.
+
+**Conclusion:** the rerun confirms the earlier target-conditioned probe
+outcome. Target conditioning improves Team A hit/fire above the `0.025` gate,
+but not aim error or score. Per the configured falsification criterion, this
+architecture is not sufficient as the next Phase 4 bottleneck fix.
+
+## 2026-05-18 — Phase 4 weak_basic_v2 curriculum run
+
+**Reason:** after the target-conditioned rerun failed its BC gate, Priority 2
+was skipped because `v7_holdshoot_v2`/`v3` were already falsified in
+`docs/reports/v7_holdshoot_failure_analysis.md`. Priority 3 required a weaker
+objective-contesting opponent. The existing `weak_basic` bot had hard-coded
+`±0.5` rad aim noise and no config surface for opponent-only fire cadence, so
+this run added a narrow scripted opponent variant `weak_basic_v2`: same
+objective movement as `weak_basic`, deterministic `±1.5` rad aim noise, and a
+deterministic 60-tick primary-fire cadence. No sim rules, rewards,
+obs/action spaces, replay format, or MAPPO/PPO code changed.
+
+**Config/run:** `experiments/configs/phase4/probe/phase4_mappo_weak_basic_v2.yaml`,
+seed `3519994490`, W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/3byh514d`, final
+checkpoint `runs/phase4_mappo_weak_basic_v2/mappo/ckpt_0500.pt`, best-eval
+alias update `400`, stochastic replay
+`data/replays/phase4_weak_basic_v2_ckpt0500_stochastic.replay`, replay
+diagnostic
+`runs/phase4_replay_combat_diagnostics/phase4_weak_basic_v2_ckpt0500_stochastic.json`.
+
+**Verification:** `make build-cpp`, `make py-install`,
+`python/.venv/bin/python -m pytest python/tests/test_phase0_determinism.py
+python/tests/test_env.py::test_all_valid_opponent_bots_instantiate
+python/tests/test_phase4_mappo_env.py::test_invalid_opponent_bot_raises
+python/tests/test_mappo_aux_aim.py -q`, Path-based config load,
+`make test-cpp`, `ruff check` on touched Python files, and `git diff --check`
+passed.
+
+**Eval trajectory:** BC eval was 50/50 draws, score `0/0`, kills `7/1`,
+Team A/B hit/fire `0.0678/0.4000`, Team A/B aim error `1.532/0.803`. PPO
+improved the greedy combat margin early but never produced score:
+update 50 `9/0` kills, update 100 `9/1`, update 150 `9/1`, update 200
+`9/1`, update 250 `9/2`, update 300 `9/2`, update 350 `8/2`, update 400
+`9/2`, update 450 `9/2`, update 500 `8/2`. Every eval remained `0/50` wins,
+`0/50` losses, `50/50` draws, score `0.00/0.00`.
+
+**Final eval:** update 500 mean_reward `+1.000`, wins `0/50`, losses `0/50`,
+draws `50/50`, score `0.00/0.00`, kills `8.0/2.0`, Team A/B hit/fire
+`0.0692/0.3714`, visible-fire `0.947/1.000`, aim error `1.521/1.409`, damage
+per fire command `69.2/371.4`.
+
+**Replay diagnostic:** the stochastic 5-episode replay was worse than greedy
+eval. Team A/B damage hit per fire command was `0.0169/0.2765`, kill deltas
+`4/4`, and mean nearest-visible aim error `1.557/1.447` rad. The learner fired
+`8675` times versus the opponent's `434` commands, but the opponent still
+matched kills through much higher shot value.
+
+**Conclusion:** `weak_basic_v2` is a partial combat-signal improvement but not
+a winning curriculum. It manufactured a greedy kill edge against a much weaker
+opponent, yet still produced zero score and zero wins by update 500. The
+remaining bottleneck is objective conversion/timing under combat, not merely
+opponent strength. Proceeding to a simplified 1v1 combat diagnostic is
+justified; more weak-opponent 3v3 tuning is unlikely to explain the scoreless
+basin.

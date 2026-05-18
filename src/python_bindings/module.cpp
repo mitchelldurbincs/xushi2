@@ -262,8 +262,9 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         "scripted_bot_action",
         [](const xushi2::sim::Sim& sim, int agent_slot,
            const std::string& bot_name) {
-            static const std::array<std::string, 5> kValidNames{
-                {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic", "noop"}};
+            static const std::array<std::string, 6> kValidNames{
+                {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic",
+                 "weak_basic_v2", "noop"}};
             bool valid = false;
             for (const auto& n : kValidNames) {
                 if (bot_name == n) { valid = true; break; }
@@ -271,7 +272,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
             if (!valid) {
                 throw std::invalid_argument(
                     "unknown bot_name; valid: walk_to_objective, "
-                    "hold_and_shoot, basic, weak_basic, noop");
+                    "hold_and_shoot, basic, weak_basic, weak_basic_v2, noop");
             }
             auto bot = xushi2::bots::make_bot_by_name(bot_name);
             return bot->decide(sim.state(), sim.config(), agent_slot);

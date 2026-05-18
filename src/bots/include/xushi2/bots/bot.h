@@ -48,11 +48,16 @@ std::unique_ptr<IBot> make_basic_bot();
 // Used as a curriculum opponent that contests the cap without perfect aim.
 std::unique_ptr<IBot> make_weak_basic_bot();
 
+// More heavily nerfed weak-basic curriculum opponent: same objective movement,
+// larger deterministic aim noise, and slower deterministic firing cadence.
+std::unique_ptr<IBot> make_weak_basic_v2_bot();
+
 // Zero-action bot. Used as a deterministic control in tests.
 std::unique_ptr<IBot> make_noop_bot();
 
 // Factory by string name. Valid names: "walk_to_objective",
-// "hold_and_shoot", "basic", "weak_basic", "noop". Unknown names abort via X2_REQUIRE.
+// "hold_and_shoot", "basic", "weak_basic", "weak_basic_v2", "noop".
+// Unknown names abort via X2_REQUIRE.
 // Kept here so both the episode runner and the Python env wrapper can
 // dispatch without duplicating the name→factory mapping.
 std::unique_ptr<IBot> make_bot_by_name(std::string_view name);
