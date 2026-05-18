@@ -19,6 +19,7 @@ from train.mappo_model import (
     MappoConfig,
     aim_aux_loss_and_rmse,
     target_selection_aux_loss_and_accuracy,
+    target_selection_aux_metrics,
 )
 from train.phases import resolve_phase
 from train.mappo_rollout import collect_rollout, step_loss_mask
@@ -348,6 +349,11 @@ class MappoTrainer:
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
         target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
+        target_aux_metric_parts: dict[str, list[torch.Tensor]] = {
+            "target_selection_label_entropy": [],
+            "target_selection_same_target_fraction": [],
+            "target_selection_fallback_rate": [],
+        }
         h = flat_h
         for t in range(L):
             obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
@@ -390,6 +396,10 @@ class MappoTrainer:
             target_aux_losses.append(target_aux_loss)
             target_aux_accs.append(target_aux_acc)
             target_aux_counts.append(target_aux_count)
+            for key, value in target_selection_aux_metrics(
+                obs_t, cfg, mask=flat_mask
+            ).items():
+                target_aux_metric_parts[key].append(value)
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
@@ -411,6 +421,10 @@ class MappoTrainer:
             target_aux_acc = torch.stack(target_aux_accs).mean()
         else:
             target_aux_acc = rollout.actor_obs.new_tensor(0.0)
+        target_aux_metrics = {
+            key: torch.stack(values).mean() if values else rollout.actor_obs.new_tensor(0.0)
+            for key, values in target_aux_metric_parts.items()
+        }
         valid_agent = rollout.agent_loss_mask.expand(N, A, L)
         if cfg.value_per_agent:
             value = (
@@ -507,6 +521,15 @@ class MappoTrainer:
             "target_selection_aux_loss": float(target_aux_loss.item()),
             "target_selection_aux_accuracy": float(target_aux_acc.item()),
             "target_selection_aux_count": float(target_aux_count_total.item()),
+            "target_selection_label_entropy": float(
+                target_aux_metrics["target_selection_label_entropy"].item()
+            ),
+            "target_selection_same_target_fraction": float(
+                target_aux_metrics["target_selection_same_target_fraction"].item()
+            ),
+            "target_selection_fallback_rate": float(
+                target_aux_metrics["target_selection_fallback_rate"].item()
+            ),
             "actor_grad_norm": actor_grad_norm,
             "critic_grad_norm": critic_grad_norm,
             "trunk_grad_norm": trunk_grad_norm,
@@ -600,5 +623,8 @@ def make_mappo_config(config: dict) -> MappoConfig:
         target_conditioned_combat=bool(ppo_cfg.get("target_conditioned_combat", False)),
         target_selection_aux_coef=float(ppo_cfg.get("target_selection_aux_coef", 0.0)),
         target_selection_aux_mode=str(ppo_cfg.get("target_selection_aux_mode", "nearest_visible")),
+        target_selection_objective_proximity_coef=float(
+            ppo_cfg.get("target_selection_objective_proximity_coef", 0.1)
+        ),
         device=device,
     )

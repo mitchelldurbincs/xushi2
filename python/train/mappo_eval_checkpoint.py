@@ -308,7 +308,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 f"hit_fire={eval_stats.team_a_hit_fire:.4f}/"
                 f"{eval_stats.team_b_hit_fire:.4f} "
                 f"aim_err={eval_stats.team_a_aim_error_rad:.3f}/"
-                f"{eval_stats.team_b_aim_error_rad:.3f}",
+                f"{eval_stats.team_b_aim_error_rad:.3f} "
+                f"same_tgt={eval_stats.team_a_same_target_fraction:.3f}/"
+                f"{eval_stats.team_b_same_target_fraction:.3f} "
+                f"focus_H={eval_stats.team_a_target_selection_entropy:.3f}/"
+                f"{eval_stats.team_b_target_selection_entropy:.3f}",
                 flush=True,
             )
             wandb_logger.log(
@@ -366,7 +370,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 wandb_logger.log({f"train/{k}": float(v) for k, v in metrics.items()}, step=update_idx)
                 wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
                 print(
-                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} policy_loss={metrics['policy_loss']:.3f} value_loss={metrics['value_loss']:.3f} entropy={metrics['entropy']:.3f} rew={metrics['rollout_reward_mean']:+.3f}/{metrics['rollout_reward_std']:.3f} adv={metrics['advantage_mean']:+.3f}/{metrics['advantage_std']:.3f} move={metrics['action_move_mag_mean']:.3f} bin={metrics['action_binary_mean']:.3f} dist={metrics['mean_distance_to_objective']:.3f} onpt={metrics['self_on_point_fraction']:.3f} gn={metrics['actor_grad_norm']:.2e}/{metrics['critic_grad_norm']:.2e}/{metrics['trunk_grad_norm']:.2e} lr={lr:.2e} ts={metrics['team_spirit']:.2f}",
+                    f"[{phase_label}/mappo] update={update_idx}/{total_updates} policy_loss={metrics['policy_loss']:.3f} value_loss={metrics['value_loss']:.3f} entropy={metrics['entropy']:.3f} rew={metrics['rollout_reward_mean']:+.3f}/{metrics['rollout_reward_std']:.3f} adv={metrics['advantage_mean']:+.3f}/{metrics['advantage_std']:.3f} move={metrics['action_move_mag_mean']:.3f} bin={metrics['action_binary_mean']:.3f} dist={metrics['mean_distance_to_objective']:.3f} onpt={metrics['self_on_point_fraction']:.3f} same_tgt={metrics.get('target_selection_same_target_fraction', 0.0):.3f} focus_H={metrics.get('target_selection_label_entropy', 0.0):.3f} fallback={metrics.get('target_selection_fallback_rate', 0.0):.3f} gn={metrics['actor_grad_norm']:.2e}/{metrics['critic_grad_norm']:.2e}/{metrics['trunk_grad_norm']:.2e} lr={lr:.2e} ts={metrics['team_spirit']:.2f}",
                     flush=True,
                 )
 
@@ -393,6 +397,10 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"{eval_stats.team_b_aim_error_rad:.3f} "
                     f"target_H={eval_stats.team_a_target_entropy:.3f}/"
                     f"{eval_stats.team_b_target_entropy:.3f} "
+                    f"same_tgt={eval_stats.team_a_same_target_fraction:.3f}/"
+                    f"{eval_stats.team_b_same_target_fraction:.3f} "
+                    f"focus_H={eval_stats.team_a_target_selection_entropy:.3f}/"
+                    f"{eval_stats.team_b_target_selection_entropy:.3f} "
                     f"dmg_fire={eval_stats.team_a_damage_per_fire:.1f}/"
                     f"{eval_stats.team_b_damage_per_fire:.1f}",
                     flush=True,

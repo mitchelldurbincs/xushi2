@@ -1,0 +1,83 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: focus_fire_probe
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+  - phase4_target_selection_diffusion
+  hypothesis: "A shared low-HP team focus-fire target label reduces 3v3 target diffusion by conditioning all visible learner agents on the same priority enemy, improving hit/fire and opening score windows against weak_basic_v2."
+  success_threshold_update_100: "Team A hit/fire > 0.04, same-target fraction > 0.6, and target-selection entropy < 0.9."
+  stop_if_update_50: "Stop if eval has 0 score, 0 wins, no hit/fire improvement, and objective contact collapses."
+  lineage: "Strategy 3 from the Phase 4 strategic proposal; warm-starts from phase4_mappo_basic_v6_5 objective foundation plus target conditioning."
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 4
+  target_conditioned_combat: true
+  target_selection_aux_coef: 0.5
+  target_selection_aux_mode: team_focus_low_hp
+  target_selection_objective_proximity_coef: 0.1
+
+run:
+  total_updates: 100
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_focus_fire_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
+  bc_batch_size: 256

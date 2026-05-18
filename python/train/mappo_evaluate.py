@@ -9,7 +9,12 @@ import gymnasium as gym
 import numpy as np
 import torch
 
-from train.mappo_model import MappoActorCritic, MappoEvalStats, _eval_outcome_counts
+from train.mappo_model import (
+    MappoActorCritic,
+    MappoEvalStats,
+    _eval_outcome_counts,
+    target_selection_policy_metrics,
+)
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -97,6 +102,10 @@ def evaluate_mappo(
     team_b_kills: list[int] = []
     wins = losses = draws = terminated_count = truncated_count = 0
     combat_totals = {"A": _empty_combat_totals(), "B": _empty_combat_totals()}
+    focus_totals = {
+        "A": {"entropy_sum": 0.0, "same_sum": 0.0, "count": 0},
+        "B": {"entropy_sum": 0.0, "same_sum": 0.0, "count": 0},
+    }
 
     vec_env = make_xushi_vector_env(
         [env_fn for _ in range(num_envs)],
@@ -118,6 +127,32 @@ def evaluate_mappo(
             flat_obs = obs.reshape(num_envs * cfg.n_agents, cfg.obs_dim)
             flat_h = h.reshape(num_envs * cfg.n_agents, cfg.gru_hidden)
             with torch.no_grad():
+                if cfg.target_selection_dim > 0:
+                    features, _ = model.actor_head_features(flat_obs, flat_h)
+                    _mean, _logits, target_selection_logits = model.policy_heads_from_features(
+                        flat_obs, features
+                    )
+                    for env_i in range(num_envs):
+                        metrics = target_selection_policy_metrics(
+                            target_selection_logits[
+                                env_i * cfg.n_agents : (env_i + 1) * cfg.n_agents
+                            ],
+                            flat_obs[env_i * cfg.n_agents : (env_i + 1) * cfg.n_agents],
+                            cfg,
+                        )
+                        team = "A"
+                        if env_i < len(_infos):
+                            team = str(_infos[env_i].get("learner_team", "A"))
+                        if team in focus_totals:
+                            focus_totals[team]["entropy_sum"] += float(
+                                metrics["target_selection_policy_entropy"].item()
+                            )
+                            focus_totals[team]["same_sum"] += float(
+                                metrics[
+                                    "target_selection_policy_same_target_fraction"
+                                ].item()
+                            )
+                            focus_totals[team]["count"] += 1
                 action, h_next = model.greedy_action(flat_obs, flat_h)
             action_3d = action.view(num_envs, cfg.n_agents, cfg.action_dim)
             action_np = action_3d.cpu().numpy()
@@ -167,6 +202,8 @@ def evaluate_mappo(
 
     combat_a = _combat_summary(combat_totals["A"])
     combat_b = _combat_summary(combat_totals["B"])
+    focus_a_count = max(1, int(focus_totals["A"]["count"]))
+    focus_b_count = max(1, int(focus_totals["B"]["count"]))
     return MappoEvalStats(
         mean_reward=float(np.mean(rewards)) if rewards else 0.0,
         episodes=len(rewards),
@@ -188,6 +225,12 @@ def evaluate_mappo(
         team_b_aim_error_rad=float(combat_b["aim_error_rad"]),
         team_a_target_entropy=float(combat_a["target_entropy"]),
         team_b_target_entropy=float(combat_b["target_entropy"]),
+        team_a_same_target_fraction=float(focus_totals["A"]["same_sum"]) / focus_a_count,
+        team_b_same_target_fraction=float(focus_totals["B"]["same_sum"]) / focus_b_count,
+        team_a_target_selection_entropy=float(focus_totals["A"]["entropy_sum"])
+        / focus_a_count,
+        team_b_target_selection_entropy=float(focus_totals["B"]["entropy_sum"])
+        / focus_b_count,
         team_a_damage_per_fire=float(combat_a["damage_per_fire"]),
         team_b_damage_per_fire=float(combat_b["damage_per_fire"]),
     )
@@ -219,6 +262,10 @@ def eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
         "team_b_aim_error_rad": float(stats.team_b_aim_error_rad),
         "team_a_target_entropy": float(stats.team_a_target_entropy),
         "team_b_target_entropy": float(stats.team_b_target_entropy),
+        "team_a_same_target_fraction": float(stats.team_a_same_target_fraction),
+        "team_b_same_target_fraction": float(stats.team_b_same_target_fraction),
+        "team_a_target_selection_entropy": float(stats.team_a_target_selection_entropy),
+        "team_b_target_selection_entropy": float(stats.team_b_target_selection_entropy),
         "team_a_damage_per_fire": float(stats.team_a_damage_per_fire),
         "team_b_damage_per_fire": float(stats.team_b_damage_per_fire),
     }

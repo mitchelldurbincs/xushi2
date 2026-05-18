@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
+from train.mappo_model import target_selection_aux_loss_and_accuracy
 from train.ppo_recurrent.losses import action_logprob_and_entropy, compute_ppo_loss
 
 
@@ -149,8 +150,42 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
         value_mask=batch.value_mask,
     )
 
+    target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
+    if cfg.target_selection_aux_coef > 0.0:
+        N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
+        h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
+        for t in range(L):
+            obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
+            features, h = trainer.model.actor_head_features(obs_t, h)
+            _mean, _logits, target_selection_logits = trainer.model.policy_heads_from_features(
+                obs_t, features
+            )
+            flat_mask = rollout.agent_loss_mask[:, :, t].reshape(N * A)
+            aux_loss, aux_acc, aux_count = target_selection_aux_loss_and_accuracy(
+                target_selection_logits, obs_t, cfg, mask=flat_mask
+            )
+            target_aux_losses.append(aux_loss)
+            target_aux_accs.append(aux_acc)
+            target_aux_counts.append(aux_count)
+            done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
+            h = h.view(N, A, cfg.gru_hidden)
+            h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
+    if target_aux_losses:
+        target_aux_loss = torch.stack(target_aux_losses).mean()
+        target_aux_count = torch.stack(target_aux_counts).sum()
+        target_aux_acc = (
+            torch.stack(target_aux_accs).mean()
+            if float(target_aux_count.item()) > 0.0
+            else rollout.actor_obs.new_tensor(0.0)
+        )
+    else:
+        target_aux_loss = rollout.actor_obs.new_tensor(0.0)
+        target_aux_acc = rollout.actor_obs.new_tensor(0.0)
+        target_aux_count = rollout.actor_obs.new_tensor(0.0)
+    total_loss = loss.total_loss + cfg.target_selection_aux_coef * target_aux_loss
+
     # Optimization: backward, grad metrics, global grad clip, optimizer step.
-    actor_grad_norm, critic_grad_norm, trunk_grad_norm = apply_optimizer_step(trainer, loss.total_loss)
+    actor_grad_norm, critic_grad_norm, trunk_grad_norm = apply_optimizer_step(trainer, total_loss)
 
     scalar_keys = (
         "policy_loss",
@@ -167,12 +202,15 @@ def update_full_rollout(trainer, rollout, return_mean: float, return_std: float)
             loss.entropy,
             loss.approx_kl,
             loss.clip_fraction,
-            loss.total_loss,
+            total_loss,
         ]
     ).detach().cpu().tolist()
     out = {k: float(v) for k, v in zip(scalar_keys, scalars, strict=False)}
     out["actor_grad_norm"] = actor_grad_norm
     out["critic_grad_norm"] = critic_grad_norm
     out["trunk_grad_norm"] = trunk_grad_norm
+    out["target_selection_aux_loss"] = float(target_aux_loss.detach().cpu().item())
+    out["target_selection_aux_accuracy"] = float(target_aux_acc.detach().cpu().item())
+    out["target_selection_aux_count"] = float(target_aux_count.detach().cpu().item())
     out["lr"] = trainer.current_learning_rate
     return out

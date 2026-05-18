@@ -89,6 +89,7 @@ class MappoConfig:
     target_conditioned_combat: bool = False
     target_selection_aux_coef: float = 0.0
     target_selection_aux_mode: str = "nearest_visible"
+    target_selection_objective_proximity_coef: float = 0.1
     # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
     # else CPU). Resolved to ``torch.device`` once in the trainer.
     device: str = "cpu"
@@ -116,6 +117,10 @@ class MappoEvalStats:
     team_b_aim_error_rad: float = 0.0
     team_a_target_entropy: float = 0.0
     team_b_target_entropy: float = 0.0
+    team_a_same_target_fraction: float = 0.0
+    team_b_same_target_fraction: float = 0.0
+    team_a_target_selection_entropy: float = 0.0
+    team_b_target_selection_entropy: float = 0.0
     team_a_damage_per_fire: float = 0.0
     team_b_damage_per_fire: float = 0.0
 
@@ -250,13 +255,24 @@ class MappoActorCritic(nn.Module):
         ):
             if cfg.obs_encoder != "flat":
                 raise ValueError("target-conditioned combat currently supports only flat obs")
-            if cfg.target_selection_dim != 3:
-                raise ValueError("target-conditioned combat requires target_selection_dim=3")
+            expected_target_dim = (
+                4 if cfg.target_selection_aux_mode == "team_focus_low_hp" else 3
+            )
+            if cfg.target_selection_dim != expected_target_dim:
+                raise ValueError(
+                    "target-conditioned combat requires target_selection_dim="
+                    f"{expected_target_dim} for mode {cfg.target_selection_aux_mode!r}"
+                )
             if cfg.n_agents != 3:
                 raise ValueError("target-conditioned combat requires three Phase-4 agents")
-            if cfg.target_selection_aux_mode not in ("nearest_visible", "lowest_hp"):
+            if cfg.target_selection_aux_mode not in (
+                "nearest_visible",
+                "lowest_hp",
+                "team_focus_low_hp",
+            ):
                 raise ValueError(
-                    "target_selection_aux_mode must be 'nearest_visible' or 'lowest_hp'"
+                    "target_selection_aux_mode must be 'nearest_visible', "
+                    "'lowest_hp', or 'team_focus_low_hp'"
                 )
         self.actor_gru = nn.GRUCell(cfg.embed_dim, cfg.gru_hidden)
         self.actor_body = nn.Sequential(
@@ -518,11 +534,35 @@ def _target_candidate_tensors(
     return rel, visible, hp, own_pos
 
 
-def _masked_target_selection_logits(
-    logits: torch.Tensor, visible: torch.Tensor
+def _target_selection_mask(
+    visible: torch.Tensor,
+    target_dim: int,
+    *,
+    row_visible: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    fallback = torch.ones_like(visible, dtype=torch.bool)
-    mask = torch.where(visible.any(dim=-1, keepdim=True), visible, fallback)
+    if target_dim == visible.shape[-1]:
+        fallback = torch.ones_like(visible, dtype=torch.bool)
+        return torch.where(visible.any(dim=-1, keepdim=True), visible, fallback)
+    if target_dim == visible.shape[-1] + 1:
+        has_visible = visible.any(dim=-1, keepdim=True)
+        if row_visible is not None:
+            has_visible = has_visible & row_visible.view(-1, 1)
+        no_target = ~has_visible
+        enemy_mask = torch.where(has_visible, visible, torch.zeros_like(visible))
+        return torch.cat((enemy_mask, no_target), dim=-1)
+    raise ValueError(
+        f"target_selection_dim must be {visible.shape[-1]} or {visible.shape[-1] + 1}, "
+        f"got {target_dim}"
+    )
+
+
+def _masked_target_selection_logits(
+    logits: torch.Tensor,
+    visible: torch.Tensor,
+    *,
+    row_visible: torch.Tensor | None = None,
+) -> torch.Tensor:
+    mask = _target_selection_mask(visible, logits.shape[-1], row_visible=row_visible)
     return logits.masked_fill(~mask, -1.0e9)
 
 
@@ -538,7 +578,12 @@ def target_selection_context(
         )
     else:
         logits = target_selection_logits
-    weights = torch.softmax(_masked_target_selection_logits(logits, visible), dim=-1)
+    row_visible = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    masked_logits = _masked_target_selection_logits(logits, visible, row_visible=row_visible)
+    if logits.shape[-1] == visible.shape[-1] + 1:
+        weights = torch.softmax(masked_logits, dim=-1)[:, :-1]
+    else:
+        weights = torch.softmax(masked_logits, dim=-1)
     selected_rel = torch.sum(weights.unsqueeze(-1) * rel, dim=1)
     confidence = weights.max(dim=-1).values
     selected_visible = torch.sum(weights * visible.to(obs.dtype), dim=-1).clamp(0.0, 1.0)
@@ -566,8 +611,55 @@ def target_selection_aux_targets(
     mask: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     rel, visible, hp, _own_pos = _target_candidate_tensors(obs, cfg)
+    row_visible = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
     valid = visible.any(dim=-1)
-    if cfg.target_selection_aux_mode == "lowest_hp":
+    if cfg.target_selection_aux_mode == "team_focus_low_hp":
+        if cfg.target_selection_dim != cfg.n_agents + 1:
+            raise ValueError("team_focus_low_hp requires an explicit no-target class")
+        labels = torch.full(
+            (obs.shape[0],),
+            cfg.n_agents,
+            dtype=torch.long,
+            device=obs.device,
+        )
+        if obs.shape[0] % cfg.n_agents == 0:
+            groups = obs.shape[0] // cfg.n_agents
+            visible_g = visible.view(groups, cfg.n_agents, cfg.n_agents)[:, 0, :]
+            hp_g = hp.view(groups, cfg.n_agents, cfg.n_agents)[:, 0, :]
+            rel_g = rel.view(groups, cfg.n_agents, cfg.n_agents, 2)[:, 0, :, :]
+            own_g = _own_pos.view(groups, cfg.n_agents, 2)[:, 0, :]
+            enemy_pos_g = own_g[:, None, :] + rel_g
+            dist_obj = torch.linalg.vector_norm(enemy_pos_g, dim=-1)
+            score = (
+                1.0 / hp_g.clamp(min=1.0e-6)
+                + cfg.target_selection_objective_proximity_coef
+                / dist_obj.clamp(min=1.0e-6)
+            )
+            score = score.masked_fill(~visible_g, -float("inf"))
+            team_labels = score.argmax(dim=-1)
+            has_team_target = visible_g.any(dim=-1)
+            row_visible_g = row_visible.view(groups, cfg.n_agents)
+            labels_g = labels.view(groups, cfg.n_agents)
+            labels_g[:] = torch.where(
+                has_team_target[:, None] & row_visible_g,
+                team_labels[:, None],
+                torch.full_like(labels_g, cfg.n_agents),
+            )
+            labels = labels_g.reshape(-1)
+            valid = torch.ones_like(row_visible, dtype=torch.bool)
+        else:
+            score = (
+                1.0 / hp.clamp(min=1.0e-6)
+                + cfg.target_selection_objective_proximity_coef
+                / torch.linalg.vector_norm(_own_pos[:, None, :] + rel, dim=-1).clamp(
+                    min=1.0e-6
+                )
+            )
+            score = score.masked_fill(~visible, -float("inf"))
+            team_labels = score.argmax(dim=-1)
+            labels = torch.where(row_visible & visible.any(dim=-1), team_labels, labels)
+            valid = torch.ones_like(row_visible, dtype=torch.bool)
+    elif cfg.target_selection_aux_mode == "lowest_hp":
         scores = hp.masked_fill(~visible, float("inf"))
         labels = scores.argmin(dim=-1)
     else:
@@ -576,6 +668,91 @@ def target_selection_aux_targets(
     if mask is not None:
         valid = valid & (mask.reshape(-1) > 0.0)
     return labels, valid
+
+
+def target_selection_aux_metrics(
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    mask: torch.Tensor | None = None,
+) -> dict[str, torch.Tensor]:
+    labels, valid = target_selection_aux_targets(obs, cfg, mask=mask)
+    if mask is not None:
+        valid = valid & (mask.reshape(-1) > 0.0)
+    row_visible = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    focus_valid = valid & row_visible & (labels < cfg.n_agents)
+    count = focus_valid.to(obs.dtype).sum()
+    if float(count.item()) <= 0.0:
+        zero = obs.new_tensor(0.0)
+        return {
+            "target_selection_label_entropy": zero,
+            "target_selection_same_target_fraction": zero,
+            "target_selection_fallback_rate": zero,
+        }
+    selected = labels[focus_valid]
+    counts = torch.bincount(selected, minlength=cfg.n_agents).to(obs.dtype)
+    probs = counts / counts.sum().clamp(min=1.0)
+    positive = probs > 0.0
+    entropy = -(probs[positive] * probs[positive].log()).sum()
+    same_target_fraction = counts.max() / counts.sum().clamp(min=1.0)
+    if obs.shape[0] % cfg.n_agents == 0:
+        rel, _visible, _hp, own_pos = _target_candidate_tensors(obs, cfg)
+        groups = obs.shape[0] // cfg.n_agents
+        rel_g = rel.view(groups, cfg.n_agents, cfg.n_agents, 2)
+        own_g = own_pos.view(groups, cfg.n_agents, 2)
+        labels_g = labels.view(groups, cfg.n_agents)
+        focus_g = focus_valid.view(groups, cfg.n_agents)
+        agent_idx = torch.arange(cfg.n_agents, device=obs.device)
+        own_seen_pos = own_g + rel_g[:, agent_idx, agent_idx, :]
+        safe_labels = labels_g.clamp(0, cfg.n_agents - 1)
+        selected_pos = own_g[:, 0, None, :] + rel_g[:, 0].gather(
+            1, safe_labels[:, :, None].expand(groups, cfg.n_agents, 2)
+        )
+        fallback_mask = focus_g & (
+            torch.linalg.vector_norm(own_seen_pos - selected_pos, dim=-1) > 1.0e-5
+        )
+        fallback_rate = fallback_mask.to(obs.dtype).sum() / count.clamp(min=1.0)
+    else:
+        fallback_rate = obs.new_tensor(0.0)
+    return {
+        "target_selection_label_entropy": entropy,
+        "target_selection_same_target_fraction": same_target_fraction,
+        "target_selection_fallback_rate": fallback_rate,
+    }
+
+
+def target_selection_policy_metrics(
+    logits: torch.Tensor | None,
+    obs: torch.Tensor,
+    cfg: MappoConfig,
+) -> dict[str, torch.Tensor]:
+    if logits is None:
+        zero = obs.new_tensor(0.0)
+        return {
+            "target_selection_policy_entropy": zero,
+            "target_selection_policy_same_target_fraction": zero,
+        }
+    _rel, visible, _hp, _own_pos = _target_candidate_tensors(obs, cfg)
+    row_visible = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    masked_logits = _masked_target_selection_logits(logits, visible, row_visible=row_visible)
+    selected = masked_logits.argmax(dim=-1)
+    valid = row_visible & (selected < cfg.n_agents)
+    count = valid.to(obs.dtype).sum()
+    if float(count.item()) <= 0.0:
+        zero = obs.new_tensor(0.0)
+        return {
+            "target_selection_policy_entropy": zero,
+            "target_selection_policy_same_target_fraction": zero,
+        }
+    counts = torch.bincount(selected[valid], minlength=cfg.n_agents).to(obs.dtype)
+    probs = counts / counts.sum().clamp(min=1.0)
+    positive = probs > 0.0
+    entropy = -(probs[positive] * probs[positive].log()).sum()
+    same_target_fraction = counts.max() / counts.sum().clamp(min=1.0)
+    return {
+        "target_selection_policy_entropy": entropy,
+        "target_selection_policy_same_target_fraction": same_target_fraction,
+    }
 
 
 def target_selection_aux_loss_and_accuracy(
@@ -595,7 +772,8 @@ def target_selection_aux_loss_and_accuracy(
         return zero, zero, count
     rel, visible, _hp, _own_pos = _target_candidate_tensors(obs, cfg)
     del rel, _hp, _own_pos
-    masked_logits = _masked_target_selection_logits(logits, visible)
+    row_visible = obs[:, _ENEMY_ALIVE_SLICE].squeeze(-1) > 0.5
+    masked_logits = _masked_target_selection_logits(logits, visible, row_visible=row_visible)
     loss = torch.nn.functional.cross_entropy(masked_logits[valid], labels[valid])
     acc = (masked_logits[valid].argmax(dim=-1) == labels[valid]).to(obs.dtype).mean()
     return loss, acc, count

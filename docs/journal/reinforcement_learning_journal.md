@@ -992,3 +992,54 @@ aim error `1.564/1.550`, target entropy `0.856/0.674`, damage/fire
 **Conclusion:** cap-duel is learnable and gives a clean middle-rung signal,
 but the solved synthetic skill did not transfer to full 3v3. Strategy 2 is
 mini-game positive / transfer falsified, not blocked.
+
+## 2026-05-18 — Phase 4 focus_fire_v1 target conditioning
+
+**Reason/config:** implemented Strategy 3 from the Phase 4 strategic proposal:
+team-level focus-fire target conditioning with `team_focus_low_hp` labels,
+explicit no-target class, focus-fire auxiliary loss, fallback/same-target
+training metrics, and eval-time same-target fraction plus target-selection
+entropy. Probe config:
+`experiments/configs/phase4/probe/phase4_mappo_focus_fire_v1.yaml`,
+warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, full `weak_basic_v2` 3v3,
+seed `3519994490`. Base commit at launch:
+`6e25e724f64d0e94d8700ed55fd4e9357c039a9a`; implementation commit: this
+changeset.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/50wfu032`, final
+checkpoint
+`python/runs/phase4_mappo_focus_fire_v1/mappo/ckpt_final.pt`, replay
+`replays/phase4_focus_fire_v1_final.replay`. An earlier W&B run
+`8ovasyp5` was aborted during BC after it exposed a no-target mask bug; it is
+not evidence.
+
+**Preflight/tests:** `make build-cpp && make py-install` passed.
+`cd python && pytest tests/test_mappo_focus_fire.py -xvs` passed (`6 passed`).
+`cd python && pytest tests/test_mappo_composition_rehearsal.py tests/test_mappo_aux_aim.py -x`
+passed (`18 passed`).
+
+**BC:** after the no-target mask fix, BC pretrain completed normally:
+step 500 loss `0.0017`, continuous loss `0.0014`, binary loss `0.0010`,
+target-selection accuracy `1.000`. BC eval was draw-only but already above
+the requested hit/fire threshold: mean reward `-0.362`, `0W/0L/50D`, score
+`0.00/0.00`, Team A/B kills `6.0/1.0`, hit/fire `0.0468/0.3816`,
+same-target fraction `1.000`, focus entropy `0.000`.
+
+**PPO trajectory:** update 50 did not trigger the stop condition because
+objective contact had not collapsed despite no score/wins: recent training
+on-point `0.751`, eval `0W/0L/50D`, score `0.00/0.00`, kills `5.0/1.0`,
+hit/fire `0.0410`, same-target fraction `1.000`, focus entropy `0.000`.
+Update 100 met the focus-fire metric thresholds but still produced no scoring
+window: mean reward `-1.000`, `0W/0L/50D`, score `0.00/0.00`, kills
+`5.0/1.0`, Team A/B hit/fire `0.0417/0.3718`, visible fire `0.949/1.000`,
+aim error `1.533/1.537`, nearest-aim target entropy `1.062/0.593`,
+same-target fraction `1.000`, focus entropy `0.000`, damage/fire
+`41.7/371.8`. Training labels stayed concentrated (`same_tgt` generally
+`0.55-0.87`, focus entropy `0.31-0.69`) with fallback rate around `0.64-0.67`.
+
+**Conclusion:** Strategy 3 fixed the measured target-selection concentration
+objective and reached the requested update-100 focus metrics, but it did not
+create score or win conversion in full 3v3. Phase 4 gate is not cleared;
+result is done / behavior insufficient, not blocked.
