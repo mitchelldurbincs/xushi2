@@ -1043,3 +1043,44 @@ same-target fraction `1.000`, focus entropy `0.000`, damage/fire
 objective and reached the requested update-100 focus metrics, but it did not
 create score or win conversion in full 3v3. Phase 4 gate is not cleared;
 result is done / behavior insufficient, not blocked.
+
+## 2026-05-18 — Phase 4 cap-duel to focus-fire transfer probe
+
+**Reason/config:** tested whether the solved cap-duel checkpoint's kill-then-cap
+timing transfers better when full 3v3 training also uses the focus-fire target
+conditioning path. Probe config:
+`experiments/configs/phase4/probe/phase4_mappo_cap_duel_focus_fire_v1.yaml`,
+warm-started from
+`runs/phase4_mappo_cap_duel_v1/mappo/ckpt_0075.pt`, full `weak_basic_v2`
+3v3, seed `3519994490`, target-conditioned combat enabled with
+`team_focus_low_hp` labels and auxiliary coefficient `0.5`. Base commit at
+launch: `46e9c959d1d5c33646f4c6e095216c5249149f9a`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/8pgwe3on`, update-50
+checkpoint
+`python/runs/phase4_mappo_cap_duel_focus_fire_v1/mappo/ckpt_0050.pt`, replay
+`replays/phase4_cap_duel_focus_fire_v1_update50.replay`. The run was
+intentionally interrupted immediately after the update-50 eval matched the
+falsification rule, so no `ckpt_final.pt` alias was written.
+
+**Preflight:** YAML parse passed. Warm-start compatibility check loaded the
+cap-duel checkpoint with `strict=False` and found no unexpected keys; the only
+missing weights were the expected new target-conditioning layers:
+`actor_target_selection_head.{weight,bias}` and
+`actor_target_condition.0.{weight,bias}`. No BC stage was configured for this
+probe, so PPO started directly after the warm start.
+
+**PPO result:** update 50 falsified the hypothesis. Recent rollout metrics had
+objective contact collapsed: `onpt=0.001`, reward `+0.000/0.000`, Team A
+same-target fraction `0.749`, focus entropy `0.562`, fallback rate `0.667`.
+The update-50 eval was mean reward `-11.000`, `0W/50L/0D`, score
+`0.00/37.00`, kills `0.0/0.0`, Team A/B hit-fire `0.0022/0.0556`, visible
+fire `1.000/1.000`, aim error `1.565/1.625`, nearest-aim target entropy
+`0.862/0.566`, same-target fraction `0.981/0.000`, focus entropy
+`0.036/0.000`, damage/fire `2.2/55.6`.
+
+**Conclusion:** cap-duel warm-start plus focus-fire conditioning still
+collapses in full `weak_basic_v2` 3v3. The stop condition was met at update 50:
+zero score, zero wins, on-point below `0.25`, and hit/fire below `0.02`.
+Result is falsified / done, not blocked.
