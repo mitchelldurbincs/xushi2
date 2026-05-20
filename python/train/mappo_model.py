@@ -129,6 +129,17 @@ class MappoEvalStats:
     mode_accuracy: float = 0.0
     intentional_fire_fraction: float = 0.0
     objective_focus_fraction: float = 0.0
+    mean_uncontested_on_point_seconds_a: float = 0.0
+    mean_uncontested_on_point_seconds_b: float = 0.0
+    mean_majority_on_point_seconds_a: float = 0.0
+    mean_majority_on_point_seconds_b: float = 0.0
+    mean_alive_edge_no_score_seconds_a: float = 0.0
+    mean_alive_edge_no_score_seconds_b: float = 0.0
+    mean_cap_progress_gain_ticks: float = 0.0
+    mean_cap_progress_loss_ticks: float = 0.0
+    mean_first_team_a_alive_edge_to_score_seconds: float = -1.0
+    objective_unlock_seconds: float = 0.0
+    objective_capture_seconds: float = 0.0
 
 
 def compute_team_spirit(
@@ -149,6 +160,57 @@ def compute_team_spirit(
         return final
     progress = update / ramp_end_update
     return initial + progress * (final - initial)
+
+
+def compute_majority_on_point_alpha(
+    *,
+    update: int,
+    initial: float,
+    anneal_updates: int,
+) -> float:
+    """Linear anneal from ``initial`` to zero.
+
+    ``anneal_updates <= 0`` intentionally holds the coefficient constant for
+    diagnostic runs.
+    """
+    if initial <= 0.0:
+        return 0.0
+    if anneal_updates <= 0:
+        return float(initial)
+    if update >= anneal_updates:
+        return 0.0
+    progress = max(0.0, float(update) / float(anneal_updates))
+    return float(initial) * (1.0 - progress)
+
+
+def compute_objective_timing_seconds(
+    *,
+    update: int,
+    initial_unlock_seconds: float,
+    final_unlock_seconds: float,
+    initial_capture_seconds: float,
+    final_capture_seconds: float,
+    anneal_updates: int,
+) -> tuple[float, float]:
+    """Linear objective timing curriculum.
+
+    ``anneal_updates <= 0`` holds the initial timing for fixed-easy
+    diagnostic runs.
+    """
+    initial_unlock = float(initial_unlock_seconds)
+    final_unlock = float(final_unlock_seconds)
+    initial_capture = float(initial_capture_seconds)
+    final_capture = float(final_capture_seconds)
+    if min(initial_unlock, final_unlock, initial_capture, final_capture) <= 0.0:
+        raise ValueError("objective timing seconds must be > 0")
+    if anneal_updates <= 0:
+        return initial_unlock, initial_capture
+    if update >= anneal_updates:
+        return final_unlock, final_capture
+    progress = max(0.0, float(update) / float(anneal_updates))
+    unlock = initial_unlock + progress * (final_unlock - initial_unlock)
+    capture = initial_capture + progress * (final_capture - initial_capture)
+    return unlock, capture
 
 
 def _eval_outcome_counts(

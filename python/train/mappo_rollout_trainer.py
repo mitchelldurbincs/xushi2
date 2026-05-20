@@ -64,6 +64,7 @@ class MappoRollout:
         self.done = torch.zeros(N, L, device=dev)
         self.h_init = torch.zeros(N, A, L, cfg.gru_hidden, device=dev)
         self.last_done = torch.zeros(N, device=dev)
+        self.info_metrics: dict[str, float] = {}
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
         self.agent_loss_mask = (
             torch.as_tensor(raw_mask, dtype=torch.float32, device=dev)
@@ -140,6 +141,19 @@ class MappoTrainer:
         update (their ``set_team_spirit`` is a no-op stash); only Phase 4+
         per-agent envs actually reweight their per-step rewards."""
         self.vec_env.set_team_spirit(float(value))
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        self.vec_env.set_majority_on_point_alpha(float(value))
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        self.vec_env.set_uncontested_on_point_alpha(float(value))
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        self.vec_env.set_objective_timing_seconds(
+            float(unlock_seconds), float(capture_seconds)
+        )
 
     @property
     def current_learning_rate(self) -> float:
@@ -278,6 +292,12 @@ class MappoTrainer:
                 out["fire_valid_fraction"] = float(
                     _masked_mean(valid.to(agent_mask.dtype), agent_mask.reshape(-1)).item()
                 )
+        samples = float(rollout.info_metrics.get("info_metric_samples", 0.0))
+        if samples > 0.0:
+            for key, value in rollout.info_metrics.items():
+                if key == "info_metric_samples":
+                    continue
+                out[f"rollout_{key}_mean"] = float(value) / samples
         return out
 
     def _action_logprob_and_entropy(

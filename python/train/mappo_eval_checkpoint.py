@@ -26,7 +26,12 @@ from train.mappo_matrix_eval import (
     matrix_retention_summary,
     run_mappo_matrix_eval,
 )
-from train.mappo_model import MappoActorCritic, compute_team_spirit
+from train.mappo_model import (
+    MappoActorCritic,
+    compute_majority_on_point_alpha,
+    compute_objective_timing_seconds,
+    compute_team_spirit,
+)
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 from train.phases import resolve_phase
 from train.wandb_logger import make_logger
@@ -38,7 +43,59 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     phase_label = str(phase_spec["label"])
     env_fn, ckpt_env_cfg, seed_base = phase_spec["env_bundle"](config)
     cfg = make_mappo_config(config)
+    env_cfg = dict(config.get("env", {}))
     run_cfg = config.get("run", {})
+    reward_cfg = dict(config.get("env", {}).get("reward", {}))
+    objective_timing_cfg = dict(env_cfg.get("objective_timing_curriculum", {}))
+    objective_timing_enabled = bool(objective_timing_cfg.get("enabled", False))
+    sim_cfg = dict(env_cfg.get("sim", {}))
+
+    def _sim_timing_seconds(field: str, default: float) -> float:
+        nested = dict(sim_cfg.get("objective_timing", {}))
+        seconds_key = f"objective_{field}_seconds"
+        ticks_key = f"objective_{field}_ticks"
+        if seconds_key in sim_cfg:
+            return float(sim_cfg[seconds_key])
+        if f"{field}_seconds" in nested:
+            return float(nested[f"{field}_seconds"])
+        if ticks_key in sim_cfg:
+            return float(sim_cfg[ticks_key]) / 30.0
+        if f"{field}_ticks" in nested:
+            return float(nested[f"{field}_ticks"]) / 30.0
+        return float(default)
+
+    objective_initial_unlock_seconds = float(
+        objective_timing_cfg.get(
+            "initial_unlock_seconds", _sim_timing_seconds("unlock", 15.0)
+        )
+    )
+    objective_initial_capture_seconds = float(
+        objective_timing_cfg.get(
+            "initial_capture_seconds", _sim_timing_seconds("capture", 8.0)
+        )
+    )
+    objective_final_unlock_seconds = float(
+        objective_timing_cfg.get("final_unlock_seconds", 15.0)
+    )
+    objective_final_capture_seconds = float(
+        objective_timing_cfg.get("final_capture_seconds", 8.0)
+    )
+    objective_timing_anneal_updates = int(
+        objective_timing_cfg.get("anneal_updates", 0)
+    )
+    objective_eval_canonical_every = int(
+        objective_timing_cfg.get("eval_canonical_every", 0)
+    )
+    majority_on_point_initial = float(reward_cfg.get("majority_on_point_coef", 0.0))
+    majority_on_point_anneal_updates = int(
+        reward_cfg.get("majority_on_point_anneal_updates", 0)
+    )
+    uncontested_on_point_initial = float(
+        reward_cfg.get("uncontested_on_point_coef", 0.0)
+    )
+    uncontested_on_point_anneal_updates = int(
+        reward_cfg.get("uncontested_on_point_anneal_updates", 0)
+    )
     total_updates = int(run_cfg.get("total_updates"))
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
     eval_episodes = int(run_cfg.get("eval_episodes", 10))
@@ -346,13 +403,31 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     total_updates = 0
 
         class _MappoHooks:
+            def __init__(self) -> None:
+                self._last_team_spirit = 0.0
+                self._last_majority_on_point_alpha = 0.0
+                self._last_uncontested_on_point_alpha = 0.0
+                self._last_objective_timing_seconds: tuple[float, float] | None = None
+                self._last_canonical_eval_stats = None
+
             def set_learning_rate(self, lr: float) -> None:
                 trainer.set_learning_rate(lr)
 
-            def collect_rollout(self, update_idx: int):
-                return trainer.collect_rollout()
+            def _objective_timing_for_update(
+                self, update_idx: int
+            ) -> tuple[float, float] | None:
+                if not objective_timing_enabled:
+                    return None
+                return compute_objective_timing_seconds(
+                    update=update_idx,
+                    initial_unlock_seconds=objective_initial_unlock_seconds,
+                    final_unlock_seconds=objective_final_unlock_seconds,
+                    initial_capture_seconds=objective_initial_capture_seconds,
+                    final_capture_seconds=objective_final_capture_seconds,
+                    anneal_updates=objective_timing_anneal_updates,
+                )
 
-            def update_step(self, update_idx: int, rollout, lr: float):
+            def collect_rollout(self, update_idx: int):
                 tau = compute_team_spirit(
                     update=update_idx,
                     total=total_updates,
@@ -360,18 +435,63 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     final=cfg.team_spirit_final,
                     ramp_fraction=cfg.team_spirit_ramp_fraction,
                 )
+                alpha = compute_majority_on_point_alpha(
+                    update=update_idx,
+                    initial=majority_on_point_initial,
+                    anneal_updates=majority_on_point_anneal_updates,
+                )
+                uncontested_alpha = compute_majority_on_point_alpha(
+                    update=update_idx,
+                    initial=uncontested_on_point_initial,
+                    anneal_updates=uncontested_on_point_anneal_updates,
+                )
                 trainer.set_team_spirit(tau)
+                trainer.set_majority_on_point_alpha(alpha)
+                trainer.set_uncontested_on_point_alpha(uncontested_alpha)
+                timing = self._objective_timing_for_update(update_idx)
+                if timing is not None:
+                    trainer.set_objective_timing_seconds(timing[0], timing[1])
+                self._last_team_spirit = tau
+                self._last_majority_on_point_alpha = alpha
+                self._last_uncontested_on_point_alpha = uncontested_alpha
+                self._last_objective_timing_seconds = timing
+                return trainer.collect_rollout()
+
+            def update_step(self, update_idx: int, rollout, lr: float):
                 metrics = trainer.update(rollout)
-                metrics["team_spirit"] = tau
+                metrics["team_spirit"] = self._last_team_spirit
+                metrics["majority_on_point_alpha"] = self._last_majority_on_point_alpha
+                metrics["uncontested_on_point_alpha"] = (
+                    self._last_uncontested_on_point_alpha
+                )
+                if self._last_objective_timing_seconds is not None:
+                    metrics["objective_unlock_seconds"] = self._last_objective_timing_seconds[0]
+                    metrics["objective_capture_seconds"] = self._last_objective_timing_seconds[1]
                 return metrics
 
             def evaluate_step(self, update_idx: int, lr: float):
-                return evaluate_mappo(
+                timing = self._objective_timing_for_update(update_idx)
+                eval_stats = evaluate_mappo(
                     trainer.model,
                     env_fn,
                     episodes=eval_episodes,
                     seed=seed_base + 100_000 + update_idx,
+                    objective_timing_seconds=timing,
                 )
+                self._last_canonical_eval_stats = None
+                if (
+                    objective_timing_enabled
+                    and objective_eval_canonical_every > 0
+                    and update_idx % objective_eval_canonical_every == 0
+                ):
+                    self._last_canonical_eval_stats = evaluate_mappo(
+                        trainer.model,
+                        env_fn,
+                        episodes=eval_episodes,
+                        seed=seed_base + 200_000 + update_idx,
+                        objective_timing_seconds=(15.0, 8.0),
+                    )
+                return eval_stats
 
             def checkpoint_payload(self, update_idx: int) -> dict:
                 return {
@@ -385,6 +505,14 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     step=update_idx,
                 )
                 wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
+                objective_unlock_log = metrics.get(
+                    "objective_unlock_seconds",
+                    metrics.get("rollout_objective_unlock_seconds_mean", 0.0),
+                )
+                objective_capture_log = metrics.get(
+                    "objective_capture_seconds",
+                    metrics.get("rollout_objective_capture_seconds_mean", 0.0),
+                )
                 print(
                     f"[{phase_label}/mappo] update={update_idx}/{total_updates} "
                     f"policy_loss={metrics['policy_loss']:.3f} "
@@ -398,6 +526,16 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"bin={metrics['action_binary_mean']:.3f} "
                     f"dist={metrics['mean_distance_to_objective']:.3f} "
                     f"onpt={metrics['self_on_point_fraction']:.3f} "
+                    f"obj_t={objective_unlock_log:.2f}/"
+                    f"{objective_capture_log:.2f} "
+                    f"maj_alpha={metrics.get('majority_on_point_alpha', 0.0):.4f} "
+                    f"maj_rew={metrics.get('rollout_majority_on_point_reward_a_mean', 0.0):+.4f}/"
+                    f"{metrics.get('rollout_majority_on_point_reward_b_mean', 0.0):+.4f} "
+                    f"unc_alpha={metrics.get('uncontested_on_point_alpha', 0.0):.4f} "
+                    f"unc_rew={metrics.get('rollout_uncontested_on_point_reward_a_mean', 0.0):+.4f}/"
+                    f"{metrics.get('rollout_uncontested_on_point_reward_b_mean', 0.0):+.4f} "
+                    f"maj_sec={metrics.get('rollout_majority_on_point_seconds_a_mean', 0.0):.3f}/"
+                    f"{metrics.get('rollout_majority_on_point_seconds_b_mean', 0.0):.3f} "
                     f"pcombat={metrics.get('mean_p_combat', 0.0):.3f} "
                     f"mode_acc={metrics.get('mode_accuracy', 0.0):.3f} "
                     f"same_tgt={metrics.get('target_selection_same_target_fraction', 0.0):.3f} "
@@ -423,6 +561,8 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"tick={eval_stats.mean_final_tick:.1f} "
                     f"score={eval_stats.mean_team_a_score:.2f}/"
                     f"{eval_stats.mean_team_b_score:.2f} "
+                    f"obj_t={eval_stats.objective_unlock_seconds:.2f}/"
+                    f"{eval_stats.objective_capture_seconds:.2f} "
                     f"kills={eval_stats.mean_team_a_kills:.1f}/"
                     f"{eval_stats.mean_team_b_kills:.1f} "
                     f"hit_fire={eval_stats.team_a_hit_fire:.4f}/"
@@ -441,6 +581,13 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     f"mode_acc={eval_stats.mode_accuracy:.3f} "
                     f"intent_fire={eval_stats.intentional_fire_fraction:.3f} "
                     f"obj_focus={eval_stats.objective_focus_fraction:.3f} "
+                    f"maj_sec={eval_stats.mean_majority_on_point_seconds_a:.2f}/"
+                    f"{eval_stats.mean_majority_on_point_seconds_b:.2f} "
+                    f"uncont={eval_stats.mean_uncontested_on_point_seconds_a:.2f}/"
+                    f"{eval_stats.mean_uncontested_on_point_seconds_b:.2f} "
+                    f"edge_noscore={eval_stats.mean_alive_edge_no_score_seconds_a:.2f}/"
+                    f"{eval_stats.mean_alive_edge_no_score_seconds_b:.2f} "
+                    f"cap_gain={eval_stats.mean_cap_progress_gain_ticks:.1f} "
                     f"dmg_fire={eval_stats.team_a_damage_per_fire:.1f}/"
                     f"{eval_stats.team_b_damage_per_fire:.1f}",
                     flush=True,
@@ -449,6 +596,33 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     {f"eval/{k}": float(v) for k, v in eval_stats_dict(eval_stats).items()},
                     step=update_idx,
                 )
+                canonical_stats = self._last_canonical_eval_stats
+                if canonical_stats is not None:
+                    print(
+                        f"[{phase_label}/mappo] canonical_eval update={update_idx}/"
+                        f"{total_updates} "
+                        f"mean_reward={canonical_stats.mean_reward:+.3f} "
+                        f"wins={canonical_stats.wins}/{canonical_stats.episodes} "
+                        f"losses={canonical_stats.losses}/{canonical_stats.episodes} "
+                        f"draws={canonical_stats.draws}/{canonical_stats.episodes} "
+                        f"score={canonical_stats.mean_team_a_score:.2f}/"
+                        f"{canonical_stats.mean_team_b_score:.2f} "
+                        f"kills={canonical_stats.mean_team_a_kills:.1f}/"
+                        f"{canonical_stats.mean_team_b_kills:.1f} "
+                        f"maj_sec={canonical_stats.mean_majority_on_point_seconds_a:.2f}/"
+                        f"{canonical_stats.mean_majority_on_point_seconds_b:.2f} "
+                        f"uncont={canonical_stats.mean_uncontested_on_point_seconds_a:.2f}/"
+                        f"{canonical_stats.mean_uncontested_on_point_seconds_b:.2f} "
+                        f"cap_gain={canonical_stats.mean_cap_progress_gain_ticks:.1f}",
+                        flush=True,
+                    )
+                    wandb_logger.log(
+                        {
+                            f"canonical_eval/{k}": float(v)
+                            for k, v in eval_stats_dict(canonical_stats).items()
+                        },
+                        step=update_idx,
+                    )
                 if last_eval > best_eval:
                     best_eval = last_eval
                     best_state = copy.deepcopy(trainer.model.state_dict())

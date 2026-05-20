@@ -1,0 +1,74 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: current_selfplay_smoke
+  status: experimental
+  expected_runtime: smoke
+  gate_relevance:
+    - phase4_current_selfplay_plumbing
+  hypothesis: "A minimal six-agent current-vs-current Phase 4 MAPPO env can train one update with flat Ranger observations, per-team critic views, and all six slots contributing gradients."
+  falsification_criteria: "Fails if reset/rollout/update/eval cannot complete, loss masks are not all six agents, or value_per_agent critic shapes are inconsistent."
+
+wandb:
+  enabled: false
+
+env:
+  seed_base: 3519994490
+  self_play:
+    enabled: true
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.0
+  sim:
+    round_length_seconds: 10
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 32
+  gru_hidden: 32
+  head_hidden: 32
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 1
+  rollout_len: 16
+  num_epochs: 1
+  minibatch_size: 1
+  learning_rate: 1.0e-5
+  value_normalization: true
+  value_per_agent: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: constant
+  lr_final_ratio: 1.0
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.001
+  value_coef: 0.5
+  max_grad_norm: 0.5
+
+run:
+  total_updates: 1
+  eval_every: 1
+  eval_episodes: 1
+  checkpoint_every: 1
+  log_every: 1
+  bc_pretrain_steps: 0
+  output_dir: runs/phase4_mappo_current_selfplay_smoke

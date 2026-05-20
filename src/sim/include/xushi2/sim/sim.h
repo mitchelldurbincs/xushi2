@@ -104,7 +104,7 @@ struct HeroState {
 struct ObjectiveState {
     Team owner = Team::Neutral;
     Team cap_team = Team::Neutral;              // Neutral == "None"
-    std::uint32_t cap_progress_ticks = 0;       // 0..kCaptureTicks
+    std::uint32_t cap_progress_ticks = 0;       // 0..MatchConfig::objective_capture_ticks
     std::uint32_t team_a_score_ticks = 0;       // 0..kWinTicks
     std::uint32_t team_b_score_ticks = 0;
     bool unlocked = false;                      // true after the 15s lock window
@@ -132,6 +132,10 @@ struct MatchConfig {
     bool randomize_map = false;     // per-episode wall randomization (default off until Phase 8)
     // Sim ticks held per policy decision (see action_spec.md).
     std::uint32_t action_repeat = common::kDefaultActionRepeat;
+    // Canonical objective timing defaults. Training curricula may override
+    // these through config-gated experiments; game-default configs must not.
+    std::uint32_t objective_unlock_ticks = common::kObjectiveLockTicks;
+    std::uint32_t objective_capture_ticks = common::kCaptureTicks;
     MapBounds map{};
     std::uint32_t num_cover_circles = 0;
     std::array<CoverCircle, common::kMaxWalls> cover_circles{};
@@ -185,6 +189,11 @@ class Sim {
     const MatchState& state() const noexcept { return state_; }
     const MatchConfig& config() const noexcept { return config_; }
     bool episode_over() const noexcept;
+
+    // Config-gated training curriculum hook. Updates only future objective
+    // ticks; it does not reset score or ownership.
+    void set_objective_timing_ticks(std::uint32_t unlock_ticks,
+                                    std::uint32_t capture_ticks);
 
     // Winner of the (possibly terminal) match: Team::A, Team::B, or
     // Team::Neutral for a draw / in-progress. Meaningful only once

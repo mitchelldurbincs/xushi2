@@ -82,6 +82,11 @@ void validate_cover(const MatchConfig& config) {
     }
 }
 
+void validate_objective_timing(const MatchConfig& config) {
+    X2_REQUIRE(config.objective_unlock_ticks > 0U, ErrorCode::CorruptState);
+    X2_REQUIRE(config.objective_capture_ticks > 0U, ErrorCode::CorruptState);
+}
+
 }  // namespace
 
 Sim::Sim(const MatchConfig& config) : config_(config) {
@@ -91,6 +96,7 @@ Sim::Sim(const MatchConfig& config) : config_(config) {
     X2_REQUIRE(config.map.max_y > config.map.min_y, ErrorCode::CorruptState);
     X2_REQUIRE(config.team_size == 1 || config.team_size == 3,
                ErrorCode::CorruptState);
+    validate_objective_timing(config);
     validate_mechanics(config.mechanics);
     validate_cover(config);
     internal::reset_state(state_, config_);
@@ -135,6 +141,17 @@ bool Sim::episode_over() const noexcept {
     const Tick max_ticks =
         static_cast<Tick>(config_.round_length_seconds * kTickHz);
     return state_.tick >= max_ticks;
+}
+
+void Sim::set_objective_timing_ticks(std::uint32_t unlock_ticks,
+                                     std::uint32_t capture_ticks) {
+    X2_REQUIRE(unlock_ticks > 0U, ErrorCode::CorruptState);
+    X2_REQUIRE(capture_ticks > 0U, ErrorCode::CorruptState);
+    config_.objective_unlock_ticks = unlock_ticks;
+    config_.objective_capture_ticks = capture_ticks;
+    if (state_.objective.cap_progress_ticks >= capture_ticks) {
+        state_.objective.cap_progress_ticks = capture_ticks - 1U;
+    }
 }
 
 Team Sim::winner() const noexcept {
