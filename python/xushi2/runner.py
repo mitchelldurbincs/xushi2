@@ -12,17 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import xushi2_cpp as _cpp
-
-_VALID_BOTS = frozenset(
-    {
-        "walk_to_objective",
-        "hold_and_shoot",
-        "basic",
-        "weak_basic",
-        "weak_basic_v2",
-        "noop",
-    }
-)
+from .bots import VALID_SCRIPTED_BOT_SET
 
 _REQUIRED_MECHANICS_KEYS = frozenset(
     {
@@ -133,10 +123,16 @@ def run_episode(
     sim_cfg: dict, bot_a: str, bot_b: str, seed_override: int | None = None
 ) -> EpisodeResult:
     """Run one scripted-vs-scripted episode and return the hash trajectory."""
-    if bot_a not in _VALID_BOTS:
-        raise ValueError(f"unknown bot_a {bot_a!r}; valid: {sorted(_VALID_BOTS)}")
-    if bot_b not in _VALID_BOTS:
-        raise ValueError(f"unknown bot_b {bot_b!r}; valid: {sorted(_VALID_BOTS)}")
+    if bot_a not in VALID_SCRIPTED_BOT_SET:
+        raise ValueError(
+            f"unknown bot_a {bot_a!r}; valid: {sorted(VALID_SCRIPTED_BOT_SET)}. "
+            "See xushi2.bots.VALID_SCRIPTED_BOTS."
+        )
+    if bot_b not in VALID_SCRIPTED_BOT_SET:
+        raise ValueError(
+            f"unknown bot_b {bot_b!r}; valid: {sorted(VALID_SCRIPTED_BOT_SET)}. "
+            "See xushi2.bots.VALID_SCRIPTED_BOTS."
+        )
 
     cfg = _build_config(sim_cfg, seed_override=seed_override)
     hashes, final_tick, a_kills, b_kills, winner = _cpp.run_scripted_episode(cfg, bot_a, bot_b)
