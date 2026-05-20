@@ -4,6 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import torch
+import pytest
 
 from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
 from train.mappo_bc_pretrain import (
@@ -14,6 +15,7 @@ from train.mappo_bc_pretrain import (
 )
 from train.mappo_model import MappoActorCritic
 from train.mappo_rollout_trainer import make_mappo_config
+from xushi2.obs_manifest import actor_field_slice
 
 
 def _aim_only_cfg() -> dict:
@@ -170,3 +172,21 @@ def test_walk_and_shoot_bc_can_replace_only_aim_from_checkpoint(tmp_path: Path) 
     assert torch.allclose(target_seq[0, :, 2], torch.full((3,), 0.25), atol=1.0e-6)
     assert torch.allclose(target_seq[0, :, :2], crude_targets[:, :2])
     assert torch.allclose(target_seq[0, :, 3:], crude_targets[:, 3:])
+
+
+def test_walk_and_shoot_bc_aim_target_is_relative_to_current_aim() -> None:
+    cfg = make_mappo_config(_aim_only_cfg())
+    obs = torch.zeros(2, cfg.obs_dim, dtype=torch.float32)
+    enemy_alive = actor_field_slice("enemy_alive")
+    enemy_rel = actor_field_slice("enemy_relative_position")
+    own_aim = actor_field_slice("own_aim_unit")
+
+    obs[:, enemy_alive] = 1.0
+    obs[:, enemy_rel] = torch.tensor([0.0, 1.0])
+    obs[0, own_aim] = torch.tensor([0.0, 1.0])  # current aim angle 0 rad.
+    obs[1, own_aim] = torch.tensor([1.0, 0.0])  # already aimed at +pi/2.
+
+    target = _walk_and_shoot_to_objective_targets(obs, cfg)
+
+    assert target[0, 2] > 0.9
+    assert target[1, 2] == pytest.approx(0.0, abs=1.0e-6)

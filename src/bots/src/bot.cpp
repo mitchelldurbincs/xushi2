@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <string>
 
-// Phase-0 scripted bots. Deterministic (no RNG, no wall clock) and
-// observation-blind (they read the full MatchState — Tier 1 is allowed to).
+// Phase-0 scripted bots. Deterministic (no RNG, no wall clock). Movement
+// reads full state, while combat targeting is line-of-sight gated.
 // "Objective" is the arena center; Phase 0 has no real capture mechanics.
 
 namespace xushi2::bots {
@@ -71,13 +71,13 @@ class WalkToObjectiveBot final : public IBot {
 class HoldAndShootBot final : public IBot {
    public:
     common::Action decide(const sim::MatchState& state,
-                          const sim::MatchConfig& /*config*/,
+                          const sim::MatchConfig& config,
                           int agent_index) override {
         const sim::HeroState* self = get_active_hero_or_null(state, agent_index);
         if (self == nullptr) {
             return common::Action{};
         }
-        return internal::hold_and_shoot(state, *self);
+        return internal::hold_and_shoot(state, *self, config);
     }
     std::string name() const override { return "hold_and_shoot"; }
 };
@@ -92,7 +92,7 @@ class BasicBot final : public IBot {
             return common::Action{};
         }
         common::Action walk = internal::walk_to_objective(*self, config.map);
-        common::Action shoot = internal::hold_and_shoot(state, *self);
+        common::Action shoot = internal::hold_and_shoot(state, *self, config);
         // Combine: walk's movement, shoot's aim + fire.
         walk.aim_delta = shoot.aim_delta;
         walk.primary_fire = shoot.primary_fire;
@@ -118,7 +118,7 @@ class WeakBasicBot final : public IBot {
         const float noise =
             deterministic_unit_noise(state.tick, agent_index) * kAimNoiseScale;
         common::Action walk = internal::walk_to_objective(*self, config.map);
-        common::Action shoot = internal::hold_and_shoot(state, *self, noise);
+        common::Action shoot = internal::hold_and_shoot(state, *self, config, noise);
         walk.aim_delta = shoot.aim_delta;
         walk.primary_fire = shoot.primary_fire;
         return walk;
@@ -140,7 +140,7 @@ class WeakBasicV2Bot final : public IBot {
         const float noise =
             deterministic_unit_noise(state.tick, agent_index) * kAimNoiseScale;
         common::Action walk = internal::walk_to_objective(*self, config.map);
-        common::Action shoot = internal::hold_and_shoot(state, *self, noise);
+        common::Action shoot = internal::hold_and_shoot(state, *self, config, noise);
         walk.aim_delta = shoot.aim_delta;
         walk.primary_fire = shoot.primary_fire &&
                             (state.tick % kFireCadenceTicks == 0U);

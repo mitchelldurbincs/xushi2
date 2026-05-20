@@ -180,7 +180,7 @@ void build_actor_obs_phase1(const Sim& sim,
 
     // --- cap_progress ---
     w.push1(clamp01(static_cast<float>(s.objective.cap_progress_ticks) /
-                    static_cast<float>(common::kCaptureTicks)));
+                    static_cast<float>(cfg.objective_capture_ticks)));
 
     // --- contested (both teams present and alive on point) ---
     bool a_on = false;

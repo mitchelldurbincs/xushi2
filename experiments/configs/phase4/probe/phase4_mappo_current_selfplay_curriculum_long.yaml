@@ -1,0 +1,97 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: current_selfplay_curriculum_long
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_current_selfplay_learning_signal
+    - phase4_objective_conversion
+    - phase4_anchor_transfer
+  hypothesis: "Current self-play needs an explicit objective bootstrap: shorter early capture timing plus majority-on-point advantage shaping should increase sustained objective contact, while annealing back to canonical timing/reward tests whether it transfers to the real Phase 4 gate."
+  falsification_criteria: "Falsified if the best checkpoint still cannot score against noop anchors, or if canonical eval remains zero-score with negligible uncontested/cap-progress by update 300."
+  lineage: "Follow-up to phase4_mappo_current_selfplay_long; adds objective timing curriculum, majority-on-point advantage shaping, and warm-start from the strongest existing Phase 4 bot checkpoint."
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_current_selfplay
+
+env:
+  seed_base: 3519994490
+  self_play:
+    enabled: true
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 5.0
+    initial_capture_seconds: 2.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 300
+    eval_canonical_every: 25
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.0
+    majority_on_point_coef: 0.15
+    majority_on_point_anneal_updates: 300
+    majority_on_point_distribute: on_point
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 5.0
+    objective_capture_seconds: 2.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 32
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  value_per_agent: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+
+run:
+  total_updates: 300
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_current_selfplay_curriculum_long_v2
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
+  bc_batch_size: 384
+  bc_learning_rate: 0.001

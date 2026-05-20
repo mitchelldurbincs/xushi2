@@ -70,3 +70,42 @@ TEST(Runner, WalkToObjectiveUsesConfiguredMapCenter) {
     EXPECT_NEAR(action.move_x, 0.0F, 1e-6F);
     EXPECT_GT(action.move_y, 0.99F);
 }
+
+TEST(Runner, BasicDoesNotAimOrFireThroughCover) {
+    auto cfg = phase0_config();
+    cfg.num_cover_circles = 1;
+    cfg.cover_circles[0].center = xushi2::common::Vec2{25.0F, 25.0F};
+    cfg.cover_circles[0].radius = 1.0F;
+
+    xushi2::sim::Sim sim(cfg);
+    auto bot = xushi2::bots::make_basic_bot();
+
+    const auto action = bot->decide(sim.state(), sim.config(), 0);
+
+    EXPECT_FALSE(action.primary_fire);
+    EXPECT_NEAR(action.aim_delta, 0.0F, 1e-6F);
+}
+
+TEST(Runner, WeakBasicV2DoesNotFireThroughCover) {
+    auto cfg = phase0_config();
+    cfg.num_cover_circles = 1;
+    cfg.cover_circles[0].center = xushi2::common::Vec2{25.0F, 25.0F};
+    cfg.cover_circles[0].radius = 1.0F;
+
+    xushi2::sim::Sim sim(cfg);
+    auto bot = xushi2::bots::make_weak_basic_v2_bot();
+
+    const auto action = bot->decide(sim.state(), sim.config(), 0);
+
+    EXPECT_FALSE(action.primary_fire);
+    EXPECT_NEAR(action.aim_delta, 0.0F, 1e-6F);
+}
+
+TEST(Runner, WeakBasicV2StillFiresWhenOpponentVisibleOnCadence) {
+    xushi2::sim::Sim sim(phase0_config());
+    auto bot = xushi2::bots::make_weak_basic_v2_bot();
+
+    const auto action = bot->decide(sim.state(), sim.config(), 0);
+
+    EXPECT_TRUE(action.primary_fire);
+}

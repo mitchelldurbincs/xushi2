@@ -10,7 +10,8 @@ namespace xushi2::bots::internal {
 // nullptr if none exist. Ties are broken by lower slot index (stable
 // across calls thanks to the strict-less comparison).
 const sim::HeroState* find_opponent(const sim::MatchState& state,
-                                    const sim::HeroState& self);
+                                    const sim::HeroState& self,
+                                    const sim::MatchConfig& config);
 
 // Computes the per-decision aim delta needed to face (tx, ty). The
 // optional `noise_radians` is added to the raw angular error *before*
@@ -26,6 +27,7 @@ common::Action walk_to_objective(const sim::HeroState& self,
 // pre-clamp. Default 0 = perfect aim.
 common::Action hold_and_shoot(const sim::MatchState& state,
                               const sim::HeroState& self,
+                              const sim::MatchConfig& config,
                               float aim_noise_radians = 0.0F);
 
 }  // namespace xushi2::bots::internal

@@ -1,0 +1,39 @@
+{
+  "target": "mappo",
+  "config_path": "..\\experiments\\configs\\phase4\\legacy\\archive\\phase4_mappo_basic_v6_5.yaml",
+  "vector_env": "async",
+  "metadata": {
+    "python_version": "3.12.4",
+    "torch_version": "2.5.1+cpu",
+    "cpu_count": 12,
+    "git_sha": "fe15b3e5097c72dbb8f374473d4841953659eb22"
+  },
+  "runs": [
+    {
+      "repeat_index": 0,
+      "seed": 0,
+      "warmup_iterations": 1,
+      "measured_iterations": 2,
+      "env_steps_per_iteration": 4096,
+      "total_samples_processed": 8192,
+      "rollout_wall_time_sec": 1.2262581000104547,
+      "update_wall_time_sec": 1.7848106999881566,
+      "total_wall_time_sec": 3.011068799998611,
+      "env_steps_per_sec": 3340.24297165913,
+      "learner_steps_per_sec": 2294.921248526345
+    },
+    {
+      "repeat_index": 1,
+      "seed": 1,
+      "warmup_iterations": 1,
+      "measured_iterations": 2,
+      "env_steps_per_iteration": 4096,
+      "total_samples_processed": 8192,
+      "rollout_wall_time_sec": 1.2893344500334933,
+      "update_wall_time_sec": 2.1907955500064418,
+      "total_wall_time_sec": 3.480130000039935,
+      "env_steps_per_sec": 3176.832822464022,
+      "learner_steps_per_sec": 1869.640460054776
+    }
+  ]
+}

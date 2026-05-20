@@ -1135,3 +1135,361 @@ objective contact to avoid update-50 falsification and produced kills, but it
 collapsed into high combat-mode probability and still produced zero score and
 zero wins. Result is not cleared / evidence insufficient for the hypothesis,
 not blocked.
+
+## 2026-05-19 — Phase 4 majority-on-point curriculum smoke
+
+**Reason/config:** implemented an opt-in majority-on-point reward curriculum
+to test whether a dense objective-advantage signal can bridge the observed
+gap from kill edge to scoring. Added:
+`experiments/configs/phase4/probe/phase4_mappo_majority_advantage_smoke.yaml`
+and
+`experiments/configs/phase4/probe/phase4_mappo_majority_advantage_noanneal_diagnostic.yaml`.
+Both use `weak_basic_v2`, seed `3519994490`, warm-start from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, walk-and-shoot BC, and
+real objective constants. Base commit before local changes:
+`6c7785f82727d71466cc63d564a611ea7f8327b1`.
+
+**Implementation notes:** the simulator scoring rule was not changed. The
+new reward term is under `env.reward.majority_on_point_coef`, with
+`majority_on_point_anneal_updates` owned by the trainer schedule and final
+eval forcing alpha to zero. The old unconditional `on_point_shaping_coef` is
+off in both probe configs. Also fixed the walk-and-shoot BC aim target so
+action index 2 trains relative `aim_delta` from current `own_aim_unit`, not
+an absolute enemy angle.
+
+**Verification:** CMake configure/build for Python 3.13 passed; the extension
+was copied from the MSVC `Release/` output directory next to the package for
+native Windows import. Focused Python checks passed:
+`py -3.13 -m pytest tests/test_reward.py tests/test_phase4_mappo_env.py
+tests/test_mappo_team_spirit_ramp.py tests/test_mappo_bc_freeze.py
+tests/test_mappo_public_api.py tests/test_bindings_obs.py
+tests/test_obs_manifest.py -q` (`119 passed`). Actor/critic leak and obs
+contract C++ checks passed:
+`ctest --test-dir build -C Release -R
+"ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils" --output-on-failure`
+(`44 passed`).
+
+**No-anneal diagnostic run:** local W&B-disabled run; no W&B URL, no replay
+produced. Config:
+`experiments/configs/phase4/probe/phase4_mappo_majority_advantage_noanneal_diagnostic.yaml`.
+Final checkpoints under
+`python/runs/phase4_mappo_majority_advantage_noanneal_diagnostic/mappo/`.
+Best eval was update 15, mean reward `+0.948`, `0W/0L/20D`, score
+`0.00/0.00`, kills `8.0/2.0`. Update 25 final eval remained scoreless but
+showed the new diagnostics are useful: Team A/B majority-on-point seconds
+`34.00/15.30`, uncontested seconds `0.00/0.10`, alive-edge-no-score
+`29.50/8.00`, cap-progress gain `2.0` ticks.
+
+**Annealed smoke run:** local W&B-disabled run; no W&B URL, no replay
+produced. Config:
+`experiments/configs/phase4/probe/phase4_mappo_majority_advantage_smoke.yaml`.
+Final checkpoints under
+`python/runs/phase4_mappo_majority_advantage_smoke/mappo/`. Alpha annealed
+from `0.2` to `0.0` by update 50, and eval used real reward with the
+majority term disabled. Best eval was update 10, mean reward `+0.948`,
+`0W/0L/20D`, score `0.00/0.00`, kills `8.0/2.0`. Later evals showed
+objective pressure did move but not in the desired direction: update 40 had
+Team A/B majority seconds `31.00/16.80`, uncontested seconds `0.00/2.50`,
+cap-progress gain `76.0`; update 50 real-reward eval was `0W/20L/0D`, score
+`0.00/2.90`, Team A/B majority seconds `31.00/16.80`, uncontested seconds
+`0.00/10.90`, cap-progress gain `239.0`.
+
+**Conclusion:** majority shaping produced nonzero majority windows and cap
+progress diagnostics, so the signal is live. It did not produce Team A score,
+and the annealed run exposed a sharper issue: Team A can own alive/majority
+windows while failing to create uncontested capture/scoring time, then Team B
+converts uncontested time when alpha is gone. The next design axis should be
+explicitly curriculum-only contest clearing/capture timing, or actor
+information/coordination, not another plain reward-scale tweak. Phase 4 is
+not cleared.
+
+## 2026-05-19 — Phase 4 objective timing fixed-easy long diagnostic
+
+**Reason/config:** tested the "episode too short / capture too slow" hypothesis
+directly by adding config-gated objective timing support with canonical defaults
+unchanged. The diagnostic config was
+`experiments/configs/phase4/probe/phase4_mappo_objective_timing_easy_long.yaml`,
+seed `3519994490`, commit
+`6c7785f82727d71466cc63d564a611ea7f8327b1`. It used `weak_basic_v2`,
+warm-started from `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`,
+ran walk-and-shoot BC for 500 steps, and trained for 250 updates with
+60-second rounds, objective unlock `5s`, capture `2s`, and majority
+advantage shaping annealed to zero by the final eval.
+
+**Implementation notes:** objective unlock/capture ticks are now explicit
+`MatchConfig` fields exposed through the Python bindings and config loader.
+The canonical defaults remain 15s unlock and 8s capture. Runtime trainer
+scheduling can push timing to sync or async vector envs, and eval logs the
+objective timing used. W&B required mode was added for long experiment configs
+so auth/network failures block instead of silently falling back to local-only
+tracking.
+
+**Verification:** CMake configure and build passed for Python 3.13. The
+extension was copied from the MSVC `Release/` output directory next to the
+Python package for native Windows import. Focused Python checks passed:
+`py -3.13 -m pytest tests/test_reward.py tests/test_phase4_mappo_env.py
+tests/test_mappo_team_spirit_ramp.py tests/test_mappo_bc_freeze.py
+tests/test_mappo_public_api.py tests/test_bindings_obs.py
+tests/test_obs_manifest.py -q` (`126 passed`, 2 pytest config warnings).
+C++ objective/determinism/obs checks passed:
+`ctest --test-dir build -C Release -R
+"Objective|Determinism|GoldenReplay|ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils"
+--output-on-failure` (`57 passed`). W&B preflight succeeded with run
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/5ftjfv8h`.
+
+**Run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/qpm9k6an`, runtime
+about 27.9 minutes. Checkpoints were written under
+`python/runs/phase4_mappo_objective_timing_easy_long/mappo/`, including
+`ckpt_0250.pt`, `ckpt_last.pt`, `ckpt_best_eval.pt`, `ckpt_final.pt`, and
+`checkpoint_manifest.json`. No replay artifact was produced by this training
+run.
+
+**BC/result:** BC eval remained draw-only despite the shortened objective:
+mean reward `+0.942`, `0W/0L/50D`, score `0.00/0.00`, Team A/B kills
+`8.0/0.0`, majority seconds `41.60/0.00`, uncontested seconds `0.00/0.00`,
+cap-progress gain `0.0`.
+
+**PPO result:** all evals at updates 25 through 250 were draw-only and
+scoreless. Final eval at update 250: mean reward `-0.356`, `0W/0L/50D`,
+score `0.00/0.00`, objective timing `5.00/2.00`, Team A/B kills `1.0/3.0`,
+Team A/B hit-fire `0.0217/0.4186`, aim error `1.231/1.908`, majority seconds
+`12.40/20.00`, uncontested seconds `0.00/0.00`, alive-edge-no-score seconds
+`8.00/16.00`, cap-progress gain `0.0`. The manifest selected the BC checkpoint
+as best eval (`best_eval_update_idx: 0`, score `+0.942`), not any PPO update.
+
+**Decision:** falsified / not cleared. The fixed-easy objective did not convert
+majority or kill advantage into uncontested capture, score, or wins by the
+250-update stop point, so objective unlock/capture duration is not sufficient
+as the primary blocker. Per the run strategy, do not spend another long run on
+the timing curriculum or 120s canonical control until the no-uncontested-time
+failure is addressed. The next design axis should focus on contest clearing
+and coordination: actor information/intent, objective entry/retreat behavior,
+or a curriculum that creates gradient specifically for clearing the last
+contester rather than merely shortening capture.
+
+## 2026-05-19 — Phase 4 current self-play BC probe and Team B action-frame fix
+
+**Reason/config:** implemented and tested the simplest Phase 4 current-vs-current
+self-play path: all six Ranger slots are controlled by the current MAPPO
+policy, with flat actor observations and per-agent centralized critic views.
+The primary W&B probe used
+`experiments/configs/phase4/probe/phase4_mappo_current_selfplay_bc_probe.yaml`,
+seed `3519994490`, base commit
+`6c7785f82727d71466cc63d564a611ea7f8327b1` with uncommitted self-play/action
+boundary changes in the working tree. The config ran 300 steps of
+`walk_and_shoot` BC, then 50 PPO updates with canonical 60s rounds and
+15s/8s objective timing. A longer sibling config,
+`experiments/configs/phase4/probe/phase4_mappo_current_selfplay_long.yaml`,
+now uses the same BC bootstrap for future 250-update runs.
+
+**Structural finding:** Phase 4 actor observations are team-relative, but
+learned Team B movement was entering the simulator without conversion back to
+world frame. This made BC move Team A toward objective while Team B moved in
+the wrong world direction. Fixed the action boundary so learned actions for
+slots 3-5 negate `move_x/move_y` before entering the sim; `aim_delta` is left
+unchanged because it is a relative angular delta. The same conversion was
+applied to the Phase 11 current/snapshot self-play wrapper, and replay dumping
+now writes Phase 4 self-play all-six policy actions in world frame.
+
+**Pre-fix W&B probe:** run
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/yajtva64`. It proved
+the BC bootstrap could produce one-sided objective progress but exposed the
+action-frame bug: final eval was `0W/0L/20D`, score `0.00/0.00`, kills
+`0.0/0.0`, Team A/B hit-fire `0.0000/0.0000`, Team A majority/uncontested
+seconds `16.20/16.20`, Team B `0.00/0.00`, cap-progress gain `163.0`.
+
+**Post-fix W&B probe:** run
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/naxqnky7`. Checkpoints
+under `python/runs/phase4_mappo_current_selfplay_bc_probe/mappo/`; manifest
+selected update 50 as best eval. BC eval after the fix already had combat:
+draw-only, score `0.00/0.00`, hit-fire `0.0161/0.0239`. Final update-50 eval:
+mean reward `-0.886`, `0W/0L/20D`, score `0.00/0.00`, Team A/B kills
+`3.0/1.0`, hit-fire `0.0217/0.0228`, visible-fire `0.956/0.956`, aim error
+`1.019/1.089`, majority seconds `1.00/3.90`, uncontested seconds `0.00/3.60`,
+cap-progress gain `106.0`. Rollout metrics showed agents reaching point:
+`self_on_point_fraction` peaked at `0.555` at update 30 and was `0.196` at
+update 50.
+
+**Replay artifact:** stochastic replay
+`data/replays/phase4_current_selfplay_bc_probe_ckpt0050_stochastic.replay`
+from `ckpt_final.pt`, seed `3519994490`, 600 decisions. Combat analyzer
+summary for that replay: final state score `0.00/0.00`, kills `0/1`;
+Team A/B fire commands `1797/1796`, visible-fire rates `0.955/1.000`,
+damage hits `21/25`, total damage `21000/25000` centi-HP, Team B kill deltas
+`1`, mean nearest-visible aim error `1.331/1.484` rad.
+
+**Verification:** focused checks passed:
+`py -3.13 -m pytest tests/test_phase4_current_selfplay.py
+tests/test_phase4_mappo_env.py tests/test_phase11_current_selfplay.py
+tests/test_mappo_loss_mask.py tests/test_train_dispatch.py -q`
+(`53 passed`, 2 pytest config warnings). Replay-specific checks passed:
+`py -3.13 -m pytest
+tests/test_phase4_checkpoint_replay_dump.py::test_dump_replay_supports_phase4_current_selfplay_checkpoint
+tests/test_phase4_current_selfplay.py tests/test_phase11_current_selfplay.py -q`
+(`14 passed`, 2 pytest config warnings).
+
+**Decision:** self-play plumbing is working and materially improves the Phase 4
+diagnostic surface: both teams can reach/contest point and combat now produces
+damage/kills. Phase 4 is not cleared: current self-play still produced only
+draws and no score conversion by update 50. The next useful run is the
+250-update BC self-play long config or a 100-150 update intermediate run,
+judged by score/cap conversion, sustained on-point fraction, hit-fire, damage,
+kills, and replay inspection rather than self-play win rate.
+
+## 2026-05-19 — Phase 4 self-play long runs and anchor-transfer check
+
+**Reason/configs:** continued the current-vs-current Phase 4 self-play path
+with longer W&B runs and explicit gate verification. Base commit before local
+changes remains `6c7785f82727d71466cc63d564a611ea7f8327b1`; all results below
+also include the uncommitted self-play/action-frame/curriculum working-tree
+changes. Primary configs were
+`experiments/configs/phase4/probe/phase4_mappo_current_selfplay_long.yaml`
+and
+`experiments/configs/phase4/probe/phase4_mappo_current_selfplay_curriculum_long.yaml`,
+seed `3519994490`.
+
+**Evaluator/replay infrastructure:** extended
+`python/scripts/eval_mappo_matrix.py` so a six-agent Phase 4 current-self-play
+checkpoint can be evaluated as a three-agent Team A or Team B policy against
+scripted anchor bots. Matrix rows now include the full eval-stat dictionary,
+including combat/objective diagnostics. Fixed a runtime objective-timing setter
+bug where configs using `objective_*_seconds` could later also receive
+`objective_*_ticks` from the curriculum scheduler, causing reset-time config
+validation failures. Replay artifacts:
+`data/replays/phase4_current_selfplay_long_ckpt0225_stochastic.replay` and
+`data/replays/phase4_current_selfplay_curriculum_ckpt0225_greedy.replay`.
+
+**Canonical self-play long run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/t9rpy6pe`, config
+`phase4_mappo_current_selfplay_long.yaml`, checkpoints under
+`python/runs/phase4_mappo_current_selfplay_long/mappo/`. The manifest selected
+update 225 as best eval: `0W/0L/50D`, score `0.00/3.47`, kills `2.0/5.0`.
+Final update 250 was still nonzero but lower: score `0.00/2.20`, kills
+`1.0/6.0`. This was the first credible nonzero self-play score signal, but it
+was Team B-heavy and self-play win/loss/draw counts remained draw-only by
+construction.
+
+**Anchor transfer for canonical self-play:** matrix artifact
+`python/runs/phase4_mappo_current_selfplay_long/mappo/anchor_eval_ckpt0225.json`.
+As Team A, `ckpt_final.pt` drew `50/50` vs `noop` with score `0.00/0.00`,
+lost `50/50` vs `weak_basic_v2` with score `0.00/5.97`, and lost `50/50` vs
+`basic` with score `0.00/29.37`. As Team B, artifact
+`anchor_eval_ckpt0225_team_b.json`, it also drew vs `noop` and lost all games
+to `weak_basic_v2`/`basic` while scoring zero. A 10-episode checkpoint scan
+(`anchor_scan_team_a_10ep.json`) found no saved checkpoint that scored against
+`noop`; all had only about `1.4s` uncontested time and zero score.
+
+**Curriculum self-play long run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/78b07kac`, config
+`phase4_mappo_current_selfplay_curriculum_long.yaml`, output
+`python/runs/phase4_mappo_current_selfplay_curriculum_long_v2/mappo/`.
+This added warm-start from `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`,
+5s/2s -> 15s/8s objective timing curriculum, and majority-on-point advantage
+shaping annealed to zero by update 300. The first attempt
+(`dogvblxb`) exposed the setter bug above and is not usable. The restarted run
+completed 300 updates. The manifest selected update 225 as best eval:
+`0W/0L/50D`, score `6.53/0.00`, kills `0.0/2.0`. The strongest canonical
+self-play eval observed in logs was update 200: score `6.90/0.00`, Team A
+uncontested `15.50s`, cap-progress gain `252` ticks. Final update 300 had the
+curriculum fully annealed back to canonical timing/reward and regressed to
+score `0.00/0.00`, Team A/B majority seconds `0.80/11.00`, Team A uncontested
+`0.80s`, cap-progress gain `19`.
+
+**Anchor transfer for curriculum self-play:** matrix artifact
+`python/runs/phase4_mappo_current_selfplay_curriculum_long_v2/mappo/anchor_eval_key_ckpts_team_a.json`
+evaluated checkpoints 200, 225, 275, and 300 against `noop`, `weak_basic_v2`,
+and `basic` for 50 episodes each. All four checkpoints drew vs `noop` with
+zero score; each had only `1.4s` Team A uncontested time and `12-13`
+cap-progress ticks. All four lost every game to `weak_basic_v2` and `basic`.
+Against `weak_basic_v2`, Team B scored about `31.4-31.7` while Team A scored
+zero, despite Team A logging about `15-16s` majority time and zero uncontested
+time.
+
+**Replay inspection:** the curriculum greedy replay from `ckpt_0225.pt` was
+scoreless (`0.00/0.00`, no kills). Combat was symmetric and continuous:
+Team A/B fire commands `1800/1800`, damage hits `29/29`, total damage
+`29000/29000` centi-HP, visible-fire rate `1.000/1.000`, mean aim error
+`1.663/1.617` rad. Note: the current replay header does not encode objective
+timing overrides, so timing-curriculum replays are useful for action/combat
+inspection but not perfect reproduction of non-canonical eval timing.
+
+**Verification:** focused checks passed:
+`py -3.13 -m pytest tests/test_phase4_mappo_env.py
+tests/test_mappo_team_spirit_ramp.py tests/test_mappo_matrix_eval.py
+tests/test_phase4_current_selfplay.py -q` (`55 passed`, 2 pytest config
+warnings).
+
+**Decision:** not cleared. The curriculum produced real self-play objective
+conversion and is a stronger signal than the canonical self-play run, but the
+behavior does not transfer to anchor bots and is not stable after annealing.
+The structural failure is now sharper: policies can score in current-vs-current
+self-play under some timing/curriculum states, but against anchors they do not
+hold point long enough even against `noop`, and against `weak_basic_v2` they
+create majority windows without any uncontested time while the bot converts
+uncontested control. Next work should not be "just run longer" on plain
+current self-play; it should introduce anchor mixing or an explicit hold/capture
+behavior objective so the learned policy has to transfer outside the
+self-play opponent distribution.
+
+## 2026-05-19 - Phase 4 anchor-mixed current self-play long run
+
+**Reason/config:** tested the simplest anchor-mixed Phase 4 self-play path after
+the curriculum run showed non-transferable current-vs-current scoring. Config
+`experiments/configs/phase4/probe/phase4_mappo_current_selfplay_anchor_mix_long.yaml`,
+seed `3519994490`, base commit `6c7785f82727d71466cc63d564a611ea7f8327b1`
+plus the uncommitted Phase 4 self-play/action-frame/curriculum/eval changes.
+The run warm-started from
+`python/runs/phase4_mappo_current_selfplay_curriculum_long_v2/mappo/ckpt_0200.pt`
+and used schedule weights current `0.4`, anchor `0.6`, anchor bot
+`weak_basic_v2`, objective timing `10s/5s -> 15s/8s`, and majority advantage
+shaping `0.05 -> 0`.
+
+**W&B/run:** W&B
+`https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/dvolnkls`, output under
+`python/runs/phase4_mappo_current_selfplay_anchor_mix_long/mappo/`. The trainer
+completed 300 updates. Manifest:
+`best_eval_update_idx=75`, `best_eval_score=2.94e-07`, best eval stats
+`0W/34L/16D`, score `0.00/25.07`, kills `4.72/0.64`. Final canonical eval at
+update 300 was `0W/34L/16D`, score `0.00/13.08`, kills `5.7/1.0`, Team A/B
+majority seconds `15.98/18.56`, uncontested seconds `0.00/18.56`, cap-progress
+gain `161.8`.
+
+**Observed self-play trajectory:** anchor mixing reduced Team B score compared
+with some earlier checkpoints but never produced a Team A canonical win. The
+best-looking Team A scoring point was update 125 canonical eval: `0W/35L/15D`,
+score `4.23/15.19`, kills `5.8/1.2`, Team A/B majority seconds `21.36/26.87`,
+uncontested seconds `6.63/20.86`. Later checkpoints reduced Team B score to
+about `8.88-13.08` but Team A score returned to zero.
+
+**Anchor transfer:** matrix artifact
+`python/runs/phase4_mappo_current_selfplay_anchor_mix_long/mappo/anchor_eval_key_ckpts_team_a.json`
+evaluated checkpoints 25, 75, 125, 250, and 300 against `noop`,
+`weak_basic_v2`, and `basic` for 50 episodes each. Every checkpoint drew
+`50/50` vs `noop` with score `0.00/0.00`. Every checkpoint lost `50/50` to
+`weak_basic_v2` and `basic` with Team A score `0.00`. Against `weak_basic_v2`,
+opponent score improved from `28.13` at update 25 to `21.53` at update 300, but
+that is still no gate evidence because Team A never scored or won.
+
+**Replay inspection:** replay artifact
+`data/replays/phase4_current_selfplay_anchor_mix_ckpt0125_greedy.replay` from
+update 125, seed `3519994490`, 600 decisions. Combat analyzer summary: final
+score `0.00/0.00`, kills `2/2`, Team A/B fire commands `1800/1800`, visible
+fire rate `0.956/0.956`, damage hits `34/32`, total damage `34000/32000`
+centi-HP, mean nearest-visible aim error `1.207/1.269` rad. This replay did
+not show stable capture conversion; it looked like symmetric combat pressure
+with scoreless objective play.
+
+**Verification:** focused checks passed:
+`py -3.13 -m pytest tests/test_phase4_current_selfplay.py
+tests/test_mappo_loss_mask.py tests/test_phase4_mappo_env.py
+tests/test_mappo_team_spirit_ramp.py tests/test_mappo_matrix_eval.py -q`
+(`65 passed`, 2 pytest config warnings).
+
+**Decision:** not cleared. The run is a useful diagnostic success but not a
+Phase 4 success. Anchor mixing in this form did not produce transferable
+hold/capture behavior; it mostly preserved a Team A kill edge while Team B
+still converted uncontested objective time. The next experiment should change
+the learning target more directly: add explicit hold/capture pressure or staged
+capture drills, and evaluate against anchors before spending another long run
+on current-vs-current self-play.

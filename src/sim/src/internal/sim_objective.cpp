@@ -24,14 +24,19 @@ static bool inside_objective(const common::Vec2& pos, const MapBounds& map) {
 
 void objective_tick_update(ObjectiveState& obj,
                            const std::array<HeroState, kAgentsPerMatch>& heroes,
-                           common::Tick now, const MapBounds& map) {
-    // Initial lock: no state changes during the first kObjectiveLockTicks
+                           common::Tick now, const MatchConfig& config) {
+    const MapBounds& map = config.map;
+    const std::uint32_t unlock_ticks = config.objective_unlock_ticks;
+    const std::uint32_t capture_ticks = config.objective_capture_ticks;
+
+    // Initial lock: no state changes during the first objective_unlock_ticks
     // ticks. The `now + 1` comparison is because state.tick is incremented
     // AFTER this function runs — callers observe tick N's state after
-    // calling sim.step() N+1 times. Unlock during tick kObjectiveLockTicks-1
+    // calling sim.step() N+1 times. Unlock during tick unlock_ticks-1
     // processing so "15 seconds of lock" is observable after exactly
-    // kObjectiveLockTicks sim.step() calls.
-    if (now + 1 < common::kObjectiveLockTicks) {
+    // objective_unlock_ticks sim.step() calls. Once unlocked, runtime
+    // curriculum updates must not re-lock an in-progress episode.
+    if (!obj.unlocked && now + 1 < unlock_ticks) {
         obj.unlocked = false;
         return;
     }
@@ -93,9 +98,9 @@ void objective_tick_update(ObjectiveState& obj,
         } else {
             // Case 4: uncontested by non-owner — cap.
             if (obj.cap_team == present_team) {
-                if (obj.cap_progress_ticks < common::kCaptureTicks) {
+                if (obj.cap_progress_ticks < capture_ticks) {
                     obj.cap_progress_ticks += 1;
-                    if (obj.cap_progress_ticks == common::kCaptureTicks) {
+                    if (obj.cap_progress_ticks == capture_ticks) {
                         obj.owner = present_team;
                         obj.cap_progress_ticks = 0;
                         obj.cap_team = common::Team::Neutral;
@@ -114,7 +119,7 @@ void objective_tick_update(ObjectiveState& obj,
 
     X2_INVARIANT(obj.team_a_score_ticks >= a_before, common::ErrorCode::CorruptState);
     X2_INVARIANT(obj.team_b_score_ticks >= b_before, common::ErrorCode::CorruptState);
-    X2_INVARIANT(obj.cap_progress_ticks <= common::kCaptureTicks, common::ErrorCode::CorruptState);
+    X2_INVARIANT(obj.cap_progress_ticks <= capture_ticks, common::ErrorCode::CorruptState);
     X2_INVARIANT(obj.team_a_score_ticks <= common::kWinTicks, common::ErrorCode::CorruptState);
     X2_INVARIANT(obj.team_b_score_ticks <= common::kWinTicks, common::ErrorCode::CorruptState);
 }
