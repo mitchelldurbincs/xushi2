@@ -633,3 +633,84 @@ def test_on_point_shaping_rewards_phase4_objective_contact():
         env.close()
 
     assert total_reward > 0.0
+
+from xushi2.reward_components import CumulativeClipper
+
+
+class _LegacyScalarRewardCalculator:
+    """Frozen pre-refactor scalar reward path for regression parity checks."""
+
+    def __init__(self):
+        self._score_per_second = 0.01
+        self._kill_bonus = 0.25
+        self._death_penalty = 0.25
+        self._time_penalty_per_second = 0.05
+        self._prev = _FakeSim()
+        self._clip_a = 0.0
+        self._clip_b = 0.0
+
+    def reset(self, sim):
+        self._prev = _FakeSim()
+        self._prev.team_a_score_ticks = sim.team_a_score_ticks
+        self._prev.team_b_score_ticks = sim.team_b_score_ticks
+        self._prev.team_a_kills = sim.team_a_kills
+        self._prev.team_b_kills = sim.team_b_kills
+        self._clip_a = 0.0
+        self._clip_b = 0.0
+
+    def _apply(self, raw, team):
+        old = self._clip_a if team == "a" else self._clip_b
+        new = min(3.0, max(-3.0, old + raw))
+        if team == "a":
+            self._clip_a = new
+        else:
+            self._clip_b = new
+        return new - old
+
+    def step(self, sim):
+        a_s = (sim.team_a_score_ticks - self._prev.team_a_score_ticks) / float(_cpp.TICK_HZ)
+        b_s = (sim.team_b_score_ticks - self._prev.team_b_score_ticks) / float(_cpp.TICK_HZ)
+        a_k = sim.team_a_kills - self._prev.team_a_kills
+        b_k = sim.team_b_kills - self._prev.team_b_kills
+        raw_a = self._score_per_second * a_s - self._score_per_second * b_s + self._kill_bonus * a_k - self._death_penalty * b_k
+        raw_b = -raw_a
+        tp = -self._time_penalty_per_second / float(_cpp.TICK_HZ)
+        raw_a += tp
+        raw_b += tp
+        ra = self._apply(raw_a, "a")
+        rb = self._apply(raw_b, "b")
+        self._prev.team_a_score_ticks = sim.team_a_score_ticks
+        self._prev.team_b_score_ticks = sim.team_b_score_ticks
+        self._prev.team_a_kills = sim.team_a_kills
+        self._prev.team_b_kills = sim.team_b_kills
+        return ra, rb
+
+
+def test_cumulative_clipper_isolated_behavior():
+    clip = CumulativeClipper(1.0)
+    assert clip.apply_clip(0.7, "a") == pytest.approx(0.7)
+    assert clip.apply_clip(0.7, "a") == pytest.approx(0.3)
+    assert clip.apply_clip(-3.0, "a") == pytest.approx(-2.0)
+    assert clip.cumulative_shaped_a == pytest.approx(-1.0)
+
+
+def test_regression_scalar_old_vs_new_on_synthetic_trajectory():
+    sim = _FakeSim()
+    new = RewardCalculator(time_penalty_per_second=0.05)
+    old = _LegacyScalarRewardCalculator()
+    new.reset(sim)
+    old.reset(sim)
+
+    traj = [
+        (0, 0, 0, 0),
+        (_cpp.TICK_HZ // 2, 0, 1, 0),
+        (_cpp.TICK_HZ, _cpp.TICK_HZ // 3, 1, 1),
+        (_cpp.TICK_HZ, _cpp.TICK_HZ, 2, 1),
+        (_cpp.TICK_HZ * 2, _cpp.TICK_HZ, 2, 3),
+    ]
+    for a_ticks, b_ticks, a_k, b_k in traj:
+        sim.team_a_score_ticks = a_ticks
+        sim.team_b_score_ticks = b_ticks
+        sim.team_a_kills = a_k
+        sim.team_b_kills = b_k
+        assert new.step(sim) == pytest.approx(old.step(sim))
