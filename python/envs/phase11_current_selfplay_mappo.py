@@ -36,6 +36,7 @@ from xushi2.snapshot_policy import SnapshotPolicy
 __all__ = ["Phase11CurrentSelfplayMappoEnv"]
 
 _AGENTS_PER_MATCH = _cpp.AGENTS_PER_MATCH
+_PHASE11_PER_AGENT_REWARDS = False
 
 
 class Phase11CurrentSelfplayMappoEnv(gym.Env):
@@ -62,6 +63,13 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         super().__init__()
         self._base_sim_cfg = dict(sim_cfg)
         self._reward_cfg = dict(reward_cfg or {})
+        cfg_per_agent = self._reward_cfg.get("per_agent_rewards")
+        if cfg_per_agent is not None and bool(cfg_per_agent) != _PHASE11_PER_AGENT_REWARDS:
+            raise ValueError(
+                "Phase11CurrentSelfplayMappoEnv requires reward_cfg['per_agent_rewards']=False "
+                "because step() duplicates team-scalar rewards across each team's three rows"
+            )
+        self._reward_cfg["per_agent_rewards"] = _PHASE11_PER_AGENT_REWARDS
         self._reward_calc = RewardCalculator(**self._reward_cfg)
         self._fog_mode = str(fog_mode)
         self._team_shared = self._fog_mode == "team_shared"
@@ -196,25 +204,46 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._sim.step_decision(actions)
 
         r_a, r_b = self._reward_calc.step(self._sim)
-        team_rewards = [float(r_a)] * 3 + [float(r_b)] * 3
+        team_a_step, team_b_step = self._coerce_team_scalar_rewards(r_a, r_b, source="step")
+        team_rewards = [team_a_step] * 3 + [team_b_step] * 3
         terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
         truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
+            team_a_term, team_b_term = self._coerce_team_scalar_rewards(ta, tb, source="add_terminal")
             for i in range(3):
-                team_rewards[i] += float(ta)
-                team_rewards[i + 3] += float(tb)
+                team_rewards[i] += team_a_term
+                team_rewards[i + 3] += team_b_term
 
         self._build_actor_obs_all()
         info = self._make_info()
-        info["reward_team_a"] = float(r_a)
-        info["reward_team_b"] = float(r_b)
+        info["reward_team_a"] = float(team_a_step)
+        info["reward_team_b"] = float(team_b_step)
         return (
             self._convert_obs(),
             np.asarray(team_rewards, dtype=np.float32),
             terminated,
             truncated,
             info,
+        )
+
+    def _coerce_team_scalar_rewards(self, reward_a: Any, reward_b: Any, *, source: str) -> tuple[float, float]:
+        if _PHASE11_PER_AGENT_REWARDS:
+            raise RuntimeError("Phase-11 current self-play env expects scalar team rewards contract")
+        team_a = self._coerce_single_team_scalar_reward(reward_a, team_name="A", source=source)
+        team_b = self._coerce_single_team_scalar_reward(reward_b, team_name="B", source=source)
+        return team_a, team_b
+
+    @staticmethod
+    def _coerce_single_team_scalar_reward(value: Any, *, team_name: str, source: str) -> float:
+        arr = np.asarray(value, dtype=np.float32)
+        if arr.ndim == 0:
+            return float(arr)
+        if arr.ndim == 1 and arr.shape[0] == 1:
+            return float(arr[0])
+        raise ValueError(
+            "Phase11CurrentSelfplayMappoEnv expected scalar team reward from "
+            f"RewardCalculator.{source} for Team {team_name}, got shape {arr.shape}"
         )
 
     def build_critic_obs(self, out: np.ndarray) -> None:
