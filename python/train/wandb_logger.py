@@ -21,7 +21,6 @@ from typing import Any, Protocol
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_PROJECT = "xushi2"
-DEFAULT_ENTITY = "mitchelldurbinuky-aspect"
 
 
 class WandbLogger(Protocol):
@@ -95,20 +94,23 @@ def make_logger(
         if isinstance(cfg_section, dict):
             wandb_cfg = cfg_section
 
+    project = os.environ.get("WANDB_PROJECT") or wandb_cfg.get("project") or DEFAULT_PROJECT
+    entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity")
+    group = wandb_cfg.get("group")
+
     if not wandb_cfg.get("enabled", True):
+        _LOGGER.info("W&B startup: project=%r entity=%r logger=null", project, entity)
         return _NullLogger()
     if os.environ.get("WANDB_MODE", "").lower() == "disabled":
+        _LOGGER.info("W&B startup: project=%r entity=%r logger=null", project, entity)
         return _NullLogger()
 
     try:
         import wandb
     except ImportError:
+        _LOGGER.info("W&B startup: project=%r entity=%r logger=null", project, entity)
         _LOGGER.warning("wandb not installed; metrics will not be logged")
         return _NullLogger()
-
-    project = os.environ.get("WANDB_PROJECT") or wandb_cfg.get("project") or DEFAULT_PROJECT
-    entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity") or DEFAULT_ENTITY
-    group = wandb_cfg.get("group")
 
     enriched_config = dict(run_config)
     commit = _git_commit_short()
@@ -126,7 +128,9 @@ def make_logger(
             reinit="finish_previous",
         )
     except Exception as exc:
+        _LOGGER.info("W&B startup: project=%r entity=%r logger=null", project, entity)
         _LOGGER.warning("wandb.init failed (%s); metrics will not be logged", exc)
         return _NullLogger()
 
+    _LOGGER.info("W&B startup: project=%r entity=%r logger=active", project, entity)
     return _ActiveLogger(run)
