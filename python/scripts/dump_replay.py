@@ -41,7 +41,7 @@ from eval.eval_phase3 import load_checkpoint as load_phase3_checkpoint
 from scripts.replay_dump.rollout import (
     dump_mappo,
     dump_phase3,
-    load_phase4_checkpoint,
+    load_mappo_checkpoint,
 )
 
 
@@ -72,7 +72,7 @@ def main() -> int:
     raw_ckpt = torch.load(Path(args.checkpoint), map_location="cpu", weights_only=False)
     ckpt_config = dict(raw_ckpt.get("config", {}))
     if "mappo" in ckpt_config:
-        model, ckpt_config = load_phase4_checkpoint(args.checkpoint)
+        model, ckpt_config = load_mappo_checkpoint(args.checkpoint)
         n_decisions = dump_mappo(
             model,
             ckpt_config,

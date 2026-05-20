@@ -57,6 +57,13 @@ def test_format_phase_banner_phase4_selfplay() -> None:
     assert "mappo" in banner
 
 
+def test_format_phase_banner_uses_experiment_phase_metadata() -> None:
+    n = _normalized(4, learner_kind="mappo", env_kind="mappo_match")
+    banner = format_phase_banner(n, "unknown")
+    assert "phase=phase4" in banner
+    assert "phase=unknown" not in banner
+
+
 def test_run_phase_unsupported() -> None:
     rc = run_phase(
         _normalized(99, learner_kind="unknown", env_kind="unknown"),

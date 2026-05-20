@@ -36,6 +36,7 @@ learner and environment behavior should be selected through explicit runtime
 specs such as `learner.kind` and `env.kind`. Legacy phase configs are adapted
 through `train.runtime_specs.resolve_runtime_spec`; new training code should
 consume the runtime spec rather than branching on numeric phase ranges.
+See `docs/architecture/runtime_specs.md` for the runtime/phase split.
 
 ## Import direction rules
 

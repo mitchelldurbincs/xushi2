@@ -8,7 +8,7 @@ import numpy as np
 from train.mappo_eval_gate_io import read_json_artifact, write_json_artifact
 from train.mappo_evaluate import evaluate_mappo
 from train.mappo_model import MappoActorCritic, MappoEvalStats
-from train.runtime_specs import resolve_runtime_spec
+from train.checkpoint_runtime import checkpoint_runtime
 from xushi2.mappo_matrix_gate import check_matrix_gate
 
 
@@ -40,20 +40,33 @@ class MatrixEvalConfig:
         )
 
 
-def matrix_native_bot_env_fn(phase: int, ckpt_env_cfg: CheckpointEnvConfig, bot: str):
-    eval_phase = 8 if int(phase) == 9 else int(phase)
+def matrix_native_bot_env_fn(
+    ckpt_env_cfg: CheckpointEnvConfig,
+    bot: str,
+    mappo_cfg: dict | None = None,
+):
     env_cfg = dict(ckpt_env_cfg.values)
+    env_cfg.pop("self_play", None)
+    env_cfg.pop("match_type", None)
+    env_cfg.pop("snapshot_paths", None)
+    env_cfg.pop("snapshot_league", None)
+    env_cfg.pop("self_play_schedule", None)
     env_cfg.update({"opponent_bot": str(bot), "learner_team": "A"})
-    runtime = resolve_runtime_spec({"phase": eval_phase, "env": env_cfg})
+    env_cfg["n_agents"] = 3
+    runtime = checkpoint_runtime({"env": env_cfg, "mappo": dict(mappo_cfg or {})}).runtime
     if runtime.env_fn is None:
         raise ValueError("matrix native-bot eval requires an environment runtime")
     return runtime.env_fn
 
 
-def matrix_snapshot_env_fn(ckpt_env_cfg: CheckpointEnvConfig, snapshot_path: str):
+def matrix_snapshot_env_fn(
+    ckpt_env_cfg: CheckpointEnvConfig,
+    snapshot_path: str,
+    mappo_cfg: dict | None = None,
+):
     env_cfg = dict(ckpt_env_cfg.values)
     env_cfg.update({"opponent_bot": "snapshot", "learner_team": "A", "snapshot_paths": [snapshot_path], "snapshot_league": {"latest": [snapshot_path], "weights": {"latest": 1.0}}})
-    runtime = resolve_runtime_spec({"phase": 9, "env": env_cfg})
+    runtime = checkpoint_runtime({"env": env_cfg, "mappo": dict(mappo_cfg or {})}).runtime
     if runtime.env_fn is None:
         raise ValueError("matrix snapshot eval requires an environment runtime")
     return runtime.env_fn
@@ -75,10 +88,14 @@ def matrix_gate_label(value: bool | None) -> str:
     return "ungated" if value is None else ("pass" if value else "fail")
 
 
-def matrix_current_selfplay_env_fn(ckpt_env_cfg: CheckpointEnvConfig):
+def matrix_current_selfplay_env_fn(
+    ckpt_env_cfg: CheckpointEnvConfig,
+    mappo_cfg: dict | None = None,
+):
     env_cfg = dict(ckpt_env_cfg.values)
     env_cfg["self_play_schedule"] = {"weights": {"current": 1.0, "snapshot": 0.0, "anchor": 0.0}}
-    runtime = resolve_runtime_spec({"phase": 11, "env": env_cfg})
+    env_cfg["n_agents"] = 6
+    runtime = checkpoint_runtime({"env": env_cfg, "mappo": dict(mappo_cfg or {})}).runtime
     if runtime.env_fn is None:
         raise ValueError("matrix current-selfplay eval requires an environment runtime")
     return runtime.env_fn
@@ -86,14 +103,15 @@ def matrix_current_selfplay_env_fn(ckpt_env_cfg: CheckpointEnvConfig):
 
 def run_mappo_matrix_eval(*, model: MappoActorCritic, phase: int, ckpt_env_cfg: CheckpointEnvConfig, matrix_cfg: MatrixEvalConfig, output_dir: Path, seed: int) -> list[dict]:
     rows: list[dict] = []
-    if int(phase) == 11 and model.cfg.n_agents == 6 and matrix_cfg.current_selfplay:
-        stats = evaluate_mappo(model, matrix_current_selfplay_env_fn(ckpt_env_cfg), episodes=matrix_cfg.episodes, seed=seed + 720_000)
+    mappo_cfg = dict(model.cfg.__dict__)
+    if model.cfg.n_agents == 6 and matrix_cfg.current_selfplay:
+        stats = evaluate_mappo(model, matrix_current_selfplay_env_fn(ckpt_env_cfg, mappo_cfg), episodes=matrix_cfg.episodes, seed=seed + 720_000)
         rows.append(mappo_matrix_row(learner="ckpt_final.pt", opponent="current", opponent_type="selfplay", stats=stats))
     for i, bot in enumerate(matrix_cfg.anchor_bots):
-        stats = evaluate_mappo(model, matrix_native_bot_env_fn(phase, ckpt_env_cfg, bot), episodes=matrix_cfg.episodes, seed=seed + 700_000 + 100*i)
+        stats = evaluate_mappo(model, matrix_native_bot_env_fn(ckpt_env_cfg, bot, mappo_cfg), episodes=matrix_cfg.episodes, seed=seed + 700_000 + 100*i)
         rows.append(mappo_matrix_row(learner="ckpt_final.pt", opponent=bot, opponent_type="bot", stats=stats))
     for i, opp in enumerate(matrix_cfg.opponent_checkpoints):
-        stats = evaluate_mappo(model, matrix_snapshot_env_fn(ckpt_env_cfg, opp), episodes=matrix_cfg.episodes, seed=seed + 710_000 + 100*i)
+        stats = evaluate_mappo(model, matrix_snapshot_env_fn(ckpt_env_cfg, opp, mappo_cfg), episodes=matrix_cfg.episodes, seed=seed + 710_000 + 100*i)
         rows.append(mappo_matrix_row(learner="ckpt_final.pt", opponent=Path(opp).name, opponent_type="snapshot", stats=stats))
     if rows:
         write_json_artifact(output_dir / matrix_cfg.output, rows)

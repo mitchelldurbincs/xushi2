@@ -10,7 +10,7 @@ import torch
 
 from train.common_orchestration import LoopConfig, run_training_loop
 from train.composition_rehearsal import (
-    build_phase4_env_fn_with_overrides,
+    build_mappo_env_fn_with_overrides,
     composition_rehearsal_pretrain,
     load_frozen_mappo_teacher,
     run_composition_diagnostics,
@@ -250,15 +250,15 @@ def maybe_run_composition_pretrain(
         )
     objective_teacher = load_frozen_mappo_teacher(objective_teacher_ckpt)
     combat_teacher = load_frozen_mappo_teacher(combat_teacher_ckpt)
-    objective_env_fn = build_phase4_env_fn_with_overrides(
+    objective_env_fn = build_mappo_env_fn_with_overrides(
         context.ckpt_env_cfg,
         dict(run_cfg.get("composition_objective_env", {})),
     )
-    combat_env_fn = build_phase4_env_fn_with_overrides(
+    combat_env_fn = build_mappo_env_fn_with_overrides(
         context.ckpt_env_cfg,
         dict(run_cfg.get("composition_combat_env", {})),
     )
-    full_eval_env_fn = build_phase4_env_fn_with_overrides(
+    full_eval_env_fn = build_mappo_env_fn_with_overrides(
         context.ckpt_env_cfg,
         {"opponent_bot": "weak_basic_v2", "mini_game": None, "mini_game_config": {}},
     )

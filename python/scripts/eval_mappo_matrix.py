@@ -20,8 +20,8 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
+from train.checkpoint_runtime import checkpoint_runtime
 from train.mappo_evaluate import eval_stats_dict
-from train.runtime_specs import resolve_runtime_spec
 
 
 def _load_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
@@ -36,26 +36,17 @@ def _load_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     return model, ckpt_config
 
 
-def _phase4_current_selfplay_checkpoint(model: MappoActorCritic, ckpt_config: dict) -> bool:
-    env_cfg = dict(ckpt_config.get("env", {}))
-    self_play_cfg = dict(env_cfg.get("self_play", {}))
-    return (
-        int(ckpt_config.get("phase", 4)) == 4
-        and int(model.cfg.n_agents) == 6
-        and bool(self_play_cfg.get("enabled", False))
-    )
-
-
 def _native_bot_eval_model(
     model: MappoActorCritic,
     ckpt_config: dict,
 ) -> MappoActorCritic:
     if int(model.cfg.n_agents) == 3:
         return model
-    if not _phase4_current_selfplay_checkpoint(model, ckpt_config):
+    runtime = checkpoint_runtime(ckpt_config)
+    if not runtime.current_selfplay:
         raise ValueError(
-            "native bot matrix eval supports 3-agent checkpoints and Phase 4 "
-            f"current-self-play checkpoints; got n_agents={model.cfg.n_agents}"
+            "native bot matrix eval supports 3-agent checkpoints and current-self-play "
+            f"checkpoints; got n_agents={model.cfg.n_agents}"
         )
 
     adapted_cfg = replace(
@@ -71,17 +62,19 @@ def _native_bot_eval_model(
 
 
 def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
-    phase = int(ckpt_config.get("phase", 4))
-    if phase == 9:
-        phase = 8
     if learner_team not in ("A", "B"):
         raise ValueError(f"learner_team must be A or B, got {learner_team!r}")
     env_cfg = dict(ckpt_config.get("env", {}))
     env_cfg.pop("self_play", None)
     env_cfg.pop("match_type", None)
+    env_cfg.pop("snapshot_paths", None)
+    env_cfg.pop("snapshot_league", None)
+    env_cfg.pop("self_play_schedule", None)
     env_cfg["opponent_bot"] = str(bot)
     env_cfg["learner_team"] = learner_team
-    runtime = resolve_runtime_spec({"phase": phase, "env": env_cfg})
+    env_cfg["n_agents"] = 3
+    ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
+    runtime = ckpt_runtime.runtime
     if runtime.learner.kind != "mappo" or runtime.env_fn is None:
         raise ValueError(
             "native bot matrix eval requires a MAPPO runtime, "
@@ -99,7 +92,8 @@ def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
         "latest": [snapshot_path],
         "weights": {"latest": 1.0},
     }
-    runtime = resolve_runtime_spec({"phase": 9, "env": env_cfg})
+    ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
+    runtime = ckpt_runtime.runtime
     if runtime.learner.kind != "mappo" or runtime.env_fn is None:
         raise ValueError(
             "snapshot matrix eval requires a MAPPO runtime, "

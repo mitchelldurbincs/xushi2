@@ -288,7 +288,7 @@ def composition_rehearsal_pretrain(
     return last_metrics
 
 
-def build_phase4_env_fn_with_overrides(
+def build_mappo_env_fn_with_overrides(
     base_env_cfg: dict[str, Any],
     overrides: dict[str, Any] | None,
 ) -> Callable[[], gym.Env]:
@@ -334,6 +334,10 @@ def build_phase4_env_fn_with_overrides(
         target_slot=bool(env_cfg.get("target_slot", False)),
         n_agents=int(env_cfg.get("n_agents", env_cfg.get("team_size", 3))),
     )
+
+
+# Compatibility alias for existing imports.
+build_phase4_env_fn_with_overrides = build_mappo_env_fn_with_overrides
 
 
 def evaluate_objective_on_point(

@@ -6,6 +6,7 @@ import yaml
 
 from tests.test__paths import config_path
 from train.mappo import make_mappo_config
+from train.checkpoint_runtime import checkpoint_runtime
 from train.runtime_specs import resolve_runtime_spec
 from train.train import normalize_entry_config
 
@@ -32,6 +33,11 @@ def _explicit_phase4_equivalent_config() -> dict:
         "current_selfplay": False,
     }
     return cfg
+
+
+def _runtime_mappo_flat_smoke_config() -> dict:
+    with open(config_path("runtime/mappo_flat_smoke.yaml"), encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
 
 
 def test_legacy_phase_config_resolves_to_runtime_spec() -> None:
@@ -68,3 +74,41 @@ def test_explicit_runtime_config_does_not_need_top_level_phase_for_dispatch() ->
     assert normalized.phase_label == "phase4"
     assert normalized.learner_kind == "mappo"
     assert normalized.env_kind == "mappo_match"
+
+
+def test_explicit_runtime_yaml_builds_mappo_config_without_top_level_phase() -> None:
+    config = _runtime_mappo_flat_smoke_config()
+
+    assert "phase" not in config
+    runtime = resolve_runtime_spec(config)
+    cfg = make_mappo_config(config)
+
+    assert runtime.experiment.phase == 4
+    assert runtime.learner.kind == "mappo"
+    assert runtime.env.kind == "mappo_match"
+    assert runtime.env.actor_obs == "flat"
+    assert cfg.obs_dim == 31
+    assert cfg.critic_obs_dim == 135
+    assert cfg.n_agents == 3
+
+
+def test_checkpoint_runtime_reconstructs_legacy_mappo_from_model_shapes() -> None:
+    legacy = _phase4_smoke_config()
+    cfg = make_mappo_config(legacy)
+    runtime = checkpoint_runtime(
+        {
+            "phase": 4,
+            "env": {
+                "sim": legacy["env"]["sim"],
+                "opponent_bot": "noop",
+                "learner_team": "A",
+            },
+            "mappo": cfg.__dict__,
+        }
+    )
+
+    assert runtime.runtime.learner.kind == "mappo"
+    assert runtime.runtime.env.kind == "mappo_match"
+    assert runtime.runtime.env.actor_obs == "flat"
+    assert runtime.runtime.shapes.obs_dim == 31
+    assert runtime.runtime.env_fn is not None

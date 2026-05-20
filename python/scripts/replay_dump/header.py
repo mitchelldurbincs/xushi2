@@ -11,25 +11,23 @@ from xushi2.map_randomization import (
 )
 from xushi2.self_play_schedule import SelfPlaySchedule
 from xushi2.snapshot_policy import SnapshotLeague
+from train.checkpoint_runtime import checkpoint_runtime
 
 
 def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
-    sim_cfg = ckpt_config["env"].get("sim", {})
-    has_mappo = "mappo" in ckpt_config
-    raw_phase = ckpt_config.get("phase", 4 if has_mappo else 3)
-    try:
-        phase = int(str(raw_phase).removeprefix("phase"))
-    except ValueError:
-        phase = 4 if has_mappo else 3
-    if (phase >= 8 or ckpt_config["env"].get("map_randomization")) and sim_cfg.get("randomize_map"):
+    runtime = checkpoint_runtime(ckpt_config)
+    env_cfg = runtime.env_cfg
+    sim_cfg = env_cfg.get("sim", {})
+    should_randomize_map = runtime.has_map_randomization and bool(sim_cfg.get("randomize_map"))
+    if should_randomize_map:
         sim_cfg = dict(sim_cfg)
         sim_cfg["map"] = randomized_map_bounds(
-            int(seed), ckpt_config["env"].get("map_randomization", {})
+            int(seed), env_cfg.get("map_randomization", {})
         )
     mech = sim_cfg.get("mechanics", {})
     fields: dict[str, Any] = {
         "format": "xushi2-replay-v1",
-        "phase": phase,
+        "phase": runtime.phase_int if runtime.phase_int is not None else runtime.phase_label,
         "seed": int(seed),
         "round_seconds": int(sim_cfg.get("round_length_seconds", 30)),
         "action_repeat": int(sim_cfg.get("action_repeat", 3)),
@@ -44,11 +42,11 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
         fields["map_min_y"] = float(map_cfg.get("min_y", 0.0))
         fields["map_max_x"] = float(map_cfg.get("max_x", 50.0))
         fields["map_max_y"] = float(map_cfg.get("max_y", 50.0))
-    if (phase >= 8 or ckpt_config["env"].get("map_randomization")) and sim_cfg.get("randomize_map"):
+    if should_randomize_map:
         covers = randomized_cover_markers(
-            int(seed), ckpt_config["env"].get("map_randomization", {})
+            int(seed), env_cfg.get("map_randomization", {})
         )
-        walls = randomized_wall_segments(int(seed), ckpt_config["env"].get("map_randomization", {}))
+        walls = randomized_wall_segments(int(seed), env_cfg.get("map_randomization", {}))
         fields["layout"] = map_layout_hash(sim_cfg["map"], covers, walls)
         if covers:
             fields["cover"] = ",".join(
@@ -64,19 +62,18 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
                 )
                 for wall in walls
             )
-    if has_mappo:
+    if runtime.is_mappo:
         fields["team_size"] = 3
-        mappo_cfg = ckpt_config.get("mappo", {})
+        mappo_cfg = runtime.mappo_cfg
         loss_mask = mappo_cfg.get("agent_loss_mask")
         if loss_mask is None:
             loss_mask = [1.0] * int(mappo_cfg.get("n_agents", 3))
         fields["loss_mask"] = ",".join(f"{float(v):.0f}" for v in loss_mask)
     if sim_cfg.get("hero_kinds"):
         fields["heroes"] = ",".join(str(k).lower() for k in sim_cfg["hero_kinds"])
-    if int(ckpt_config.get("mappo", {}).get("target_action_dim", 0)) > 0:
+    if runtime.has_target_slot:
         fields["target_slot"] = 1
-    if has_mappo:
-        env_cfg = ckpt_config.get("env", {})
+    if runtime.is_mappo:
         if env_cfg.get("self_play_schedule"):
             schedule = SelfPlaySchedule.from_config(
                 dict(env_cfg.get("self_play_schedule", {})),
@@ -103,10 +100,10 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
             fields["league"] = league.summary
             fields["snapshot_group"] = sample.group
             fields["snapshot"] = Path(sample.path).name
-    if ckpt_config.get("env", {}).get("fog_mode") or ckpt_config.get("env", {}).get("features", {}).get("fog") not in (None, "", "none"):
+    if runtime.has_fog:
         fields["fog"] = 1
         fields["last_seen"] = 1
-        fields["fog_mode"] = str(ckpt_config.get("env", {}).get("fog_mode", "team_shared"))
-    if ckpt_config.get("env", {}).get("match_type") and "match_type" not in fields:
-        fields["match_type"] = str(ckpt_config["env"]["match_type"])
+        fields["fog_mode"] = str(env_cfg.get("fog_mode", env_cfg.get("features", {}).get("fog", "team_shared")))
+    if env_cfg.get("match_type") and "match_type" not in fields:
+        fields["match_type"] = str(env_cfg["match_type"])
     return fields

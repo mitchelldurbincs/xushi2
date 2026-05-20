@@ -7,7 +7,7 @@ import torch
 
 from train.mappo import MappoActorCritic, MappoConfig
 from train.ppo_recurrent.orchestration import make_env_fn
-from train.runtime_specs import resolve_runtime_spec
+from train.checkpoint_runtime import checkpoint_runtime
 
 from .formatting import (
     action_to_fields,
@@ -18,7 +18,7 @@ from .formatting import (
 from .header import header_fields
 
 
-def load_phase4_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
+def load_mappo_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     ckpt = torch.load(Path(path), map_location="cpu", weights_only=False)
     if not isinstance(ckpt, dict):
         raise TypeError(f"checkpoint at {path} must be a dict, got {type(ckpt)!r}")
@@ -28,6 +28,10 @@ def load_phase4_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()
     return model, ckpt_config
+
+
+# Compatibility alias for older imports.
+load_phase4_checkpoint = load_mappo_checkpoint
 
 
 def dump_phase3(
@@ -95,15 +99,11 @@ def dump_mappo(
     output_path: Path,
     stochastic: bool = False,
 ) -> int:
-    raw_phase = ckpt_config.get("phase", 4)
-    try:
-        wanted_phase = int(str(raw_phase).removeprefix("phase"))
-    except ValueError:
-        wanted_phase = 4
-    if wanted_phase != 11 and ckpt_config["env"].get("learner_team", "A") != "A":
+    ckpt_runtime = checkpoint_runtime(ckpt_config)
+    if not ckpt_runtime.six_agent_runtime and ckpt_runtime.env_cfg.get("learner_team", "A") != "A":
         raise ValueError("MAPPO replay dumping currently supports learner_team='A'")
 
-    runtime = resolve_runtime_spec({"phase": raw_phase, "env": ckpt_config["env"]})
+    runtime = ckpt_runtime.runtime
     if runtime.learner.kind != "mappo" or runtime.env_fn is None:
         raise ValueError(
             "MAPPO replay dumping requires a MAPPO runtime, "
@@ -143,9 +143,9 @@ def dump_mappo(
                         )
                         for i in range(model.cfg.n_agents)
                     ]
-                    if wanted_phase == 11:
+                    if ckpt_runtime.six_agent_runtime and not ckpt_runtime.current_selfplay:
                         if len(policy_slots) != 6:
-                            raise ValueError("phase11 replay dump requires six policy action slots")
+                            raise ValueError("six-agent replay dump requires six policy action slots")
                         obs, _reward, term, trunc, info = env.step(action)
                         if str(info.get("match_type", "current")) == "current":
                             slots = policy_slots

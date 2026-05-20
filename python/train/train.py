@@ -147,7 +147,10 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
     bot_a = str(normalized.run_cfg.get("team_a_bot", "basic"))
     bot_b = str(normalized.run_cfg.get("team_b_bot", "basic"))
 
-    phase_part = f"phase={phase_raw}" if normalized.phase_int is not None else f"runtime={normalized.env_kind}"
+    if normalized.phase_int is not None:
+        phase_part = f"phase={normalized.phase_label}"
+    else:
+        phase_part = f"runtime={normalized.env_kind}"
     if normalized.learner_kind == "mappo":
         match_type = ""
         if normalized.env_kind == "mappo_match" and (
