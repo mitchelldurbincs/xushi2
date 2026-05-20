@@ -102,6 +102,54 @@ def test_randomized_map_bounds_are_deterministic_and_seed_dependent() -> None:
     assert 45.0 <= a["max_y"] - a["min_y"] <= 55.0
 
 
+@pytest.mark.parametrize(
+    ("cfg", "error_fragment"),
+    [
+        ({"base_bounds": {"min_x": 5.0, "max_x": 5.0}}, "base_bounds"),
+        ({"base_bounds": {"min_y": 5.0, "max_y": 4.0}}, "base_bounds"),
+        ({"min_span": 55.0, "max_span": 45.0}, "min_span"),
+        ({"span_jitter": -0.1}, "span_jitter"),
+        ({"cover_jitter": -0.1}, "cover_jitter"),
+        ({"cover_radius": -0.1}, "cover_radius"),
+        ({"cover_count_per_side": -1}, "cover_count_per_side"),
+        ({"wall_jitter": -0.1}, "wall_jitter"),
+        ({"wall_half_width": -0.1}, "wall_half_width"),
+        ({"wall_length": -0.1}, "wall_length"),
+        ({"wall_count_per_side": -1}, "wall_count_per_side"),
+    ],
+)
+def test_map_randomization_rejects_invalid_topology_configs(cfg: dict, error_fragment: str) -> None:
+    with pytest.raises(ValueError) as err:
+        randomized_map_bounds(123, cfg)
+    msg = str(err.value)
+    assert error_fragment in msg
+    for key, value in cfg.items():
+        assert str(key) in msg
+        assert repr(value) in msg
+
+
+def test_map_randomization_accepts_zero_valued_topology_config_edges() -> None:
+    cfg = {
+        "span_jitter": 0.0,
+        "min_span": 40.0,
+        "max_span": 40.0,
+        "cover_count_per_side": 0,
+        "cover_jitter": 0.0,
+        "cover_radius": 0.0,
+        "wall_count_per_side": 0,
+        "wall_jitter": 0.0,
+        "wall_half_width": 0.0,
+        "wall_length": 0.0,
+    }
+    bounds = randomized_map_bounds(123, cfg)
+    covers = randomized_cover_markers(123, cfg)
+    walls = randomized_wall_segments(123, cfg)
+    assert bounds["max_x"] - bounds["min_x"] == pytest.approx(40.0)
+    assert bounds["max_y"] - bounds["min_y"] == pytest.approx(40.0)
+    assert covers == []
+    assert walls == []
+
+
 def test_randomized_cover_markers_are_deterministic_symmetric_and_seed_dependent() -> None:
     opts = {
         "span_jitter": 5.0,
