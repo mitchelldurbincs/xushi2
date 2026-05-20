@@ -5,8 +5,8 @@ and placed alongside this file by src/python_bindings/CMakeLists.txt.
 
 This module provides:
 - a thin re-export of the C++ types
-- a Gymnasium-style environment wrapper (see `env.py`, TBD)
-- utilities for batched / vectorized environment stepping (see `vec_env.py`, TBD)
+- a Gymnasium-style environment wrapper (see `env.py`)
+- utilities for batched / vectorized environment stepping (see `vector_env.py`)
 """
 
 from __future__ import annotations
