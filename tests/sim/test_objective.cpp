@@ -51,6 +51,10 @@ void step_with_bots(Sim& sim, xushi2::bots::IBot* bot_a,
 
 TEST(Objective, LockedForFirst15Seconds) {
     Sim sim(objective_cfg());
+    EXPECT_EQ(sim.config().objective_unlock_ticks,
+              xushi2::common::kObjectiveLockTicks);
+    EXPECT_EQ(sim.config().objective_capture_ticks,
+              xushi2::common::kCaptureTicks);
     auto walk = xushi2::bots::make_walk_to_objective_bot();
     // Both teams walk to center; both end up on the point (but objective is
     // locked so no progress regardless).
@@ -62,12 +66,42 @@ TEST(Objective, LockedForFirst15Seconds) {
     EXPECT_FALSE(sim.state().objective.unlocked);
 }
 
+TEST(Objective, ConfigurableUnlockTicksPreservesLockSemantics) {
+    auto cfg = objective_cfg();
+    cfg.objective_unlock_ticks = 30;
+    Sim sim(cfg);
+    auto noop = xushi2::bots::make_noop_bot();
+
+    step_with_bots(sim, noop.get(), noop.get(), 29);
+    EXPECT_FALSE(sim.state().objective.unlocked);
+    step_with_bots(sim, noop.get(), noop.get(), 1);
+    EXPECT_TRUE(sim.state().objective.unlocked);
+}
+
 TEST(Objective, UnlocksAtLockTicks) {
     Sim sim(objective_cfg());
     auto noop = xushi2::bots::make_noop_bot();
     step_with_bots(sim, noop.get(), noop.get(),
                    static_cast<int>(xushi2::common::kObjectiveLockTicks));
     EXPECT_TRUE(sim.state().objective.unlocked);
+}
+
+TEST(Objective, ConfigurableCaptureTicksControlsOwnershipTransfer) {
+    auto cfg = objective_cfg();
+    cfg.objective_capture_ticks = 30;
+    Sim sim(cfg);
+    auto walk = xushi2::bots::make_walk_to_objective_bot();
+    auto noop = xushi2::bots::make_noop_bot();
+
+    step_with_bots(sim, walk.get(), noop.get(),
+                   static_cast<int>(cfg.objective_unlock_ticks));
+    ASSERT_TRUE(sim.state().objective.unlocked);
+    step_with_bots(sim, walk.get(), noop.get(),
+                   static_cast<int>(cfg.objective_capture_ticks - 1U));
+    EXPECT_EQ(sim.state().objective.owner, Team::Neutral);
+    step_with_bots(sim, walk.get(), noop.get(), 1);
+    EXPECT_EQ(sim.state().objective.owner, Team::A);
+    EXPECT_EQ(sim.state().objective.cap_progress_ticks, 0U);
 }
 
 TEST(Objective, UncontestedNonOwnerCaptures) {

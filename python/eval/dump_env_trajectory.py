@@ -9,7 +9,7 @@ import argparse
 import csv
 from contextlib import ExitStack
 
-from eval.sim_cfg import add_mechanics_args, build_sim_cfg_from_args
+from eval.sim_cfg import add_sim_cfg_args, build_sim_cfg_from_args
 from xushi2.env import VALID_OPPONENT_BOTS, XushiEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 
@@ -73,23 +73,23 @@ def dump_env_trajectory(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="xushi2 env trajectory dump")
-    parser.add_argument("--seed", type=lambda s: int(s, 0), default=0xD1CEDA7A)
-    parser.add_argument("--round-length-seconds", type=int, default=30)
+    parser.add_argument("--seed", type=lambda s: int(s, 0), default=None)
     parser.add_argument("--dump-obs", type=str, default=None)
     parser.add_argument("--dump-reward", type=str, default=None)
     parser.add_argument("--opponent-bot", type=str, required=True, choices=sorted(VALID_OPPONENT_BOTS))
     parser.add_argument("--learner-team", type=str, default="A", choices=("A", "B"))
-    add_mechanics_args(parser)
+    add_sim_cfg_args(parser)
     args = parser.parse_args()
 
     if args.dump_obs is None and args.dump_reward is None:
         parser.error("at least one of --dump-obs or --dump-reward is required")
 
+    sim_cfg = build_sim_cfg_from_args(args)
     dump_env_trajectory(
-        sim_cfg=build_sim_cfg_from_args(args),
+        sim_cfg=sim_cfg,
         opponent_bot=args.opponent_bot,
         learner_team=args.learner_team,
-        seed=args.seed,
+        seed=sim_cfg["seed"],
         obs_path=args.dump_obs,
         reward_path=args.dump_reward,
     )

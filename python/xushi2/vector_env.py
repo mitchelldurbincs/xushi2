@@ -93,6 +93,22 @@ def _async_worker(
             elif cmd == "set_team_spirit":
                 env.set_team_spirit(float(payload))
                 conn.send(None)
+            elif cmd == "set_majority_on_point_alpha":
+                setter = getattr(env, "set_majority_on_point_alpha", None)
+                if setter is not None:
+                    setter(float(payload))
+                conn.send(None)
+            elif cmd == "set_uncontested_on_point_alpha":
+                setter = getattr(env, "set_uncontested_on_point_alpha", None)
+                if setter is not None:
+                    setter(float(payload))
+                conn.send(None)
+            elif cmd == "set_objective_timing_seconds":
+                unlock_seconds, capture_seconds = payload
+                setter = getattr(env, "set_objective_timing_seconds", None)
+                if setter is not None:
+                    setter(float(unlock_seconds), float(capture_seconds))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -116,6 +132,11 @@ class XushiVectorEnv:
     Terminal envs are reset immediately so rollouts can continue without a
     second trainer-side reset path; final observations and infos are preserved
     under Gymnasium-style ``final_*`` keys.
+
+    Action spaces are currently constrained to ``gym.spaces.Box``. The
+    wrappers assume a dense ndarray contract for action batching with stable
+    ``shape``/``dtype`` and ``low``/``high`` bounds used for vectorized
+    broadcast construction.
     """
 
     def __init__(
@@ -137,6 +158,15 @@ class XushiVectorEnv:
         first = self.envs[0]
         self.single_observation_space = first.observation_space
         self.single_action_space = first.action_space
+        if not isinstance(self.single_action_space, gym.spaces.Box):
+            raise TypeError(
+                "XushiVectorEnv currently supports only gym.spaces.Box action "
+                "spaces. Expected a dense ndarray contract with shape/dtype and "
+                "low/high bounds for vector batching; got "
+                f"{type(self.single_action_space).__name__}. Add explicit "
+                "serialization/stacking for non-Box spaces (for example Dict) "
+                "before enabling them."
+            )
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -237,6 +267,29 @@ class XushiVectorEnv:
             if setter is not None:
                 setter(float(value))
 
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        """Push majority-on-point reward alpha to envs that support it."""
+        for env in self.envs:
+            setter = getattr(env, "set_majority_on_point_alpha", None)
+            if setter is not None:
+                setter(float(value))
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        """Push uncontested-on-point reward alpha to envs that support it."""
+        for env in self.envs:
+            setter = getattr(env, "set_uncontested_on_point_alpha", None)
+            if setter is not None:
+                setter(float(value))
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        """Push objective timing to envs that support timing curricula."""
+        for env in self.envs:
+            setter = getattr(env, "set_objective_timing_seconds", None)
+            if setter is not None:
+                setter(float(unlock_seconds), float(capture_seconds))
+
     def close(self) -> None:
         for env in self.envs:
             env.close()
@@ -244,7 +297,12 @@ class XushiVectorEnv:
 
 
 class XushiAsyncVectorEnv:
-    """Multiprocessing vector wrapper with the same API as ``XushiVectorEnv``."""
+    """Multiprocessing vector wrapper with the same API as ``XushiVectorEnv``.
+
+    Action spaces are currently constrained to ``gym.spaces.Box`` only.
+    Non-Box spaces require explicit serialization/stacking support before they
+    can be safely batched across workers.
+    """
 
     def __init__(
         self,
@@ -264,6 +322,15 @@ class XushiAsyncVectorEnv:
         try:
             self.single_observation_space = probe.observation_space
             self.single_action_space = probe.action_space
+            if not isinstance(self.single_action_space, gym.spaces.Box):
+                raise TypeError(
+                    "XushiAsyncVectorEnv currently supports only gym.spaces.Box "
+                    "action spaces. Expected a dense ndarray contract with "
+                    "shape/dtype and low/high bounds for worker batching; got "
+                    f"{type(self.single_action_space).__name__}. Add explicit "
+                    "serialization/stacking for non-Box spaces (for example "
+                    "Dict) before enabling them."
+                )
         finally:
             probe.close()
         self.observation_space = gym.spaces.Box(
@@ -395,6 +462,38 @@ class XushiAsyncVectorEnv:
         value = float(value)
         for conn in self._conns:
             conn.send(("set_team_spirit", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        """Push majority-on-point reward alpha to every worker."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        value = float(value)
+        for conn in self._conns:
+            conn.send(("set_majority_on_point_alpha", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        """Push uncontested-on-point reward alpha to every worker."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        value = float(value)
+        for conn in self._conns:
+            conn.send(("set_uncontested_on_point_alpha", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        """Push objective timing to every worker that supports it."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        payload = (float(unlock_seconds), float(capture_seconds))
+        for conn in self._conns:
+            conn.send(("set_objective_timing_seconds", payload))
         for i in range(self.num_envs):
             self._recv(i)
 

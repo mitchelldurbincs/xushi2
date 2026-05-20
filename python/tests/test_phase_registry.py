@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import torch
 import yaml
 
@@ -160,6 +161,45 @@ def test_phase4_config_can_select_async_vector_backend() -> None:
     config["ppo"]["vector_env"] = "async"
     cfg = make_mappo_config(config)
     assert cfg.vector_env == "async"
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "msg"),
+    [
+        ("gamma", 0.0, "ppo.gamma"),
+        ("gamma", 1.1, "ppo.gamma"),
+        ("gae_lambda", -0.1, "ppo.gae_lambda"),
+        ("gae_lambda", 1.1, "ppo.gae_lambda"),
+        ("clip_ratio", 0.0, "ppo.clip_ratio"),
+        ("value_clip_ratio", 0.0, "ppo.value_clip_ratio"),
+        ("entropy_coef", -1.0e-4, "ppo.entropy_coef"),
+        ("value_coef", -1.0, "ppo.value_coef"),
+        ("aim_aux_coef", -0.1, "ppo.aim_aux_coef"),
+        ("mode_aux_coef", -0.1, "ppo.mode_aux_coef"),
+        ("target_selection_aux_coef", -0.1, "ppo.target_selection_aux_coef"),
+        (
+            "team_spirit_ramp_fraction",
+            1.2,
+            "ppo.team_spirit_ramp_fraction",
+        ),
+        (
+            "team_spirit_ramp_fraction",
+            -0.01,
+            "ppo.team_spirit_ramp_fraction",
+        ),
+    ],
+)
+def test_mappo_config_rejects_out_of_range_hyperparameters(
+    key: str, value: float, msg: str
+) -> None:
+    with open(
+        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
+    ) as fh:
+        config = yaml.safe_load(fh)
+    config["ppo"] = dict(config["ppo"])
+    config["ppo"][key] = value
+    with pytest.raises(ValueError, match=msg):
+        make_mappo_config(config)
 
 
 def test_phase4_basic_config_builds_mappo_config() -> None:

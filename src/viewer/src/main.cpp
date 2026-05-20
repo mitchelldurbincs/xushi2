@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@
 #include "render_arena.hpp"
 #include "render_debug.hpp"
 #include "replay_loader.hpp"
+#include "viewer_bench_output.hpp"
 #include "viewer_layout.hpp"
 
 namespace {
@@ -84,14 +86,14 @@ PanelViewModel make_panel_model(
         .playback_speed = playback.playback_speed,
         .replay_phase = replay ? replay->phase : 0,
         .replay_fog = replay ? replay->fog : false,
-        .replay_fog_mode = replay ? replay->fog_mode : std::string_view{},
-        .replay_layout_hash = replay ? replay->layout_hash : std::string_view{},
-        .replay_match_type = replay ? replay->match_type : std::string_view{},
-        .replay_schedule_summary = replay ? replay->schedule_summary : std::string_view{},
-        .replay_league_summary = replay ? replay->league_summary : std::string_view{},
-        .replay_snapshot_group = replay ? replay->snapshot_group : std::string_view{},
-        .replay_snapshot_name = replay ? replay->snapshot_name : std::string_view{},
-        .replay_loss_mask = replay ? replay->loss_mask : std::string_view{},
+        .replay_fog_mode = replay ? std::string{replay->fog_mode} : std::string{},
+        .replay_layout_hash = replay ? std::string{replay->layout_hash} : std::string{},
+        .replay_match_type = replay ? std::string{replay->match_type} : std::string{},
+        .replay_schedule_summary = replay ? std::string{replay->schedule_summary} : std::string{},
+        .replay_league_summary = replay ? std::string{replay->league_summary} : std::string{},
+        .replay_snapshot_group = replay ? std::string{replay->snapshot_group} : std::string{},
+        .replay_snapshot_name = replay ? std::string{replay->snapshot_name} : std::string{},
+        .replay_loss_mask = replay ? std::string{replay->loss_mask} : std::string{},
         .replay_target_slot = replay ? replay->target_slot : false,
         .replay_last_seen = replay ? replay->last_seen : false,
         .replay_cover_count = replay ? replay->cover_markers.size() : 0U,
@@ -104,13 +106,13 @@ PanelViewModel make_panel_model(
 }
 
 void draw_frame(const ArenaTransform& arena,
-                const xushi2::common::Vec2& obj_center,
-                xushi2::sim::Sim& sim,
-                const std::optional<Replay>& replay,
-                const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& actions,
-                const std::array<ShotTracer, xushi2::sim::kAgentsPerMatch>& shots,
-                const std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& tethers,
-                const PlaybackState& playback) {
+               const xushi2::common::Vec2& obj_center,
+               xushi2::sim::Sim& sim,
+               const std::optional<Replay>& replay,
+               const std::array<xushi2::sim::Action, xushi2::sim::kAgentsPerMatch>& actions,
+               const std::array<ShotTracer, xushi2::sim::kAgentsPerMatch>& shots,
+               const std::array<TetherTrail, xushi2::sim::kAgentsPerMatch>& tethers,
+               const PlaybackState& playback) {
     BeginDrawing();
     ClearBackground(Color{8, 10, 14, 255});
 
@@ -166,13 +168,13 @@ int main(int argc, char** argv) {
 
     PlaybackState playback{};
     PlaybackContext playback_ctx{.sim = &sim,
-                                 .replay = &replay,
-                                 .bot_a = &bot_a,
-                                 .bot_b = &bot_b,
-                                 .actions = &actions,
-                                 .shots = &shots,
-                                 .tethers = &tethers,
-                                 .prev_heroes = &prev_heroes};
+                                .replay = &replay,
+                                .bot_a = &bot_a,
+                                .bot_b = &bot_b,
+                                .actions = &actions,
+                                .shots = &shots,
+                                .tethers = &tethers,
+                                .prev_heroes = &prev_heroes};
 
     BenchmarkState benchmark{};
     init_benchmark_state(benchmark, cli.measured_frames);
@@ -182,20 +184,35 @@ int main(int argc, char** argv) {
         handle_input(playback_ctx, playback);
         advance_playback(playback_ctx, playback, GetFrameTime(), kDecisionSeconds);
         draw_frame(arena, obj_center, sim, replay, actions, shots, tethers, playback);
-        if (sim.episode_over()) reset_playback(playback_ctx, playback);
+        if (sim.episode_over()) {
+            reset_playback(playback_ctx, playback);
+        }
 
         if (cli.benchmark) {
             const auto frame_end = std::chrono::steady_clock::now();
             const double ms = std::chrono::duration<double, std::milli>(frame_end - frame_start).count();
             record_benchmark_frame(benchmark, cli.warmup_frames, cli.measured_frames, ms);
-            if (benchmark_complete(benchmark, cli.measured_frames)) break;
+            if (benchmark_complete(benchmark, cli.measured_frames)) {
+                break;
+            }
         }
     }
 
     if (cli.benchmark && cli.json_out) {
         const std::string replay_name = cli.replay_path ? *cli.replay_path : std::string("<none>");
-        write_bench_json(
-            *cli.json_out, replay_name, cli.warmup_frames, cli.measured_frames, benchmark.measured_ms);
+        std::string err;
+        const viewer_bench_output::BenchJsonPayload payload{
+            .replay_name = replay_name,
+            .mode = "render",
+            .warmup_frames = cli.warmup_frames,
+            .measured_frames = cli.measured_frames,
+            .frame_ms = benchmark.measured_ms,
+        };
+        if (!viewer_bench_output::write_bench_json(*cli.json_out, payload, &err)) {
+            std::fprintf(stderr, "%s\n", err.c_str());
+            CloseWindow();
+            return 2;
+        }
     }
     CloseWindow();
     return 0;

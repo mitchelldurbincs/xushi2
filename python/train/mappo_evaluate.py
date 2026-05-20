@@ -76,6 +76,32 @@ def _combat_summary(totals: dict[str, Any]) -> dict[str, float]:
     }
 
 
+_OBJECTIVE_METRIC_KEYS = (
+    "uncontested_on_point_seconds_a",
+    "uncontested_on_point_seconds_b",
+    "majority_on_point_seconds_a",
+    "majority_on_point_seconds_b",
+    "alive_edge_no_score_seconds_a",
+    "alive_edge_no_score_seconds_b",
+    "cap_progress_gain_ticks",
+    "cap_progress_loss_ticks",
+)
+
+
+def _empty_objective_totals() -> dict[str, float]:
+    out = {key: 0.0 for key in _OBJECTIVE_METRIC_KEYS}
+    out["first_team_a_alive_edge_to_score_seconds"] = -1.0
+    return out
+
+
+def _merge_objective_metrics(dst: dict[str, float], src: dict[str, Any]) -> None:
+    for key in _OBJECTIVE_METRIC_KEYS:
+        dst[key] = float(dst.get(key, 0.0)) + float(src.get(key, 0.0))
+    edge_to_score = float(src.get("first_team_a_alive_edge_to_score_seconds", -1.0))
+    if edge_to_score >= 0.0:
+        dst["first_team_a_alive_edge_to_score_seconds"] = edge_to_score
+
+
 def evaluate_mappo(
     model: MappoActorCritic,
     env_fn: Callable[[], gym.Env],
@@ -84,6 +110,7 @@ def evaluate_mappo(
     *,
     num_envs: int | None = None,
     backend: str = "sync",
+    objective_timing_seconds: tuple[float, float] | None = None,
 ) -> MappoEvalStats:
     episodes = int(episodes)
     if episodes <= 0:
@@ -114,22 +141,42 @@ def evaluate_mappo(
     intentional_fire_count = 0
     objective_focus_count = 0
     self_on_point_slice = actor_field_slice("self_on_point")
+    completed_objective_totals: list[dict[str, float]] = []
 
     vec_env = make_xushi_vector_env(
         [env_fn for _ in range(num_envs)],
-        critic_obs_dim=cfg.critic_obs_dim,
+        critic_obs_dim=(
+            cfg.critic_obs_dim * cfg.n_agents if cfg.value_per_agent else cfg.critic_obs_dim
+        ),
         seed_base=int(seed),
         auto_reset=True,
         backend=backend,
     )
     try:
         device = next(model.parameters()).device
+        vec_env.set_majority_on_point_alpha(0.0)
+        vec_env.set_uncontested_on_point_alpha(0.0)
+        if objective_timing_seconds is not None:
+            vec_env.set_objective_timing_seconds(
+                float(objective_timing_seconds[0]),
+                float(objective_timing_seconds[1]),
+            )
         obs_np, _critic_obs, _infos = vec_env.reset(seed=int(seed))
+        if objective_timing_seconds is not None:
+            eval_unlock_seconds = float(objective_timing_seconds[0])
+            eval_capture_seconds = float(objective_timing_seconds[1])
+        elif _infos:
+            eval_unlock_seconds = float(_infos[0].get("objective_unlock_seconds", 0.0))
+            eval_capture_seconds = float(_infos[0].get("objective_capture_seconds", 0.0))
+        else:
+            eval_unlock_seconds = 0.0
+            eval_capture_seconds = 0.0
         obs = torch.as_tensor(obs_np, dtype=torch.float32, device=device)
         h = model.init_hidden(num_envs * cfg.n_agents).view(
             num_envs, cfg.n_agents, cfg.gru_hidden
         )
         ep_rewards = np.zeros(num_envs, dtype=np.float32)
+        ep_objective_totals = [_empty_objective_totals() for _ in range(num_envs)]
 
         while len(rewards) < episodes:
             flat_obs = obs.reshape(num_envs * cfg.n_agents, cfg.obs_dim)
@@ -195,14 +242,17 @@ def evaluate_mappo(
             action_3d = action.view(num_envs, cfg.n_agents, cfg.action_dim)
             action_np = action_3d.cpu().numpy()
             next_obs_np, reward_np, term, trunc, _critic, infos = vec_env.step(action_np)
-            for info_i in infos:
+            for env_i, info_i in enumerate(infos):
                 combat_metrics = info_i.get("combat_metrics")
                 if not isinstance(combat_metrics, dict):
-                    continue
+                    combat_metrics = {}
                 for team in ("A", "B"):
                     team_metrics = combat_metrics.get(team)
                     if isinstance(team_metrics, dict):
                         _merge_combat_metrics(combat_totals[team], team_metrics)
+                objective_metrics = info_i.get("objective_metrics")
+                if isinstance(objective_metrics, dict):
+                    _merge_objective_metrics(ep_objective_totals[env_i], objective_metrics)
 
             ep_rewards += reward_np.mean(axis=1)
             h = h_next.view(num_envs, cfg.n_agents, cfg.gru_hidden)
@@ -229,6 +279,8 @@ def evaluate_mappo(
                 team_b_scores.append(float(final_info.get("team_b_score", 0.0)))
                 team_a_kills.append(int(final_info.get("team_a_kills", 0)))
                 team_b_kills.append(int(final_info.get("team_b_kills", 0)))
+                completed_objective_totals.append(dict(ep_objective_totals[i]))
+                ep_objective_totals[i] = _empty_objective_totals()
                 rewards.append(float(ep_rewards[i]))
                 ep_rewards[i] = 0.0
                 h[i] = 0.0
@@ -243,6 +295,18 @@ def evaluate_mappo(
     focus_a_count = max(1, int(focus_totals["A"]["count"]))
     focus_b_count = max(1, int(focus_totals["B"]["count"]))
     mode_den = max(1, mode_total)
+    objective_count = max(1, len(completed_objective_totals))
+
+    def _objective_mean(key: str) -> float:
+        return float(sum(row.get(key, 0.0) for row in completed_objective_totals)) / float(
+            objective_count
+        )
+
+    edge_to_score_values = [
+        float(row.get("first_team_a_alive_edge_to_score_seconds", -1.0))
+        for row in completed_objective_totals
+        if float(row.get("first_team_a_alive_edge_to_score_seconds", -1.0)) >= 0.0
+    ]
     return MappoEvalStats(
         mean_reward=float(np.mean(rewards)) if rewards else 0.0,
         episodes=len(rewards),
@@ -276,6 +340,27 @@ def evaluate_mappo(
         mode_accuracy=float(mode_correct) / float(mode_den),
         intentional_fire_fraction=float(intentional_fire_count) / float(mode_den),
         objective_focus_fraction=float(objective_focus_count) / float(mode_den),
+        mean_uncontested_on_point_seconds_a=_objective_mean(
+            "uncontested_on_point_seconds_a"
+        ),
+        mean_uncontested_on_point_seconds_b=_objective_mean(
+            "uncontested_on_point_seconds_b"
+        ),
+        mean_majority_on_point_seconds_a=_objective_mean("majority_on_point_seconds_a"),
+        mean_majority_on_point_seconds_b=_objective_mean("majority_on_point_seconds_b"),
+        mean_alive_edge_no_score_seconds_a=_objective_mean(
+            "alive_edge_no_score_seconds_a"
+        ),
+        mean_alive_edge_no_score_seconds_b=_objective_mean(
+            "alive_edge_no_score_seconds_b"
+        ),
+        mean_cap_progress_gain_ticks=_objective_mean("cap_progress_gain_ticks"),
+        mean_cap_progress_loss_ticks=_objective_mean("cap_progress_loss_ticks"),
+        mean_first_team_a_alive_edge_to_score_seconds=(
+            float(np.mean(edge_to_score_values)) if edge_to_score_values else -1.0
+        ),
+        objective_unlock_seconds=float(eval_unlock_seconds),
+        objective_capture_seconds=float(eval_capture_seconds),
     )
 
 
@@ -315,4 +400,25 @@ def eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
         "mode_accuracy": float(stats.mode_accuracy),
         "intentional_fire_fraction": float(stats.intentional_fire_fraction),
         "objective_focus_fraction": float(stats.objective_focus_fraction),
+        "mean_uncontested_on_point_seconds_a": float(
+            stats.mean_uncontested_on_point_seconds_a
+        ),
+        "mean_uncontested_on_point_seconds_b": float(
+            stats.mean_uncontested_on_point_seconds_b
+        ),
+        "mean_majority_on_point_seconds_a": float(stats.mean_majority_on_point_seconds_a),
+        "mean_majority_on_point_seconds_b": float(stats.mean_majority_on_point_seconds_b),
+        "mean_alive_edge_no_score_seconds_a": float(
+            stats.mean_alive_edge_no_score_seconds_a
+        ),
+        "mean_alive_edge_no_score_seconds_b": float(
+            stats.mean_alive_edge_no_score_seconds_b
+        ),
+        "mean_cap_progress_gain_ticks": float(stats.mean_cap_progress_gain_ticks),
+        "mean_cap_progress_loss_ticks": float(stats.mean_cap_progress_loss_ticks),
+        "mean_first_team_a_alive_edge_to_score_seconds": float(
+            stats.mean_first_team_a_alive_edge_to_score_seconds
+        ),
+        "objective_unlock_seconds": float(stats.objective_unlock_seconds),
+        "objective_capture_seconds": float(stats.objective_capture_seconds),
     }

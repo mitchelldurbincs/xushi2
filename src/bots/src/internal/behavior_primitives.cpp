@@ -4,6 +4,8 @@
 
 #include <xushi2/common/math.hpp>
 
+#include "../../../sim/src/internal/sim_combat.h"
+
 namespace xushi2::bots::internal {
 
 namespace {
@@ -15,17 +17,25 @@ common::Vec2 objective_center(const sim::MapBounds& map) {
                         0.5F * (map.min_y + map.max_y)};
 }
 
+bool observable_enemy(const sim::MatchState&,
+                      const sim::HeroState& self,
+                      const sim::HeroState& candidate,
+                      const sim::MatchConfig& config) {
+    return candidate.present && candidate.alive && candidate.team != self.team &&
+           candidate.team != common::Team::Neutral &&
+           !sim::internal::segment_blocked_by_cover(
+               self.position, candidate.position, config);
+}
+
 }  // namespace
 
 const sim::HeroState* find_opponent(const sim::MatchState& state,
-                                    const sim::HeroState& self) {
+                                    const sim::HeroState& self,
+                                    const sim::MatchConfig& config) {
     const sim::HeroState* best = nullptr;
     float best_dist2 = 0.0F;
     for (const auto& h : state.heroes) {
-        if (!h.present || !h.alive) {
-            continue;
-        }
-        if (h.team == self.team) {
+        if (!observable_enemy(state, self, h, config)) {
             continue;
         }
         const float dx = h.position.x - self.position.x;
@@ -65,9 +75,10 @@ common::Action walk_to_objective(const sim::HeroState& self,
 
 common::Action hold_and_shoot(const sim::MatchState& state,
                               const sim::HeroState& self,
+                              const sim::MatchConfig& config,
                               float aim_noise_radians) {
     common::Action a{};
-    const sim::HeroState* opp = find_opponent(state, self);
+    const sim::HeroState* opp = find_opponent(state, self, config);
     if (opp == nullptr) {
         return a;
     }

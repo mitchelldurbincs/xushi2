@@ -32,6 +32,19 @@ def test_format_phase_banner_phase11() -> None:
     assert "learner_team=both" in banner
 
 
+def test_format_phase_banner_phase4_selfplay() -> None:
+    n = _normalized(4)
+    n = NormalizedEntryConfig(
+        **{
+            **n.__dict__,
+            "env_cfg": {"self_play": {"enabled": True}},
+        }
+    )
+    banner = format_phase_banner(n, "phase4")
+    assert "match_type=current" in banner
+    assert "learner_team=both" in banner
+
+
 def test_run_phase_unsupported() -> None:
     rc = run_phase(_normalized(99), {"phase": "phase99"})
     assert rc == 2

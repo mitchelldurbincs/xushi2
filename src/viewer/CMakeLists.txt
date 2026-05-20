@@ -5,6 +5,7 @@ add_executable(xushi2_viewer
     src/render_debug.cpp
     src/panel.cpp
     src/viewer_labels.cpp
+    src/viewer_bench_output.cpp
     src/playback_controller.cpp
     src/benchmark_writer.cpp
 )
@@ -30,6 +31,7 @@ add_executable(xushi2_viewer_bench
     src/render_debug.cpp
     src/panel.cpp
     src/viewer_labels.cpp
+    src/viewer_bench_output.cpp
     src/playback_controller.cpp
     src/benchmark_writer.cpp
 )

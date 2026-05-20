@@ -1,0 +1,82 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: current_selfplay_long
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_current_selfplay_learning_signal
+  hypothesis: "If scripted-opponent Phase 4 is stuck in an objective-conversion basin, current-vs-current self-play may produce a smoother opponent curriculum while preserving flat Ranger observations and canonical game rules."
+  falsification_criteria: "Falsified if the run completes with no improved objective behavior, no nonzero score or cap-progress in current-selfplay eval, and no replay-inspectable behavior change."
+  max_updates_if_no_signal: 250
+  lineage: "Longer sibling of phase4_mappo_current_selfplay_bc_probe; uses the same BC bootstrap with a larger PPO budget."
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_current_selfplay
+
+env:
+  seed_base: 3519994490
+  self_play:
+    enabled: true
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.0
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 32
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  value_per_agent: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+
+run:
+  total_updates: 250
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 500
+  bc_batch_size: 384
+  bc_learning_rate: 0.001
+  output_dir: runs/phase4_mappo_current_selfplay_long

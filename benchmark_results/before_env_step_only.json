@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\benchmark\run.py", line 227, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\benchmark\run.py", line 204, in main
+    _run_once(
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\benchmark\run.py", line 119, in _run_once
+    trainer.collect_rollout()
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\ppo_recurrent\trainer.py", line 163, in collect_rollout
+    return rollout_collector.collect_rollout(self)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\ppo_recurrent\rollout_collector.py", line 25, in collect_rollout
+    action, logprob, h_next = trainer.model.sample_action(last_obs, h)
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\mitchell.durbin\source\repos\cartridgeRepos\xushi2\python\train\models.py", line 159, in sample_action
+    logprob = logprob + dist.log_prob(u).sum(-1) - correction.sum(-1)
+              ~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~
+RuntimeError: The size of tensor a (16) must match the size of tensor b (3) at non-singleton dimension 1

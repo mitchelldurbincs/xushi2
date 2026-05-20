@@ -19,7 +19,12 @@ from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.multi_enemy_obs import map_bounds_from_sim_cfg
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, critic_field_slice
+from xushi2.obs_manifest import (
+    ACTOR_PHASE1_DIM,
+    CRITIC_DIM,
+    actor_field_slice,
+    critic_field_slice,
+)
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
 
@@ -82,9 +87,17 @@ class Phase4MappoEnv(gym.Env):
         # Phase 4 always emits per-agent rewards so MAPPO can use individual
         # credit assignment + the team_spirit lever.
         self._reward_cfg.pop("per_agent_rewards", None)
+        self._reward_cfg.pop("majority_on_point_anneal_updates", None)
+        self._reward_cfg.pop("uncontested_on_point_anneal_updates", None)
         self._reward_calc = RewardCalculator(per_agent_rewards=True, **self._reward_cfg)
 
         self._actor_obs_buf = np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32)
+        self._objective_actor_obs_buf = np.zeros(
+            (_AGENTS_PER_MATCH, ACTOR_PHASE1_DIM), dtype=np.float32
+        )
+        self._objective_critic_obs_buf = np.zeros(CRITIC_DIM, dtype=np.float32)
+        self._first_team_a_alive_edge_tick: int | None = None
+        self._first_team_a_score_after_edge_tick: int | None = None
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -119,6 +132,8 @@ class Phase4MappoEnv(gym.Env):
         if self._opponent_policy is not None:
             self._opponent_policy.reset()
         self._reward_calc.reset(self._sim)
+        self._first_team_a_alive_edge_tick = None
+        self._first_team_a_score_after_edge_tick = None
         self._build_actor_obs_all()
         return self._actor_obs_buf.copy(), self._make_info()
 
@@ -131,7 +146,7 @@ class Phase4MappoEnv(gym.Env):
 
         actions = [_cpp.Action() for _ in range(_AGENTS_PER_MATCH)]
         for slot, a in zip(self._own_slots, action, strict=False):
-            actions[slot] = self._action_to_cpp(a)
+            actions[slot] = self._action_to_cpp_for_slot(a, slot)
         opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._opponent_policy is not None:
             enemy_actions = np.asarray(
@@ -149,7 +164,7 @@ class Phase4MappoEnv(gym.Env):
                 )
             enemy_actions = enemy_actions[:, :6]
             for enemy_slot, enemy_action in zip(self._enemy_slots, enemy_actions, strict=False):
-                actions[enemy_slot] = self._action_to_cpp(enemy_action)
+                actions[enemy_slot] = self._action_to_cpp_for_slot(enemy_action, enemy_slot)
             opponent_actions[:] = enemy_actions
         else:
             for i, enemy_slot in enumerate(self._enemy_slots):
@@ -169,12 +184,16 @@ class Phase4MappoEnv(gym.Env):
 
         previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
         combat_metrics = self._combat_metrics_before_step(actions)
+        objective_before = self._objective_snapshot()
 
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
         self._attach_damage_metrics(combat_metrics, damage_delta)
+        objective_metrics = self._objective_metrics_after_step(objective_before)
 
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
+        reward_metrics = self._reward_calc.majority_on_point_metrics()
+        reward_metrics.update(self._reward_calc.uncontested_on_point_metrics())
         own_reward = r_a if self._learner_team_str == "A" else r_b
 
         terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
@@ -188,20 +207,35 @@ class Phase4MappoEnv(gym.Env):
         info = self._make_info()
         info["reward_team_a"] = float(np.asarray(r_a).sum())
         info["reward_team_b"] = float(np.asarray(r_b).sum())
+        info.update({k: float(v) for k, v in reward_metrics.items()})
+        info["reward_metrics"] = reward_metrics
+        info["objective_metrics"] = objective_metrics
         info["opponent_actions"] = opponent_actions.copy()
         info["combat_metrics"] = combat_metrics
         return self._actor_obs_buf.copy(), reward, terminated, truncated, info
 
     @staticmethod
     def _action_to_cpp(a: np.ndarray) -> _cpp.Action:
-        a = np.asarray(a, dtype=np.float32).reshape(-1)
+        return Phase4MappoEnv._action_to_cpp_for_team(a, "A")
+
+    @staticmethod
+    def _action_to_cpp_for_slot(a: np.ndarray, slot: int) -> _cpp.Action:
+        team = "B" if int(slot) >= 3 else "A"
+        return Phase4MappoEnv._action_to_cpp_for_team(a, team)
+
+    @staticmethod
+    def _action_to_cpp_for_team(a: np.ndarray, team: str) -> _cpp.Action:
+        a = np.array(a, dtype=np.float32, copy=True).reshape(-1)
         if a.shape[0] < 6:
             raise ValueError(f"action must have at least 6 fields, got {a.shape}")
         a[:3] = np.clip(a[:3], -1.0, 1.0)
         a[3:6] = np.clip(a[3:6], 0.0, 1.0)
         act = _cpp.Action()
-        act.move_x = float(a[0])
-        act.move_y = float(a[1])
+        # Actor observations are in a team-relative frame. Convert learned
+        # movement back to the simulator's world frame for Team B.
+        move_sign = -1.0 if team == "B" else 1.0
+        act.move_x = float(move_sign * a[0])
+        act.move_y = float(move_sign * a[1])
         act.aim_delta = float(a[2] * _AIM_DELTA_LIMIT)
         act.primary_fire = bool(a[3] >= 0.5)
         act.ability_1 = bool(a[4] >= 0.5)
@@ -244,6 +278,37 @@ class Phase4MappoEnv(gym.Env):
         ``compute_team_spirit``."""
         self._reward_calc.set_team_spirit(value)
 
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        self._reward_calc.set_majority_on_point_alpha(value)
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        self._reward_calc.set_uncontested_on_point_alpha(value)
+
+    def set_objective_timing_ticks(self, unlock_ticks: int, capture_ticks: int) -> None:
+        unlock = int(unlock_ticks)
+        capture = int(capture_ticks)
+        if unlock <= 0 or capture <= 0:
+            raise ValueError(
+                f"objective timing ticks must be >0, got unlock={unlock} capture={capture}"
+            )
+        self._sim_cfg.pop("objective_unlock_seconds", None)
+        self._sim_cfg.pop("objective_capture_seconds", None)
+        nested = self._sim_cfg.get("objective_timing")
+        if isinstance(nested, dict):
+            nested.pop("unlock_seconds", None)
+            nested.pop("capture_seconds", None)
+        self._sim_cfg["objective_unlock_ticks"] = unlock
+        self._sim_cfg["objective_capture_ticks"] = capture
+        if self._sim is not None:
+            self._sim.set_objective_timing_ticks(unlock, capture)
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        unlock_ticks = int(round(float(unlock_seconds) * float(_cpp.TICK_HZ)))
+        capture_ticks = int(round(float(capture_seconds) * float(_cpp.TICK_HZ)))
+        self.set_objective_timing_ticks(unlock_ticks, capture_ticks)
+
     def close(self) -> None:
         self._sim = None
 
@@ -251,8 +316,93 @@ class Phase4MappoEnv(gym.Env):
         for i, slot in enumerate(self._own_slots):
             _cpp.build_actor_obs(self._sim, slot, self._actor_obs_buf[i])
 
+    def _objective_snapshot(self) -> dict[str, float | int]:
+        assert self._sim is not None
+        hp_slice = actor_field_slice("own_hp")
+        on_point_slice = actor_field_slice("self_on_point")
+        alive = np.zeros(_AGENTS_PER_MATCH, dtype=np.float32)
+        on_point = np.zeros(_AGENTS_PER_MATCH, dtype=np.float32)
+        for slot in range(_AGENTS_PER_MATCH):
+            _cpp.build_actor_obs(self._sim, slot, self._objective_actor_obs_buf[slot])
+            obs = self._objective_actor_obs_buf[slot]
+            slot_alive = float(obs[hp_slice][0]) > 0.0
+            alive[slot] = 1.0 if slot_alive else 0.0
+            on_point[slot] = (
+                1.0 if slot_alive and float(obs[on_point_slice][0]) > 0.5 else 0.0
+            )
+        _cpp.build_critic_obs(self._sim, _cpp.Team.A, self._objective_critic_obs_buf)
+        cap_progress_ticks = int(
+            self._objective_critic_obs_buf[critic_field_slice("cap_progress_ticks")][0]
+        )
+        return {
+            "tick": int(self._sim.tick),
+            "team_a_score_ticks": int(self._sim.team_a_score_ticks),
+            "team_b_score_ticks": int(self._sim.team_b_score_ticks),
+            "cap_progress_ticks": cap_progress_ticks,
+            "alive_a": int(alive[0:3].sum()),
+            "alive_b": int(alive[3:6].sum()),
+            "alive_on_point_a": int(on_point[0:3].sum()),
+            "alive_on_point_b": int(on_point[3:6].sum()),
+        }
+
+    def _objective_metrics_after_step(
+        self, before: dict[str, float | int]
+    ) -> dict[str, float]:
+        assert self._sim is not None
+        after = self._objective_snapshot()
+        tick_delta = max(0, int(after["tick"]) - int(before["tick"]))
+        seconds = float(tick_delta) / float(_cpp.TICK_HZ)
+        score_a_delta = int(after["team_a_score_ticks"]) - int(before["team_a_score_ticks"])
+        score_b_delta = int(after["team_b_score_ticks"]) - int(before["team_b_score_ticks"])
+        cap_delta = int(after["cap_progress_ticks"]) - int(before["cap_progress_ticks"])
+
+        alive_edge_a = int(after["alive_a"]) > int(after["alive_b"])
+        alive_edge_b = int(after["alive_b"]) > int(after["alive_a"])
+        if alive_edge_a and self._first_team_a_alive_edge_tick is None:
+            self._first_team_a_alive_edge_tick = int(after["tick"])
+        if (
+            score_a_delta > 0
+            and self._first_team_a_alive_edge_tick is not None
+            and self._first_team_a_score_after_edge_tick is None
+        ):
+            self._first_team_a_score_after_edge_tick = int(after["tick"])
+
+        first_a_edge_to_score_seconds = -1.0
+        if (
+            self._first_team_a_alive_edge_tick is not None
+            and self._first_team_a_score_after_edge_tick is not None
+        ):
+            first_a_edge_to_score_seconds = (
+                float(
+                    self._first_team_a_score_after_edge_tick
+                    - self._first_team_a_alive_edge_tick
+                )
+                / float(_cpp.TICK_HZ)
+            )
+
+        on_a = int(after["alive_on_point_a"])
+        on_b = int(after["alive_on_point_b"])
+        return {
+            "uncontested_on_point_seconds_a": seconds if on_a > 0 and on_b == 0 else 0.0,
+            "uncontested_on_point_seconds_b": seconds if on_b > 0 and on_a == 0 else 0.0,
+            "majority_on_point_seconds_a": seconds if on_a > on_b else 0.0,
+            "majority_on_point_seconds_b": seconds if on_b > on_a else 0.0,
+            "alive_edge_no_score_seconds_a": (
+                seconds if alive_edge_a and score_a_delta <= 0 else 0.0
+            ),
+            "alive_edge_no_score_seconds_b": (
+                seconds if alive_edge_b and score_b_delta <= 0 else 0.0
+            ),
+            "cap_progress_gain_ticks": float(max(0, cap_delta)),
+            "cap_progress_loss_ticks": float(max(0, -cap_delta)),
+            "team_a_score_delta_ticks": float(max(0, score_a_delta)),
+            "team_b_score_delta_ticks": float(max(0, score_b_delta)),
+            "first_team_a_alive_edge_to_score_seconds": first_a_edge_to_score_seconds,
+        }
+
     def _make_info(self) -> dict[str, Any]:
         s = self._sim
+        assert s is not None
         winner = s.winner
         if winner == _cpp.Team.A:
             winner_str = "A"
@@ -271,6 +421,12 @@ class Phase4MappoEnv(gym.Env):
             "team_b_kills": int(s.team_b_kills),
             "winner": winner_str,
             "learner_team": self._learner_team_str,
+            "objective_unlock_ticks": int(s.objective_unlock_ticks),
+            "objective_capture_ticks": int(s.objective_capture_ticks),
+            "objective_unlock_seconds": float(s.objective_unlock_ticks)
+            / float(_cpp.TICK_HZ),
+            "objective_capture_seconds": float(s.objective_capture_ticks)
+            / float(_cpp.TICK_HZ),
         }
 
     @staticmethod

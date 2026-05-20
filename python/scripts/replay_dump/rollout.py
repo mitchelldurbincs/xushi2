@@ -9,7 +9,12 @@ from train.mappo import MappoActorCritic, MappoConfig
 from train.phases import resolve_phase
 from train.ppo_recurrent.orchestration import make_env_fn
 
-from .formatting import action_to_fields, format_decision, format_decision_six
+from .formatting import (
+    action_to_fields,
+    format_decision,
+    format_decision_six,
+    policy_action_to_world_fields,
+)
 from .header import header_fields
 
 
@@ -124,7 +129,11 @@ def dump_mappo(
                             action_t, h = model.greedy_action(obs_t, h)
                     action = action_t.cpu().numpy()
                     policy_slots = [
-                        action_to_fields(action[i], include_target=include_target)
+                        policy_action_to_world_fields(
+                            action[i],
+                            slot=i,
+                            include_target=include_target,
+                        )
                         for i in range(model.cfg.n_agents)
                     ]
                     if phase == 11:
@@ -147,10 +156,23 @@ def dump_mappo(
                             slots = policy_slots[:3] + opponent_slots
                     else:
                         obs, _reward, term, trunc, info = env.step(action)
-                        opponent_actions_raw = info.get("opponent_actions")
-                        if opponent_actions_raw is None:
-                            slots = [*policy_slots[:3], zero_slot, zero_slot, zero_slot]
+                        self_play_enabled = bool(
+                            dict(ckpt_config["env"].get("self_play", {})).get(
+                                "enabled", False
+                            )
+                        )
+                        if self_play_enabled:
+                            if len(policy_slots) != 6:
+                                raise ValueError(
+                                    "phase4 self-play replay dump requires six policy slots"
+                                )
+                            slots = policy_slots
+                            opponent_actions_raw = None
                         else:
+                            opponent_actions_raw = info.get("opponent_actions")
+                        if opponent_actions_raw is None and not self_play_enabled:
+                            slots = [*policy_slots[:3], zero_slot, zero_slot, zero_slot]
+                        elif opponent_actions_raw is not None:
                             opponent_actions = np.asarray(opponent_actions_raw, dtype=np.float32)
                             if opponent_actions.shape != (3, 6):
                                 raise ValueError(

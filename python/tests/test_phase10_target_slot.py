@@ -103,3 +103,24 @@ def test_phase10_actor_respects_target_slot_mask() -> None:
     for _ in range(20):
         action, _logprob, _ = model.sample_action(obs, h)
         assert action[:, 6].tolist() == [0.0, 1.0, 4.0]
+
+
+def test_phase10_actor_sampling_generator_isolated_from_global_rng() -> None:
+    config = _load_config()
+    cfg = make_mappo_config(config)
+    model = MappoActorCritic(cfg)
+    obs = torch.zeros(cfg.n_agents, cfg.obs_dim)
+    obs[:, -cfg.target_action_dim :] = 1.0
+    h = model.init_hidden(cfg.n_agents)
+    g1 = torch.Generator(device="cpu")
+    g2 = torch.Generator(device="cpu")
+    g1.manual_seed(777)
+    g2.manual_seed(777)
+
+    torch.manual_seed(1)
+    action1, logp1, _ = model.sample_action(obs, h, generator=g1)
+    torch.manual_seed(999_999)
+    action2, logp2, _ = model.sample_action(obs, h, generator=g2)
+
+    torch.testing.assert_close(action1, action2)
+    torch.testing.assert_close(logp1, logp2)

@@ -76,6 +76,11 @@ WIN_TICKS      = 100 · TICK_HZ = 3000   # 100 seconds of scoring = win
 SCORE_STEP     = 1                      # +1 score tick per sim tick while scoring
 ```
 
+These are the canonical game timings. Training probes may set shorter
+`objective_unlock_ticks` / `objective_capture_ticks` through `MatchConfig`,
+but those overrides are config-gated curriculum settings and are not phase-gate
+evidence unless separately evaluated under the canonical 15s/8s timing.
+
 Display values are derived:
 ```
 display_cap_progress = cap_progress_ticks / CAPTURE_TICKS   ∈ [0.0, 1.0]

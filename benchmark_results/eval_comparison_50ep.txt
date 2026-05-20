@@ -1,0 +1,9 @@
+=== serial-legacy, 50 episodes ===
+repeat=0 backend=serial-legacy episodes=50 elapsed_s=9.062 per_ep_s=0.1812
+{"backend": "serial-legacy", "episodes": 50, "num_envs": 0, "repeat": 1, "timings_s": [9.061996700009331], "mean_s": 9.061996700009331, "min_s": 9.061996700009331}
+=== sync vectorized, 50 episodes ===
+repeat=0 backend=sync episodes=50 elapsed_s=9.725 per_ep_s=0.1945
+{"backend": "sync", "episodes": 50, "num_envs": 0, "repeat": 1, "timings_s": [9.72505580005236], "mean_s": 9.72505580005236, "min_s": 9.72505580005236}
+=== async vectorized, 50 episodes ===
+repeat=0 backend=async episodes=50 elapsed_s=28.621 per_ep_s=0.5724
+{"backend": "async", "episodes": 50, "num_envs": 0, "repeat": 1, "timings_s": [28.62137609999627], "mean_s": 28.62137609999627, "min_s": 28.62137609999627}

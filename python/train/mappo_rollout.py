@@ -6,6 +6,36 @@ import torch
 from train.device import resolve_device
 from train.mappo_model import MappoConfig
 
+_INFO_METRIC_KEYS = (
+    "majority_on_point_alpha",
+    "majority_on_point_reward_a",
+    "majority_on_point_reward_b",
+    "majority_on_point_advantage_a",
+    "majority_on_point_advantage_b",
+    "majority_on_point_count_a",
+    "majority_on_point_count_b",
+    "uncontested_on_point_alpha",
+    "uncontested_on_point_reward_a",
+    "uncontested_on_point_reward_b",
+    "uncontested_on_point_count_a",
+    "uncontested_on_point_count_b",
+    "objective_unlock_seconds",
+    "objective_capture_seconds",
+)
+
+_OBJECTIVE_METRIC_KEYS = (
+    "uncontested_on_point_seconds_a",
+    "uncontested_on_point_seconds_b",
+    "majority_on_point_seconds_a",
+    "majority_on_point_seconds_b",
+    "alive_edge_no_score_seconds_a",
+    "alive_edge_no_score_seconds_b",
+    "cap_progress_gain_ticks",
+    "cap_progress_loss_ticks",
+    "team_a_score_delta_ticks",
+    "team_b_score_delta_ticks",
+)
+
 
 def step_loss_mask(
     cfg: MappoConfig,
@@ -45,13 +75,11 @@ def collect_rollout(trainer) -> "MappoRollout":
         flat_obs = obs.reshape(cfg.num_envs * cfg.n_agents, cfg.obs_dim)
         flat_h = h.reshape(cfg.num_envs * cfg.n_agents, cfg.gru_hidden)
         with torch.no_grad():
-            prev_rng = torch.get_rng_state()
-            torch.set_rng_state(trainer._sampling_rng_state)
-            try:
-                action, logprob, h_next = trainer.model.sample_action(flat_obs, flat_h)
-                trainer._sampling_rng_state = torch.get_rng_state()
-            finally:
-                torch.set_rng_state(prev_rng)
+            action, logprob, h_next = trainer.model.sample_action(
+                flat_obs,
+                flat_h,
+                generator=trainer.policy_sampling_generator,
+            )
             if cfg.value_per_agent:
                 value = trainer.model.value(
                     critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
@@ -62,6 +90,7 @@ def collect_rollout(trainer) -> "MappoRollout":
         next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, infos = trainer.vec_env.step(
             action_3d.detach().cpu().numpy()
         )
+        _accumulate_info_metrics(rollout.info_metrics, infos)
         done_np = np.logical_or(terminated, truncated)
         rollout.actor_obs[:, :, t] = obs
         if cfg.value_per_agent:
@@ -96,3 +125,19 @@ def collect_rollout(trainer) -> "MappoRollout":
     trainer.last_critic_obs = critic_obs
     trainer.h = h
     return rollout
+
+
+def _accumulate_info_metrics(dst: dict[str, float], infos: list[dict]) -> None:
+    for info in infos:
+        dst["info_metric_samples"] = float(dst.get("info_metric_samples", 0.0)) + 1.0
+        for key in _INFO_METRIC_KEYS:
+            value = info.get(key)
+            if isinstance(value, (int, float, np.floating)):
+                dst[key] = float(dst.get(key, 0.0)) + float(value)
+        objective_metrics = info.get("objective_metrics")
+        if not isinstance(objective_metrics, dict):
+            continue
+        for key in _OBJECTIVE_METRIC_KEYS:
+            value = objective_metrics.get(key)
+            if isinstance(value, (int, float, np.floating)):
+                dst[key] = float(dst.get(key, 0.0)) + float(value)
