@@ -19,9 +19,14 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
 from train.checkpoint_runtime import checkpoint_runtime
+from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
 from train.mappo_evaluate import eval_stats_dict
+from train.mappo_matrix_eval import (
+    CheckpointEnvConfig,
+    _native_bot_env_cfg,
+    _snapshot_env_cfg,
+)
 
 
 def _load_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
@@ -64,15 +69,11 @@ def _native_bot_eval_model(
 def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
     if learner_team not in ("A", "B"):
         raise ValueError(f"learner_team must be A or B, got {learner_team!r}")
-    env_cfg = dict(ckpt_config.get("env", {}))
-    env_cfg.pop("self_play", None)
-    env_cfg.pop("match_type", None)
-    env_cfg.pop("snapshot_paths", None)
-    env_cfg.pop("snapshot_league", None)
-    env_cfg.pop("self_play_schedule", None)
-    env_cfg["opponent_bot"] = str(bot)
-    env_cfg["learner_team"] = learner_team
-    env_cfg["n_agents"] = 3
+    env_cfg = _native_bot_env_cfg(
+        CheckpointEnvConfig(dict(ckpt_config.get("env", {}))),
+        bot,
+        learner_team=learner_team,
+    )
     ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
     runtime = ckpt_runtime.runtime
     if runtime.learner.kind != "mappo" or runtime.env_fn is None:
@@ -84,14 +85,10 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
 
 
 def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
-    env_cfg = dict(ckpt_config.get("env", {}))
-    env_cfg["opponent_bot"] = "snapshot"
-    env_cfg["learner_team"] = "A"
-    env_cfg["snapshot_paths"] = [snapshot_path]
-    env_cfg["snapshot_league"] = {
-        "latest": [snapshot_path],
-        "weights": {"latest": 1.0},
-    }
+    env_cfg = _snapshot_env_cfg(
+        CheckpointEnvConfig(dict(ckpt_config.get("env", {}))),
+        snapshot_path,
+    )
     ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
     runtime = ckpt_runtime.runtime
     if runtime.learner.kind != "mappo" or runtime.env_fn is None:

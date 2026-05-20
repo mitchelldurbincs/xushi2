@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import torch
@@ -18,12 +19,22 @@ from train.mappo_model import _eval_outcome_counts
 from train.phases import resolve_phase
 
 
-def _write_phase8_checkpoint(path: Path) -> None:
-    with open(
-        config_path("phase8_random_map_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
+def _load_config(relative_path: str) -> dict:
+    with open(config_path(relative_path), encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def _write_checkpoint(
+    path: Path,
+    config_relative_path: str,
+    *,
+    phase: int,
+    mutate_config: Callable[[dict], None] | None = None,
+) -> Path:
+    config = _load_config(config_relative_path)
+    if mutate_config is not None:
+        mutate_config(config)
+
     cfg = make_mappo_config(config)
     model = MappoActorCritic(cfg)
     _phase, spec = resolve_phase(config)
@@ -39,29 +50,59 @@ def _write_phase8_checkpoint(path: Path) -> None:
         },
         path,
     )
+    return path
 
 
-def _write_phase4_current_selfplay_checkpoint(path: Path) -> None:
-    with open(
-        config_path("phase4/probe/phase4_mappo_current_selfplay_smoke.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    cfg = make_mappo_config(config)
-    model = MappoActorCritic(cfg)
-    _phase, spec = resolve_phase(config)
-    _env_fn, env_cfg, _seed = spec["env_bundle"](config)
-    torch.save(
-        {
-            "model_state_dict": model.state_dict(),
-            "config": {
-                "phase": 4,
-                "env": env_cfg,
-                "mappo": cfg.__dict__,
-            },
-        },
-        path,
+def _run_matrix_cli(
+    checkpoint: Path,
+    output: Path,
+    *,
+    anchor_bots: Sequence[str] = (),
+    opponent_checkpoints: Sequence[Path] = (),
+    episodes: int = 1,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        str(script_path("eval_mappo_matrix.py")),
+        "--checkpoint",
+        str(checkpoint),
+    ]
+    for bot in anchor_bots:
+        command.extend(["--anchor-bot", str(bot)])
+    for opponent_checkpoint in opponent_checkpoints:
+        command.extend(["--opponent-checkpoint", str(opponent_checkpoint)])
+    command.extend(["--episodes", str(episodes), "--output", str(output)])
+    return subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
     )
+
+
+def _load_matrix_rows(path: Path) -> list[dict]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _phase4_smoke_matrix_config(tmp_path: Path, output_name: str) -> dict:
+    config = _load_config("phase4/smoke/phase4_mappo_smoke.yaml")
+    run_cfg = dict(config["run"])
+    run_cfg.update(
+        {
+            "total_updates": 1,
+            "eval_every": 1,
+            "eval_episodes": 1,
+            "checkpoint_every": 1,
+            "output_dir": str(tmp_path / output_name),
+            "matrix_eval": {
+                "episodes": 1,
+                "anchor_bots": ["noop"],
+                "output": "matrix_eval.json",
+            },
+        }
+    )
+    config["run"] = run_cfg
+    return config
 
 
 def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
@@ -79,32 +120,23 @@ def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
 
 def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
     checkpoint = tmp_path / "phase8.pt"
-    _write_phase8_checkpoint(checkpoint)
+    _write_checkpoint(
+        checkpoint,
+        "phase8_random_map_probe.yaml",
+        phase=8,
+    )
     output = tmp_path / "matrix.json"
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(script_path("eval_mappo_matrix.py")),
-            "--checkpoint",
-            str(checkpoint),
-            "--anchor-bot",
-            "noop",
-            "--opponent-checkpoint",
-            str(checkpoint),
-            "--episodes",
-            "1",
-            "--output",
-            str(output),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+    result = _run_matrix_cli(
+        checkpoint,
+        output,
+        anchor_bots=("noop",),
+        opponent_checkpoints=(checkpoint,),
     )
 
     assert "opponent=bot:noop" in result.stdout
     assert "opponent=snapshot:phase8.pt" in result.stdout
-    rows = json.loads(output.read_text(encoding="utf-8"))
+    rows = _load_matrix_rows(output)
     assert len(rows) == 2
     assert {row["opponent_type"] for row in rows} == {"bot", "snapshot"}
     for row in rows:
@@ -118,29 +150,21 @@ def test_eval_mappo_matrix_adapts_phase4_current_selfplay_checkpoint(
     tmp_path: Path,
 ) -> None:
     checkpoint = tmp_path / "phase4_selfplay.pt"
-    _write_phase4_current_selfplay_checkpoint(checkpoint)
+    _write_checkpoint(
+        checkpoint,
+        "phase4/probe/phase4_mappo_current_selfplay_smoke.yaml",
+        phase=4,
+    )
     output = tmp_path / "matrix.json"
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(script_path("eval_mappo_matrix.py")),
-            "--checkpoint",
-            str(checkpoint),
-            "--anchor-bot",
-            "noop",
-            "--episodes",
-            "1",
-            "--output",
-            str(output),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
+    result = _run_matrix_cli(
+        checkpoint,
+        output,
+        anchor_bots=("noop",),
     )
 
     assert "opponent=bot:noop" in result.stdout
-    rows = json.loads(output.read_text(encoding="utf-8"))
+    rows = _load_matrix_rows(output)
     assert len(rows) == 1
     assert rows[0]["opponent_type"] == "bot"
     assert rows[0]["opponent"] == "noop"
@@ -151,27 +175,12 @@ def test_eval_mappo_matrix_adapts_phase4_current_selfplay_checkpoint(
 def test_train_config_matrix_eval_writes_post_training_artifact(
     tmp_path: Path,
 ) -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    config["run"] = dict(config["run"])
-    config["run"]["total_updates"] = 1
-    config["run"]["eval_every"] = 1
-    config["run"]["eval_episodes"] = 1
-    config["run"]["checkpoint_every"] = 1
-    config["run"]["output_dir"] = str(tmp_path / "phase4_matrix")
-    config["run"]["matrix_eval"] = {
-        "episodes": 1,
-        "anchor_bots": ["noop"],
-        "output": "matrix_eval.json",
-    }
+    config = _phase4_smoke_matrix_config(tmp_path, "phase4_matrix")
 
     result = train_phase4_from_config(config)
     assert "mappo" in result
     output = tmp_path / "phase4_matrix" / "mappo" / "matrix_eval.json"
-    rows = json.loads(output.read_text(encoding="utf-8"))
+    rows = _load_matrix_rows(output)
     assert len(rows) == 1
     assert rows[0]["opponent_type"] == "bot"
     assert rows[0]["opponent"] == "noop"
@@ -179,27 +188,12 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 
 
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    config["run"] = dict(config["run"])
-    config["run"]["total_updates"] = 1
-    config["run"]["eval_every"] = 1
-    config["run"]["eval_episodes"] = 1
-    config["run"]["checkpoint_every"] = 1
-    config["run"]["output_dir"] = str(tmp_path / "phase4_matrix_retention")
+    config = _phase4_smoke_matrix_config(tmp_path, "phase4_matrix_retention")
     config["run"]["snapshot_retention"] = {
         "manifest": "snapshot_league.json",
         "max_latest": 2,
         "preserve_best": 1,
         "include_config_anchors": False,
-    }
-    config["run"]["matrix_eval"] = {
-        "episodes": 1,
-        "anchor_bots": ["noop"],
-        "output": "matrix_eval.json",
     }
 
     train_phase4_from_config(config)
