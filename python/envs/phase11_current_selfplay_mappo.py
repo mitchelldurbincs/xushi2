@@ -156,7 +156,10 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         if action.ndim != 2 or action.shape[0] != _AGENTS_PER_MATCH or action.shape[1] < 6:
             raise ValueError(f"action shape must be ({_AGENTS_PER_MATCH}, >=6), got {action.shape}")
 
-        actions = [Phase4MappoEnv._action_to_cpp(action[slot]) for slot in range(_AGENTS_PER_MATCH)]
+        actions = [
+            Phase4MappoEnv._action_to_cpp_for_slot(action[slot], slot)
+            for slot in range(_AGENTS_PER_MATCH)
+        ]
         self._last_opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
@@ -175,7 +178,9 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
                     )
                 opponent = opponent[:, :6]
                 for idx, slot in enumerate((3, 4, 5)):
-                    actions[slot] = Phase4MappoEnv._action_to_cpp(opponent[idx])
+                    actions[slot] = Phase4MappoEnv._action_to_cpp_for_slot(
+                        opponent[idx], slot
+                    )
                 self._last_opponent_actions[:] = opponent
             else:
                 bot = self._last_match.anchor_bot or "noop"

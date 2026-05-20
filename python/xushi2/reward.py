@@ -26,6 +26,7 @@ __all__ = [
     "DEATH_PENALTY_DEFAULT",
     "DISTANCE_SHAPING_COEF_DEFAULT",
     "KILL_BONUS_DEFAULT",
+    "MAJORITY_ON_POINT_COEF_DEFAULT",
     "ON_POINT_SHAPING_COEF_DEFAULT",
     "SCORE_PER_SECOND_DEFAULT",
     "SHAPING_CLIP_DEFAULT",
@@ -33,6 +34,7 @@ __all__ = [
     "TERMINAL_WIN_DEFAULT",
     "TICK_HZ",
     "TIME_PENALTY_PER_SECOND_DEFAULT",
+    "UNCONTESTED_ON_POINT_COEF_DEFAULT",
     "RewardCalculator",
 ]
 
@@ -50,6 +52,8 @@ DISTANCE_SHAPING_COEF_DEFAULT: float = 0.0
 ON_POINT_SHAPING_COEF_DEFAULT: float = 0.0
 TIME_PENALTY_PER_SECOND_DEFAULT: float = 0.0
 DAMAGE_DEALT_COEF_DEFAULT: float = 0.0
+MAJORITY_ON_POINT_COEF_DEFAULT: float = 0.0
+UNCONTESTED_ON_POINT_COEF_DEFAULT: float = 0.0
 _CENTI_HP_PER_HP: float = 100.0
 
 _TEAM_A_RANGER_SLOT: int = 0
@@ -58,6 +62,7 @@ _TEAM_B_RANGER_SLOT: int = 3
 
 @dataclass
 class _EventCounters:
+    tick: int = 0
     a_score_ticks: int = 0
     b_score_ticks: int = 0
     a_kills: int = 0
@@ -81,6 +86,7 @@ class _CounterReader:
 
     def read(self, sim) -> _EventCounters:
         out = _EventCounters(
+            tick=int(getattr(sim, "tick", 0)),
             a_score_ticks=int(sim.team_a_score_ticks),
             b_score_ticks=int(sim.team_b_score_ticks),
             a_kills=int(sim.team_a_kills),
@@ -181,6 +187,10 @@ class RewardCalculator:
         per_agent_rewards: bool = False,
         team_spirit: float = 0.0,
         damage_dealt_coef: float = DAMAGE_DEALT_COEF_DEFAULT,
+        majority_on_point_coef: float = MAJORITY_ON_POINT_COEF_DEFAULT,
+        majority_on_point_distribute: str = "on_point",
+        uncontested_on_point_coef: float = UNCONTESTED_ON_POINT_COEF_DEFAULT,
+        uncontested_on_point_distribute: str = "on_point",
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
@@ -192,6 +202,20 @@ class RewardCalculator:
             raise ValueError(f"team_spirit must be in [0, 1], got {team_spirit}")
         if damage_dealt_coef < 0.0:
             raise ValueError("damage_dealt_coef must be >= 0")
+        if majority_on_point_coef < 0.0:
+            raise ValueError("majority_on_point_coef must be >= 0")
+        if uncontested_on_point_coef < 0.0:
+            raise ValueError("uncontested_on_point_coef must be >= 0")
+        if majority_on_point_distribute not in ("on_point", "uniform"):
+            raise ValueError(
+                "majority_on_point_distribute must be 'on_point' or 'uniform', "
+                f"got {majority_on_point_distribute!r}"
+            )
+        if uncontested_on_point_distribute not in ("on_point", "uniform"):
+            raise ValueError(
+                "uncontested_on_point_distribute must be 'on_point' or 'uniform', "
+                f"got {uncontested_on_point_distribute!r}"
+            )
         self._terminal_win = float(terminal_win)
         self._terminal_loss = float(terminal_loss)
         self._kill_bonus = float(kill_bonus)
@@ -203,13 +227,27 @@ class RewardCalculator:
         self._per_agent = bool(per_agent_rewards)
         self._team_spirit = float(team_spirit)
         self._damage_dealt_coef = float(damage_dealt_coef)
+        self._majority_on_point_alpha = float(majority_on_point_coef)
+        self._majority_on_point_distribute = str(majority_on_point_distribute)
+        self._uncontested_on_point_alpha = float(uncontested_on_point_coef)
+        self._uncontested_on_point_distribute = str(uncontested_on_point_distribute)
+        self._last_majority_on_point_metrics = self._empty_majority_on_point_metrics()
+        self._last_uncontested_on_point_metrics = (
+            self._empty_uncontested_on_point_metrics()
+        )
         self._counter_reader = _CounterReader(per_agent=self._per_agent)
         self._prev = _EventCounters()
         self._clipper = _CumulativeClipper(shaping_clip)
         self._scalar_strategy = _ScalarRewardStrategy(self)
         self._per_agent_strategy = _PerAgentRewardStrategy(self)
 
-        needs_obs_bufs = self._distance_shaping_coef > 0.0 or self._on_point_shaping_coef > 0.0 or self._per_agent
+        needs_obs_bufs = (
+            self._distance_shaping_coef > 0.0
+            or self._on_point_shaping_coef > 0.0
+            or self._majority_on_point_alpha > 0.0
+            or self._uncontested_on_point_alpha > 0.0
+            or self._per_agent
+        )
         if needs_obs_bufs:
             self._pos_slice = actor_field_slice("own_position")
             self._on_point_slice = actor_field_slice("self_on_point")
@@ -222,11 +260,61 @@ class RewardCalculator:
     def reset(self, sim) -> None:
         self._prev = self._counter_reader.read(sim)
         self._clipper.reset()
+        self._last_majority_on_point_metrics = self._empty_majority_on_point_metrics()
+        self._last_uncontested_on_point_metrics = (
+            self._empty_uncontested_on_point_metrics()
+        )
 
     def set_team_spirit(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
             raise ValueError(f"team_spirit must be in [0, 1], got {value}")
         self._team_spirit = float(value)
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        if value < 0.0:
+            raise ValueError(f"majority_on_point alpha must be >= 0, got {value}")
+        self._majority_on_point_alpha = float(value)
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        if value < 0.0:
+            raise ValueError(f"uncontested_on_point alpha must be >= 0, got {value}")
+        self._uncontested_on_point_alpha = float(value)
+
+    @property
+    def majority_on_point_alpha(self) -> float:
+        return self._majority_on_point_alpha
+
+    @property
+    def uncontested_on_point_alpha(self) -> float:
+        return self._uncontested_on_point_alpha
+
+    @staticmethod
+    def _empty_majority_on_point_metrics() -> dict[str, float]:
+        return {
+            "majority_on_point_alpha": 0.0,
+            "majority_on_point_count_a": 0.0,
+            "majority_on_point_count_b": 0.0,
+            "majority_on_point_advantage_a": 0.0,
+            "majority_on_point_advantage_b": 0.0,
+            "majority_on_point_reward_a": 0.0,
+            "majority_on_point_reward_b": 0.0,
+        }
+
+    def majority_on_point_metrics(self) -> dict[str, float]:
+        return dict(self._last_majority_on_point_metrics)
+
+    @staticmethod
+    def _empty_uncontested_on_point_metrics() -> dict[str, float]:
+        return {
+            "uncontested_on_point_alpha": 0.0,
+            "uncontested_on_point_count_a": 0.0,
+            "uncontested_on_point_count_b": 0.0,
+            "uncontested_on_point_reward_a": 0.0,
+            "uncontested_on_point_reward_b": 0.0,
+        }
+
+    def uncontested_on_point_metrics(self) -> dict[str, float]:
+        return dict(self._last_uncontested_on_point_metrics)
 
     def _distance_shaping_delta(self, sim) -> float:
         if self._distance_shaping_coef <= 0.0:
@@ -251,12 +339,90 @@ class RewardCalculator:
             return 0.0
         return -self._time_penalty_per_second / float(TICK_HZ)
 
+    def _decision_seconds(self, now: _EventCounters) -> float:
+        delta_ticks = int(now.tick - self._prev.tick)
+        if delta_ticks <= 0:
+            delta_ticks = 1
+        return float(delta_ticks) / float(TICK_HZ)
+
     def _damage_delta_by_slot(self, now: _EventCounters) -> tuple[np.ndarray, np.ndarray]:
         if self._damage_dealt_coef <= 0.0:
             return np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
         damage_delta_slot = (now.damage_dealt_by_slot - self._prev.damage_dealt_by_slot).astype(np.float32)
         per_hp = self._damage_dealt_coef / _CENTI_HP_PER_HP
         return per_hp * damage_delta_slot[0:3], per_hp * damage_delta_slot[3:6]
+
+    def _majority_on_point_by_team(
+        self, sim, decision_seconds: float
+    ) -> tuple[float, float]:
+        if self._majority_on_point_alpha <= 0.0:
+            metrics = self._empty_majority_on_point_metrics()
+            metrics["majority_on_point_alpha"] = float(self._majority_on_point_alpha)
+            self._last_majority_on_point_metrics = metrics
+            return 0.0, 0.0
+        values_a = self._slot_on_point_values(sim, (0, 1, 2))
+        values_b = self._slot_on_point_values(sim, (3, 4, 5))
+        count_a = float(values_a.sum()) if values_a is not None else 0.0
+        count_b = float(values_b.sum()) if values_b is not None else 0.0
+        advantage_a = max(0.0, count_a - count_b)
+        advantage_b = max(0.0, count_b - count_a)
+        reward_a = self._majority_on_point_alpha * advantage_a * decision_seconds
+        reward_b = self._majority_on_point_alpha * advantage_b * decision_seconds
+        self._last_majority_on_point_metrics = {
+            "majority_on_point_alpha": float(self._majority_on_point_alpha),
+            "majority_on_point_count_a": count_a,
+            "majority_on_point_count_b": count_b,
+            "majority_on_point_advantage_a": advantage_a,
+            "majority_on_point_advantage_b": advantage_b,
+            "majority_on_point_reward_a": reward_a,
+            "majority_on_point_reward_b": reward_b,
+        }
+        return reward_a, reward_b
+
+    def _majority_on_point_shares(self, sim, slots: tuple[int, int, int]) -> np.ndarray:
+        if self._majority_on_point_distribute == "uniform":
+            return np.full(3, 1.0 / 3.0, dtype=np.float32)
+        return self._on_point_shares(sim, slots)
+
+    def _uncontested_on_point_by_team(
+        self, sim, decision_seconds: float
+    ) -> tuple[float, float]:
+        if self._uncontested_on_point_alpha <= 0.0:
+            metrics = self._empty_uncontested_on_point_metrics()
+            metrics["uncontested_on_point_alpha"] = float(
+                self._uncontested_on_point_alpha
+            )
+            self._last_uncontested_on_point_metrics = metrics
+            return 0.0, 0.0
+        values_a = self._slot_on_point_values(sim, (0, 1, 2))
+        values_b = self._slot_on_point_values(sim, (3, 4, 5))
+        count_a = float(values_a.sum()) if values_a is not None else 0.0
+        count_b = float(values_b.sum()) if values_b is not None else 0.0
+        reward_a = (
+            self._uncontested_on_point_alpha * decision_seconds
+            if count_a > 0.0 and count_b <= 0.0
+            else 0.0
+        )
+        reward_b = (
+            self._uncontested_on_point_alpha * decision_seconds
+            if count_b > 0.0 and count_a <= 0.0
+            else 0.0
+        )
+        self._last_uncontested_on_point_metrics = {
+            "uncontested_on_point_alpha": float(self._uncontested_on_point_alpha),
+            "uncontested_on_point_count_a": count_a,
+            "uncontested_on_point_count_b": count_b,
+            "uncontested_on_point_reward_a": reward_a,
+            "uncontested_on_point_reward_b": reward_b,
+        }
+        return reward_a, reward_b
+
+    def _uncontested_on_point_shares(
+        self, sim, slots: tuple[int, int, int]
+    ) -> np.ndarray:
+        if self._uncontested_on_point_distribute == "uniform":
+            return np.full(3, 1.0 / 3.0, dtype=np.float32)
+        return self._on_point_shares(sim, slots)
 
     def step(self, sim):
         if self._per_agent:
@@ -275,6 +441,18 @@ class RewardCalculator:
         raw_a += self._distance_shaping_delta(sim)
         raw_a += self._on_point_shaping_delta(sim)
         raw_b = -raw_a
+        majority_a, majority_b = self._majority_on_point_by_team(
+            sim, self._decision_seconds(now)
+        )
+        majority_delta = majority_a - majority_b
+        raw_a += majority_delta
+        raw_b -= majority_delta
+        uncontested_a, uncontested_b = self._uncontested_on_point_by_team(
+            sim, self._decision_seconds(now)
+        )
+        uncontested_delta = uncontested_a - uncontested_b
+        raw_a += uncontested_delta
+        raw_b -= uncontested_delta
         tp = self._time_penalty_delta()
         raw_a += tp
         raw_b += tp
@@ -306,6 +484,28 @@ class RewardCalculator:
             shares_b = self._on_point_shares(sim, (3, 4, 5))
             raw_b += self._score_per_second * b_score_seconds * shares_b
             raw_a -= (self._score_per_second * b_score_seconds) / 3.0
+        majority_a, majority_b = self._majority_on_point_by_team(
+            sim, self._decision_seconds(now)
+        )
+        if majority_a != 0.0:
+            raw_a += majority_a * self._majority_on_point_shares(sim, (0, 1, 2))
+            raw_b -= majority_a / 3.0
+        if majority_b != 0.0:
+            raw_b += majority_b * self._majority_on_point_shares(sim, (3, 4, 5))
+            raw_a -= majority_b / 3.0
+        uncontested_a, uncontested_b = self._uncontested_on_point_by_team(
+            sim, self._decision_seconds(now)
+        )
+        if uncontested_a != 0.0:
+            raw_a += uncontested_a * self._uncontested_on_point_shares(
+                sim, (0, 1, 2)
+            )
+            raw_b -= uncontested_a / 3.0
+        if uncontested_b != 0.0:
+            raw_b += uncontested_b * self._uncontested_on_point_shares(
+                sim, (3, 4, 5)
+            )
+            raw_a -= uncontested_b / 3.0
         dist = self._distance_shaping_delta(sim)
         onp = self._on_point_shaping_delta(sim)
         raw_a += dist + onp
@@ -346,32 +546,37 @@ class RewardCalculator:
 
     def _on_point_shares(self, sim, slots: tuple[int, int, int]) -> np.ndarray:
         uniform = np.full(3, 1.0 / 3.0, dtype=np.float32)
-        if self._obs_bufs is None or self._on_point_slice is None:
+        values = self._slot_on_point_values(sim, slots)
+        if values is None:
             return uniform
-        shares = np.zeros(3, dtype=np.float32)
-        for i, slot in enumerate(slots):
-            try:
-                _cpp.build_actor_obs(sim, slot, self._obs_bufs[slot])
-            except Exception:
-                return uniform
-            shares[i] = float(self._obs_bufs[slot][self._on_point_slice][0])
+        shares = values.astype(np.float32, copy=True)
         total = float(shares.sum())
         if total <= 1e-12:
             return uniform
         return shares / total
 
     def _team_on_point_fraction(self, sim, slots: tuple[int, int, int]) -> float:
-        assert self._obs_bufs is not None
-        assert self._on_point_slice is not None
-        present = 0
-        on_point = 0.0
-        for slot in slots:
+        values = self._slot_on_point_values(sim, slots)
+        if values is None:
+            return 0.0
+        return float(values.mean())
+
+    def _slot_on_point_values(
+        self, sim, slots: tuple[int, int, int]
+    ) -> np.ndarray | None:
+        fake_values = getattr(sim, "on_point_by_slot", None)
+        if fake_values is not None:
+            arr = np.asarray(fake_values, dtype=np.float32)
+            if arr.shape[0] < _cpp.AGENTS_PER_MATCH:
+                return None
+            return arr[list(slots)].astype(np.float32, copy=True)
+        if self._obs_bufs is None or self._on_point_slice is None:
+            return None
+        out = np.zeros(3, dtype=np.float32)
+        for i, slot in enumerate(slots):
             try:
                 _cpp.build_actor_obs(sim, slot, self._obs_bufs[slot])
             except Exception:
-                continue
-            present += 1
-            on_point += float(self._obs_bufs[slot][self._on_point_slice][0])
-        if present == 0:
-            return 0.0
-        return on_point / float(present)
+                return None
+            out[i] = float(self._obs_bufs[slot][self._on_point_slice][0])
+        return out

@@ -30,6 +30,20 @@ def action_to_fields(action_arr: Any, *, include_target: bool = False) -> list[f
     return fields
 
 
+def policy_action_to_world_fields(
+    action_arr: Any,
+    *,
+    slot: int,
+    include_target: bool = False,
+) -> list[float]:
+    """Convert a team-frame policy action to world-frame replay fields."""
+    fields = action_to_fields(action_arr, include_target=include_target)
+    if int(slot) >= 3:
+        fields[0] = -fields[0]
+        fields[1] = -fields[1]
+    return fields
+
+
 def format_decision(tick: int, slot0: list[float], slot3: list[float]) -> str:
     fields = [f"{tick}"]
     for v in slot0 + slot3:

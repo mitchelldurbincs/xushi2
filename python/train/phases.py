@@ -45,7 +45,21 @@ def _make_phase4_env(
     reward_cfg: dict,
     mini_game: str | None = None,
     mini_game_cfg: dict | None = None,
+    self_play: bool = False,
+    self_play_schedule: dict | None = None,
+    snapshot_league: dict | None = None,
 ):
+    if self_play:
+        if mini_game not in (None, ""):
+            raise ValueError("phase4 self_play cannot be combined with mini_game")
+        from envs import Phase4CurrentSelfplayMappoEnv
+
+        return Phase4CurrentSelfplayMappoEnv(
+            sim_cfg,
+            reward_cfg=reward_cfg,
+            self_play_schedule=self_play_schedule,
+            snapshot_league=snapshot_league,
+        )
     if mini_game == "aim_only":
         from envs import Phase4AimOnlyMappoEnv
 
@@ -272,7 +286,17 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     base_cfg = _extract_base_env_cfg(env_cfg)
     mini_game = env_cfg.get("mini_game")
     mini_game_cfg = dict(env_cfg.get("mini_game_config", {}))
+    self_play = bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
+    self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
+    snapshot_league = dict(env_cfg.get("snapshot_league", {}))
     ckpt_env_cfg = dict(base_cfg)
+    if self_play:
+        ckpt_env_cfg["self_play"] = {"enabled": True}
+        ckpt_env_cfg["match_type"] = "current"
+        if "self_play_schedule" in env_cfg:
+            ckpt_env_cfg["self_play_schedule"] = self_play_schedule
+        if "snapshot_league" in env_cfg:
+            ckpt_env_cfg["snapshot_league"] = snapshot_league
     if mini_game is not None:
         ckpt_env_cfg["mini_game"] = str(mini_game)
         ckpt_env_cfg["mini_game_config"] = mini_game_cfg
@@ -285,6 +309,9 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
             base_cfg["reward"],
             None if mini_game is None else str(mini_game),
             mini_game_cfg,
+            self_play,
+            self_play_schedule if "self_play_schedule" in env_cfg else None,
+            snapshot_league if "snapshot_league" in env_cfg else None,
         ),
         ckpt_env_cfg,
         _resolve_seed_base(env_cfg, base_cfg["sim"]),
@@ -589,4 +616,10 @@ def resolve_phase(config: dict) -> tuple[int, dict]:
     spec = PHASE_REGISTRY.get(phase)
     if spec is None:
         raise ValueError(f"unsupported phase/config shape: phase={raw_phase!r}")
+    if phase == 4 and bool(
+        dict(config.get("env", {}).get("self_play", {})).get("enabled", False)
+    ):
+        spec = dict(spec)
+        spec["label"] = "phase4_selfplay"
+        spec["n_agents"] = 6
     return phase, spec

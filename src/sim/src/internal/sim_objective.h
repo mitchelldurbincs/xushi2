@@ -9,6 +9,6 @@ namespace xushi2::sim::internal {
 void objective_tick_update(ObjectiveState& obj,
                            const std::array<HeroState, kAgentsPerMatch>& heroes,
                            common::Tick now,
-                           const MapBounds& map);
+                           const MatchConfig& config);
 
 }  // namespace xushi2::sim::internal

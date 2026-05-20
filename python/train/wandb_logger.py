@@ -97,18 +97,24 @@ def make_logger(
 
     if not wandb_cfg.get("enabled", True):
         return _NullLogger()
+    required = bool(wandb_cfg.get("required", False))
     if os.environ.get("WANDB_MODE", "").lower() == "disabled":
+        if required:
+            raise RuntimeError("wandb.required=true but WANDB_MODE=disabled")
         return _NullLogger()
 
     try:
         import wandb
     except ImportError:
+        if required:
+            raise RuntimeError("wandb.required=true but the wandb package is not installed")
         _LOGGER.warning("wandb not installed; metrics will not be logged")
         return _NullLogger()
 
     project = os.environ.get("WANDB_PROJECT") or wandb_cfg.get("project") or DEFAULT_PROJECT
     entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity") or DEFAULT_ENTITY
     group = wandb_cfg.get("group")
+    init_timeout = float(wandb_cfg.get("init_timeout_seconds", 30.0))
 
     enriched_config = dict(run_config)
     commit = _git_commit_short()
@@ -123,10 +129,18 @@ def make_logger(
             group=group,
             tags=list(tags) if tags else None,
             config=enriched_config,
+            settings=wandb.Settings(
+                init_timeout=init_timeout,
+                login_timeout=init_timeout,
+                x_service_wait=min(init_timeout, 30.0),
+            ),
             reinit="finish_previous",
         )
     except Exception as exc:
+        if required:
+            raise RuntimeError(f"wandb.required=true but wandb.init failed: {exc}") from exc
         _LOGGER.warning("wandb.init failed (%s); metrics will not be logged", exc)
         return _NullLogger()
 
+    print(f"[wandb] run_url={getattr(run, 'url', None)}", flush=True)
     return _ActiveLogger(run)

@@ -95,6 +95,10 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                        &xushi2::sim::MatchConfig::fog_of_war_enabled)
         .def_readwrite("randomize_map", &xushi2::sim::MatchConfig::randomize_map)
         .def_readwrite("action_repeat", &xushi2::sim::MatchConfig::action_repeat)
+        .def_readwrite("objective_unlock_ticks",
+                       &xushi2::sim::MatchConfig::objective_unlock_ticks)
+        .def_readwrite("objective_capture_ticks",
+                       &xushi2::sim::MatchConfig::objective_capture_ticks)
         .def_readwrite("map", &xushi2::sim::MatchConfig::map)
         .def_property(
             "cover_circles",
@@ -159,6 +163,9 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def("reset", py::overload_cast<>(&xushi2::sim::Sim::reset))
         .def("reset", py::overload_cast<std::uint64_t>(&xushi2::sim::Sim::reset),
              py::arg("seed"))
+        .def("set_objective_timing_ticks",
+             &xushi2::sim::Sim::set_objective_timing_ticks,
+             py::arg("unlock_ticks"), py::arg("capture_ticks"))
         .def("step",
              [](xushi2::sim::Sim& self, std::vector<xushi2::common::Action> actions) {
                  if (actions.size() != xushi2::sim::kAgentsPerMatch) {
@@ -194,6 +201,14 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         .def_property_readonly("team_b_score_ticks",
                                [](const xushi2::sim::Sim& s) {
                                    return s.state().objective.team_b_score_ticks;
+                               })
+        .def_property_readonly("objective_unlock_ticks",
+                               [](const xushi2::sim::Sim& s) {
+                                   return s.config().objective_unlock_ticks;
+                               })
+        .def_property_readonly("objective_capture_ticks",
+                               [](const xushi2::sim::Sim& s) {
+                                   return s.config().objective_capture_ticks;
                                })
         .def_property_readonly("team_a_score",
                                [](const xushi2::sim::Sim& s) {
