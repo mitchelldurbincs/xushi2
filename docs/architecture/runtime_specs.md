@@ -41,6 +41,7 @@ be added to explicit runtime specs and `envs.runtime_factory`, not to
 
 Slow smoke tests are intentionally separated at verification time. Fast runtime
 unit coverage lives in `tests/test_runtime_specs.py`, `tests/test_train_dispatch.py`,
-and `tests/test_mappo_public_api.py`. Long one-update and BC smoke paths remain
-in legacy compatibility tests until they are split further; run them explicitly
-when proving end-to-end training behavior.
+and `tests/test_mappo_public_api.py`. End-to-end training smoke coverage lives
+in `tests/test_mappo_phase4_smoke.py`, while the heavier cross-phase BC probe
+sweep lives in `tests/test_mappo_bc_probe_smoke.py` and is marked `bc_probe`.
+Run those explicitly when proving end-to-end training behavior.

@@ -20,7 +20,7 @@ For Phase 4 training/eval configuration context, see
 
 | Script path | Purpose |
 | --- | --- |
-| `python/scripts/list_configs.py` | Discover experiment configs by metadata (`phase`, `purpose`, `status`) and print canonical train commands. See `experiments/configs/README.md` §"Config metadata schema". |
+| `python/scripts/list_configs.py` | Discover experiment configs by metadata (`phase`, `purpose`, `status`) and print canonical module-entrypoint commands. See `experiments/configs/README.md` §"Config metadata schema". |
 | `python/scripts/check_import_boundaries.py` | Enforce Python package import-direction rules (`xushi2` → `envs` → `train`). See `docs/architecture/python_layers.md`. |
 | `python/scripts/check_viewer_bench.py` | Compare a viewer-benchmark result JSON against the baseline within the 15% tolerance band. Used by `make bench-viewer`. |
 | `python/scripts/diag_phase3_plumbing.py` | Phase-3 plumbing probe: drives `XushiEnv` with hand-written actions vs a noop opponent and prints objective-state-machine diagnostics. |

@@ -8,6 +8,9 @@ metadata:
   purpose: explicit runtime smoke
   status: active
   expected_runtime: short
+  gate_relevance:
+    - runtime_specs
+    - phase4_smoke
   lineage: Equivalent to Phase 4 MAPPO smoke, selected by runtime specs.
 learner:
   kind: mappo

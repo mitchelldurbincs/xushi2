@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 
-
 DEFAULT_ROOT = Path("experiments/configs")
 
 
@@ -46,6 +45,7 @@ def discover_configs(root: Path) -> list[dict[str, Any]]:
         if not isinstance(meta, dict):
             continue
         rel_path = path.as_posix()
+        module_config_path = Path("..") / rel_path
         records.append(
             {
                 "path": rel_path,
@@ -55,13 +55,21 @@ def discover_configs(root: Path) -> list[dict[str, Any]]:
                 "expected_runtime": str(meta.get("expected_runtime", "")),
                 "gate_relevance": meta.get("gate_relevance", []),
                 "lineage": str(meta.get("lineage", "")),
-                "command": f"python -m train.train --config {rel_path}",
+                "command": (
+                    "cd python && python -m train.train "
+                    f"--config {module_config_path.as_posix()}"
+                ),
             }
         )
     return records
 
 
-def apply_filters(records: list[dict[str, Any]], phase: str | None, purpose: str | None, status: str | None) -> list[dict[str, Any]]:
+def apply_filters(
+    records: list[dict[str, Any]],
+    phase: str | None,
+    purpose: str | None,
+    status: str | None,
+) -> list[dict[str, Any]]:
     result = records
     if phase:
         result = [r for r in result if r["phase"] == phase]
@@ -77,9 +85,16 @@ def print_table(records: list[dict[str, Any]]) -> None:
         print("No configs matched filters.")
         return
     for r in records:
-        gate = ",".join(r["gate_relevance"]) if isinstance(r["gate_relevance"], list) else str(r["gate_relevance"])
+        gate = (
+            ",".join(r["gate_relevance"])
+            if isinstance(r["gate_relevance"], list)
+            else str(r["gate_relevance"])
+        )
         print(f"{r['path']}")
-        print(f"  phase={r['phase']} purpose={r['purpose']} status={r['status']} runtime={r['expected_runtime']}")
+        print(
+            f"  phase={r['phase']} purpose={r['purpose']} "
+            f"status={r['status']} runtime={r['expected_runtime']}"
+        )
         print(f"  gate_relevance={gate}")
         print(f"  lineage={r['lineage']}")
         print(f"  cmd: {r['command']}")

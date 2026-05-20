@@ -59,10 +59,12 @@ ignore = ["N806", "N812"]
 # Run from python/ so it finds python/tests/.
 testpaths = ["tests"]
 pythonpath = ["."]
-# Auto-fail any test that hangs >10 minutes. signal method (SIGALRM) is more
-# aggressive than thread method — it can interrupt C extensions that hold the
-# GIL (numpy/torch/subprocess.communicate), which thread method cannot.
-# Linux-only; falls back to thread method on Windows. Override per-test with
+markers = [
+    "slow: integration smoke tests that run short training or evaluation loops",
+    "bc_probe: slower cross-phase behavioral-cloning probe smoke tests",
+]
+# Auto-fail any test that hangs >10 minutes. The thread method is portable
+# across native Windows and POSIX shells; override per-test with
 # @pytest.mark.timeout(N).
 timeout = 600
-timeout_method = "signal"
+timeout_method = "thread"

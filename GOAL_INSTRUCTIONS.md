@@ -1,120 +1,81 @@
-# Goal: Remove Hardcoded Phase Runtime Architecture
+# Goal: Simplify xushi2 Project Surface Area
 
 ## Purpose
 
-Refactor the Python runtime architecture so experiment phases remain useful
-metadata, documentation, and config organization, but environments, learners,
-dispatch, and reusable runtime helpers are not hardcoded around `phaseX`.
+Simplify xushi2 so the current RL work is easier to understand, run, test, and
+extend without weakening the deterministic sim, replay, reward, observation/action
+contracts, or actor/critic separation.
 
-The current project uses phase labels in two different ways:
+Bias toward removing accidental complexity in Python training/runtime, configs,
+tests, docs, and local workflow. Do not simplify by deleting active research
+capability, changing game semantics, or hiding important experiment metadata.
 
-1. **Good use:** experiment identity, config paths, W&B tags, phase-gate history,
-   docs, and journal lineage.
-2. **Problem use:** runtime architecture, env class names, trainer routing,
-   observation/action dimensions, feature toggles, and env wrapper inheritance.
-
-Preserve the first use. Unwind the second use.
+Phases still matter for RL progress tracking. Runtime behavior should continue
+to be selected by explicit runtime/task/env/learner specs.
 
 ## First Reads
 
-Before changing code, read these in order:
+Before changing code, inspect the current state:
 
 1. `docs/architecture/python_layers.md`
-2. `docs/rl_design.md`
-3. `docs/observation_spec.md`
-4. `docs/action_spec.md`
-5. `docs/coding_philosophy.md`
-6. `docs/standards/python_training_checklist.md`
-7. `python/train/phases.py`
-8. `python/train/train.py`
-9. `python/train/mappo_rollout_trainer.py`
-10. `python/train/mappo_eval_checkpoint.py`
-11. `python/envs/__init__.py`
+2. `docs/architecture/runtime_specs.md`
+3. `docs/rl_design.md`
+4. `docs/observation_spec.md`
+5. `docs/action_spec.md`
+6. `docs/coding_philosophy.md`
+7. `docs/standards/python_training_checklist.md`
+8. `python/train/mappo_eval_checkpoint.py`
+9. `python/train/runtime_specs.py`
+10. `python/train/checkpoint_runtime.py`
+11. `python/train/phases.py`
+12. `python/envs/__init__.py`
+13. `experiments/configs/`
 
-Also inspect the current worktree before relying on this file. There may be
-unrelated local changes.
+Also inspect `git status` first. There may be unrelated local edits, especially
+`GOAL_INSTRUCTIONS.md`.
 
-## Current Scope From Initial Audit
+## Simplification Priorities
 
-The main hardcoded runtime phase coupling is in:
+Work in small, reviewable slices. Prefer simplifications that reduce the number
+of concepts a future agent must hold in memory.
 
-- `python/train/phases.py`
-  - central `PHASE_REGISTRY`;
-  - `_make_phaseN_env` factories;
-  - `_phaseN_env_bundle` config extractors;
-  - `resolve_phase(config)` returning learner/env dimensions from numeric phase.
-- `python/train/train.py`
-  - dispatches phase 0, phases 2-3, and phases 4-11 explicitly;
-  - calls `train_phase4_from_config` for all MAPPO phases;
-  - formats user-facing banners by numeric phase groups.
-- `python/train/mappo_rollout_trainer.py`
-  - `make_mappo_config` gets `obs_dim`, `critic_obs_dim`, `n_agents`, action
-    dimensions, and target-action support from `resolve_phase`.
-- `python/train/mappo_eval_checkpoint.py`
-  - `build_runtime_context` depends on `resolve_phase`;
-  - exported function name `train_phase4_from_config` now handles more than
-    Phase 4;
-  - composition/BC paths still contain Phase 4-specific helper names.
-- `python/train/composition_rehearsal.py`
-  - imports private `_make_phase4_env` from `train.phases`.
-- `python/envs/`
-  - env classes and modules are phase-named;
-  - later envs wrap/import earlier phase envs, especially `Phase4MappoEnv`;
-  - examples include Phase 5/6/7/9/11 using `Phase4MappoEnv`, Phase 8 using
-    `Phase7FogMappoEnv`, and Phase 10 using `Phase8RandomMapMappoEnv`.
-- `python/scripts/` and `python/eval/`
-  - replay/eval helper names and modes still refer to phase-specific contracts.
+High-value targets:
 
-Some phase references in docs, config filenames, W&B tags, tests, and journal
-entries are acceptable and should remain unless they block the architecture.
-
-## Important Existing Issue
-
-At the time this goal was written, running the import-boundary checker failed
-before it could evaluate boundaries because `python/tests/test_reward.py`
-contained conflict markers around line 639:
-
-the Git conflict marker for `HEAD`.
-
-Before relying on `python -m scripts.check_import_boundaries`, inspect and fix
-that file if the conflict markers are still present. Do not silently discard
-user changes while resolving it.
-
-## Architectural Direction
-
-Move from a phase registry to an explicit runtime task/environment registry.
-
-Target config concepts:
-
-```yaml
-experiment:
-  phase: phase4              # optional metadata for docs/W&B/gates
-  tags: [...]
-
-learner:
-  kind: mappo                # mappo, ppo_recurrent, scripted_determinism, etc.
-
-env:
-  kind: mappo_match          # mappo_match, memory_toy, aim_only, cap_duel, etc.
-  actor_obs: flat            # flat, entity, entity_grid, etc.
-  critic_obs: team_global
-  team_size: 3
-  learner_team: A
-  opponent:
-    kind: basic              # basic, noop, weak_basic_v2, snapshot, current
-  features:
-    fog: none                # none, team_shared, per_agent
-    map_randomization: false
-    target_slot: false
-    current_selfplay: false
-```
-
-Exact field names may differ if the codebase has a better local pattern. The
-important property is that runtime behavior is selected by explicit
-capabilities, not `phase == N`.
-
-Backward compatibility is required. Existing phase configs should keep working
-through a compatibility adapter while new configs can use the task/env shape.
+1. **Split large orchestration modules.**
+   - `python/train/mappo_eval_checkpoint.py` currently mixes runtime context,
+     pretrain hooks, training loop orchestration, checkpoint writing, eval, and
+     matrix hooks.
+   - Split by responsibility without changing training behavior or metric names.
+2. **Finish moving runtime behavior behind public runtime APIs.**
+   - Replay, eval, benchmark, checkpoint, and training helpers should consume
+     `resolve_runtime_spec`, `checkpoint_runtime`, or neutral public env
+     factories.
+   - Avoid new direct use of `train.phases` or numeric phase branches outside
+     legacy compatibility.
+3. **Reduce phase-named production concepts.**
+   - Keep phases as experiment metadata.
+   - Prefer capability names for reusable env concepts, helpers, docs, and tests.
+   - Keep aliases only when they support current configs/tests/checkpoints.
+4. **Consolidate config surface.**
+   - Make `experiments/configs/runtime/` the preferred home for new runnable
+     configs.
+   - Keep only clearly active smoke/baseline/probe configs outside archive.
+   - Move stale or superseded configs to archive/legacy with notes.
+5. **Split mixed fast/slow tests.**
+   - Separate config/unit tests from one-update training, BC, replay, and eval
+     smoke tests.
+   - Keep representative slow tests, but make them explicit and easy to run.
+   - Avoid hiding slow behavior inside broad unit-test files.
+6. **Make current checkpoint schema explicit.**
+   - New checkpoints should save a clear current schema using `experiment`,
+     `learner`, `env`, and model config.
+   - Old checkpoint support can remain thin and best-effort. Do not over-optimize
+     for historical compatibility.
+7. **Clean local/generated workflow noise.**
+   - Ensure caches, build outputs, runs, W&B output, egg-info, benchmark output,
+     and replay output are ignored or have a documented cleanup path.
+   - Add or improve a PowerShell-friendly cleanup command only if it avoids
+     deleting tracked or user-authored artifacts.
 
 ## Non-Negotiables
 
@@ -122,166 +83,91 @@ through a compatibility adapter while new configs can use the task/env shape.
 - Do not change game rules, reward functions, observation layouts, action
   semantics, replay format, deterministic sim behavior, or W&B metric schemas
   unless the change is explicitly required and called out.
-- Keep phase labels in experiment docs/config organization where useful.
-- Do not remove existing phase configs or break old checkpoints without an
-  explicit migration plan.
-- Do not perform a broad rename-only churn pass before the runtime abstraction
-  exists.
-- Preserve actor/critic separation. No actor-observation path may call helpers
-  that expose hidden enemies or full state.
-- Keep diffs narrow and staged. This should be an incremental migration, not a
-  one-shot rewrite.
-
-## Recommended Migration Plan
-
-### Step 1: Create Runtime Specs
-
-Introduce a small explicit spec layer, likely under `python/train/` or
-`python/xushi2/`, with dataclasses or typed dictionaries for:
-
-- experiment metadata,
-- learner spec,
-- env spec,
-- observation spec,
-- action spec,
-- opponent/self-play spec,
-- map/fog/snapshot feature spec.
-
-The spec should be constructible from:
-
-1. existing phase configs,
-2. new explicit task/env configs.
-
-Keep `resolve_phase` temporarily as a compatibility adapter, but stop spreading
-new call sites that depend on numeric phases.
-
-### Step 2: Replace Trainer Dependence On Phase Numbers
-
-Refactor learner entrypoints so they dispatch on `learner.kind` and env/task
-capabilities:
-
-- PPO recurrent path should receive an explicit `TaskSpec`.
-- MAPPO path should receive explicit dimensions and env factory from the runtime
-  spec.
-- `make_mappo_config` should not need `phase in (4, 5, 6, 7, 8, 9, 10, 11)`.
-- Rename or alias `train_phase4_from_config` to a neutral name such as
-  `train_mappo_from_config`, while preserving old imports if tests or scripts
-  depend on them.
-
-### Step 3: Move Env Construction Out Of `train.phases`
-
-Create an env registry/factory that maps explicit env specs to constructors.
-
-The training layer should ask for "build env from spec", not import or call
-`_make_phase4_env`. Composition rehearsal should also use the public factory.
-
-Avoid adding new direct imports from `train` into phase-private env modules.
-
-### Step 4: Rename Or Wrap Reusable Env Concepts
-
-After the spec/factory exists, start moving phase-named envs toward capability
-names. Suggested target names:
-
-- `Phase4MappoEnv` -> `RangerMappoMatchEnv` or `FlatRangerMappoMatchEnv`
-- `Phase4CurrentSelfplayMappoEnv` -> `CurrentSelfplayMappoMatchEnv`
-- `Phase5EntityMappoEnv` -> `EntityObsMappoWrapper`
-- `Phase6GridMappoEnv` -> `EntityGridObsMappoWrapper`
-- `Phase7FogMappoEnv` -> `FogMappoMatchEnv` or `FogObsMappoWrapper`
-- `Phase8RandomMapMappoEnv` -> `RandomizedMapMappoEnv`
-- `Phase9SnapshotMappoEnv` -> `SnapshotOpponentMappoEnv`
-- `Phase10TargetSlotMappoEnv` -> `TargetSlotMappoEnv`
-- `Phase11CurrentSelfplayMappoEnv` -> `SixAgentCurrentSelfplayMappoEnv`
-
-Use compatibility aliases during the migration so existing tests, checkpoints,
-and scripts do not all have to change in one commit.
-
-### Step 5: Keep Experiment Identity Separate
-
-Add or preserve experiment metadata fields used for:
-
-- W&B run names/tags,
-- journal entries,
-- config listing,
-- gate decisions,
-- phase-specific docs.
-
-The phase label can still be logged. It just should not determine learner
-shape or env behavior by itself after migration.
-
-### Step 6: Update Tests And Boundaries
-
-Add focused tests proving:
-
-- legacy phase configs still resolve and train/import correctly;
-- new explicit runtime configs resolve to the same env/learner specs;
-- MAPPO dimensions come from runtime specs/env spaces rather than hardcoded
-  phase numbers;
-- `train` does not import phase-private env modules directly where the boundary
-  checker forbids it;
-- actor/critic leak tests still pass after any env/observation changes.
+- Preserve actor/critic separation. No actor-observation path may call
+  hidden-enemy/full-state helpers.
+- Keep phase labels for experiment progress, docs, W&B tags, config
+  organization, and journal lineage.
+- Prefer compatibility with current configs and current checkpoints. Do not
+  spend large effort preserving every older experimental shape unless it is
+  still actively used.
+- Keep diffs narrow. Do not do broad rename churn unless the renamed surface is
+  actively being simplified.
 
 ## Suggested First Slice
 
-A good first implementation slice is:
+A good first simplification slice:
 
-1. Add a neutral runtime spec module.
-2. Add a compatibility adapter from the current `PHASE_REGISTRY` entries into
-   that runtime spec.
-3. Change `make_mappo_config`, `build_runtime_context`, and benchmark scripts
-   to consume the runtime spec instead of raw phase spec dictionaries.
-4. Add one explicit non-phase config fixture in tests that is equivalent to the
-   Phase 4 smoke config.
-5. Keep all existing phase configs working.
+1. Split `python/train/mappo_eval_checkpoint.py` into smaller modules:
+   - runtime context / config normalization;
+   - pretrain and composition hooks;
+   - checkpoint save/load payload helpers;
+   - post-training eval/matrix hooks;
+   - top-level `train_mappo_from_config`.
+2. Keep public imports stable through `train.mappo`.
+3. Add focused tests for the extracted helpers.
+4. Run existing MAPPO public API, runtime spec, matrix eval, replay dump, and
+   train dispatch tests.
 
-This creates the architectural direction without forcing a full env rename in
-the same patch.
+## Suggested Follow-On Slices
+
+1. Split `tests/test_phase_registry.py` into:
+   - legacy config compatibility;
+   - config compactness;
+   - slow MAPPO train smoke;
+   - slow BC/pretrain smoke.
+2. Move legacy phase-to-runtime mapping out of `train.phases` if practical, or
+   document it as a residual compatibility adapter.
+3. Convert the most-used active configs to explicit runtime YAMLs.
+4. Archive stale probe/legacy configs that are not part of current Phase 4 work.
+5. Rename neutral public helpers where aliases already exist, then update
+   production call sites.
+6. Add or update `.gitignore` and cleanup tooling for generated local outputs.
 
 ## Verification Commands
 
 Use PowerShell-friendly commands on native Windows.
 
-Minimum focused checks after the first slice:
+Focused checks for Python simplification slices:
 
 ```powershell
 cd python
-py -3.13 -m pytest tests/test_train_dispatch.py tests/test_phase_registry.py tests/test_mappo_public_api.py tests/test_mappo_phase_env_parity.py tests/test_vector_env.py -q
+py -3.13 -m pytest tests/test_runtime_specs.py tests/test_train_dispatch.py tests/test_mappo_public_api.py -q
+py -3.13 -m pytest tests/test_benchmark_run.py tests/test_mappo_matrix_eval.py tests/test_phase4_checkpoint_replay_dump.py -q
 py -3.13 -m scripts.check_import_boundaries
 ```
 
-If observation builders or actor/critic paths are touched, also run:
+If observation builders or actor/critic paths are touched:
 
 ```powershell
 cd python
 py -3.13 -m pytest tests/test_bindings_obs.py tests/test_obs_manifest.py tests/test_phase5_entity_obs.py tests/test_phase6_grid_obs.py tests/test_phase7_partial_obs.py tests/test_phase10_target_slot.py -q
 ```
 
-If C++ observation or sim code is touched, also run the relevant C++ tests:
+If sim or C++ observation code is touched:
 
 ```powershell
 cmake --build build --config Release
 ctest --test-dir build -C Release -R "ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils|Determinism|GoldenReplay" --output-on-failure
 ```
 
-Do not run long training jobs for this architectural goal unless a later card
-explicitly asks for behavioral experiment evidence.
+For slow-test restructuring, run both the fast replacement tests and at least
+one representative slow smoke before claiming completion.
 
 ## Completion Criteria
 
-This goal is complete when:
+This simplification goal is complete when:
 
-- runtime env/learner behavior can be selected without hardcoding a numeric
-  `phase`;
-- existing phase configs still work through compatibility;
-- at least one explicit non-phase runtime config/test path works;
-- MAPPO config construction no longer requires membership in a hardcoded
-  phase range;
-- public env construction goes through a neutral factory/spec layer;
-- direct trainer imports of phase-private env modules are removed or isolated
-  behind compatibility shims;
-- docs explain the distinction between experiment phase metadata and runtime
-  capability specs;
-- focused tests and import-boundary checks pass, or any remaining failure is
-  clearly documented as unrelated pre-existing worktree state.
+- the chosen simplification slice reduces active code/test/config complexity in
+  a measurable way;
+- current runtime config paths still work;
+- current phase configs used for Phase 4 still work unless explicitly migrated;
+- public imports used by current tests/scripts remain stable or have clear
+  aliases;
+- no game/reward/observation/action/replay semantics changed unexpectedly;
+- slow tests are either split or clearly documented;
+- import-boundary checks pass;
+- focused tests and representative smoke tests pass;
+- remaining legacy complexity is documented as residual risk rather than hidden.
 
 ## Completion Metadata
 
@@ -306,19 +192,20 @@ When reporting completion, include:
 }
 ```
 
-For this architecture goal, `wandb_run_url`, `replay_artifacts`, and
-`viewer_command` are normally null unless the work unexpectedly includes
-training/eval runs.
-
 ## Good `/goal` Prompt
 
 Use this prompt:
 
 ```text
-Use GOAL_INSTRUCTIONS.md as the active goal. Refactor xushi2 so phase labels
-remain experiment metadata, but runtime env and learner behavior are selected
-from explicit task/env/learner specs rather than hardcoded phase numbers. Work
-incrementally, preserve existing phase configs through compatibility, avoid
-changing game/reward/observation semantics, and verify with focused Python tests
-plus the import-boundary checker.
+Use GOAL_INSTRUCTIONS.md as the active goal. Simplify xushi2's active project
+surface without changing game, reward, observation, action, replay,
+determinism, or W&B metric semantics. Focus on reducing Python
+training/runtime, config, test, and workflow complexity now that runtime
+behavior is selected by explicit specs. Prefer current config/checkpoint
+compatibility over broad historical compatibility, keep phases as experiment
+progress metadata, split large orchestration and mixed slow-test files where
+practical, archive or clarify stale configs, keep public runtime APIs neutral,
+and do not mark the goal complete until focused tests, representative smoke
+tests, and the import-boundary checker pass or any remaining failure is clearly
+unrelated.
 ```

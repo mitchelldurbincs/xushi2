@@ -6,10 +6,10 @@ from pathlib import Path
 
 import torch
 import yaml
+from _paths import config_path, script_path
 
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
-from _paths import config_path, script_path
 
 
 def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import torch
 import yaml
+from _paths import config_path, script_path
 
 from train.mappo import (
     MappoActorCritic,
@@ -15,7 +16,6 @@ from train.mappo import (
 )
 from train.mappo_model import _eval_outcome_counts
 from train.phases import resolve_phase
-from _paths import config_path, script_path
 
 
 def _write_phase8_checkpoint(path: Path) -> None:

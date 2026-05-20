@@ -5,8 +5,9 @@ import copy
 import yaml
 
 from tests.test__paths import config_path
-from train.mappo import make_mappo_config
 from train.checkpoint_runtime import checkpoint_runtime
+from train.mappo import make_mappo_config
+from train.mappo_runtime_context import build_runtime_context
 from train.runtime_specs import resolve_runtime_spec
 from train.train import normalize_entry_config
 
@@ -112,3 +113,19 @@ def test_checkpoint_runtime_reconstructs_legacy_mappo_from_model_shapes() -> Non
     assert runtime.runtime.env.actor_obs == "flat"
     assert runtime.runtime.shapes.obs_dim == 31
     assert runtime.runtime.env_fn is not None
+
+
+def test_mappo_runtime_context_uses_explicit_runtime_yaml(tmp_path) -> None:
+    config = _runtime_mappo_flat_smoke_config()
+    config["run"] = dict(config["run"])
+    config["run"]["output_dir"] = str(tmp_path / "runtime_smoke")
+
+    context = build_runtime_context(config)
+
+    assert context.phase == 4
+    assert context.phase_label == "phase4"
+    assert context.cfg.obs_dim == 31
+    assert context.cfg.critic_obs_dim == 135
+    assert context.ckpt_env_cfg["kind"] == "mappo_match"
+    assert context.output_dir == tmp_path / "runtime_smoke" / "mappo"
+    assert context.output_dir.is_dir()
