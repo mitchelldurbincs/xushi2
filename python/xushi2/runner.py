@@ -1,10 +1,13 @@
 """Thin Python wrapper over xushi2_cpp.run_scripted_episode.
 
-Bot selection happens in C++. Python's job is just to translate a
-config dict / YAML into a MatchConfig and call the binding.
+Bot selection happens in C++. Python's job is to validate and
+translate a config dict / YAML into a MatchConfig and call the binding.
 
-Phase 1a introduces a required `mechanics:` block. Missing keys raise
-KeyError — no silent defaults. Extra keys raise ValueError.
+Validation rules:
+- semantic fields are explicit (missing required keys raise KeyError)
+- unknown keys raise ValueError to catch typos early
+- only optional top-level sections (`map`, `cover_circles`, `wall_segments`,
+  `action_repeat`, `hero_kinds`, objective timing) may be omitted
 """
 
 from __future__ import annotations
@@ -38,6 +41,33 @@ _HERO_KIND_BY_NAME = {
     "ranger": _cpp.HeroKind.Ranger,
     "mender": _cpp.HeroKind.Mender,
 }
+
+_REQUIRED_SIM_KEYS = frozenset(
+    {
+        "seed",
+        "round_length_seconds",
+        "fog_of_war_enabled",
+        "randomize_map",
+        "mechanics",
+    }
+)
+_OPTIONAL_SIM_KEYS = frozenset(
+    {
+        "map",
+        "cover_circles",
+        "wall_segments",
+        "action_repeat",
+        "hero_kinds",
+        "objective_timing",
+        "objective_unlock_ticks",
+        "objective_unlock_seconds",
+        "objective_capture_ticks",
+        "objective_capture_seconds",
+    }
+)
+_REQUIRED_MAP_KEYS = frozenset({"min_x", "min_y", "max_x", "max_y"})
+_REQUIRED_COVER_KEYS = frozenset({"x", "y", "radius"})
+_REQUIRED_WALL_KEYS = frozenset({"x1", "y1", "x2", "y2", "half_width"})
 
 
 def _seconds_to_ticks(value: float) -> int:
@@ -100,43 +130,70 @@ def _build_mechanics(mech_cfg: dict) -> _cpp.Phase1MechanicsConfig:
 
 
 def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.MatchConfig:
-    if "mechanics" not in sim_cfg:
-        raise KeyError(
-            "sim config is missing the `mechanics` block. Phase 1a requires "
-            "explicit revolver_damage_centi_hp, revolver_fire_cooldown_ticks, "
-            "revolver_hitbox_radius, and respawn_ticks — no silent defaults."
-        )
+    missing_root = _REQUIRED_SIM_KEYS - sim_cfg.keys()
+    if missing_root:
+        raise KeyError(f"sim config is missing required key(s): {sorted(missing_root)}")
+    unknown_root = sim_cfg.keys() - _REQUIRED_SIM_KEYS - _OPTIONAL_SIM_KEYS
+    if unknown_root:
+        raise ValueError(f"sim config has unknown key(s): {sorted(unknown_root)}")
+
     cfg = _cpp.MatchConfig()
     cfg.seed = int(sim_cfg["seed"] if seed_override is None else seed_override)
-    cfg.round_length_seconds = int(sim_cfg.get("round_length_seconds", 180))
-    cfg.fog_of_war_enabled = bool(sim_cfg.get("fog_of_war_enabled", True))
-    cfg.randomize_map = bool(sim_cfg.get("randomize_map", False))
+    cfg.round_length_seconds = int(sim_cfg["round_length_seconds"])
+    cfg.fog_of_war_enabled = bool(sim_cfg["fog_of_war_enabled"])
+    cfg.randomize_map = bool(sim_cfg["randomize_map"])
     cfg.objective_unlock_ticks = _objective_timing_value(
         sim_cfg, "unlock", int(cfg.objective_unlock_ticks)
     )
     cfg.objective_capture_ticks = _objective_timing_value(
         sim_cfg, "capture", int(cfg.objective_capture_ticks)
     )
-    map_cfg = dict(sim_cfg.get("map", {}))
-    if map_cfg:
-        cfg.map.min_x = float(map_cfg.get("min_x", cfg.map.min_x))
-        cfg.map.min_y = float(map_cfg.get("min_y", cfg.map.min_y))
-        cfg.map.max_x = float(map_cfg.get("max_x", cfg.map.max_x))
-        cfg.map.max_y = float(map_cfg.get("max_y", cfg.map.max_y))
+    if "map" in sim_cfg:
+        map_cfg = sim_cfg["map"]
+        missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
+        if missing_map:
+            raise KeyError(f"sim.map is missing required key(s): {sorted(missing_map)}")
+        unknown_map = map_cfg.keys() - _REQUIRED_MAP_KEYS
+        if unknown_map:
+            raise ValueError(f"sim.map has unknown key(s): {sorted(unknown_map)}")
+        cfg.map.min_x = float(map_cfg["min_x"])
+        cfg.map.min_y = float(map_cfg["min_y"])
+        cfg.map.max_x = float(map_cfg["max_x"])
+        cfg.map.max_y = float(map_cfg["max_y"])
     if "cover_circles" in sim_cfg:
         covers = []
         for raw in sim_cfg["cover_circles"]:
+            missing_cover = _REQUIRED_COVER_KEYS - raw.keys()
+            if missing_cover:
+                raise KeyError(
+                    f"sim.cover_circles entries are missing required key(s): {sorted(missing_cover)}"
+                )
+            unknown_cover = raw.keys() - _REQUIRED_COVER_KEYS
+            if unknown_cover:
+                raise ValueError(
+                    f"sim.cover_circles entries have unknown key(s): {sorted(unknown_cover)}"
+                )
             cover = _cpp.CoverCircle()
             center = _cpp.Vec2()
             center.x = float(raw["x"])
             center.y = float(raw["y"])
             cover.center = center
-            cover.radius = float(raw.get("radius", 1.0))
+            cover.radius = float(raw["radius"])
             covers.append(cover)
         cfg.cover_circles = covers
     if "wall_segments" in sim_cfg:
         walls = []
         for raw in sim_cfg["wall_segments"]:
+            missing_wall = _REQUIRED_WALL_KEYS - raw.keys()
+            if missing_wall:
+                raise KeyError(
+                    f"sim.wall_segments entries are missing required key(s): {sorted(missing_wall)}"
+                )
+            unknown_wall = raw.keys() - _REQUIRED_WALL_KEYS
+            if unknown_wall:
+                raise ValueError(
+                    f"sim.wall_segments entries have unknown key(s): {sorted(unknown_wall)}"
+                )
             wall = _cpp.WallSegment()
             a = _cpp.Vec2()
             b = _cpp.Vec2()
@@ -146,7 +203,7 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
             b.y = float(raw["y2"])
             wall.a = a
             wall.b = b
-            wall.half_width = float(raw.get("half_width", 0.25))
+            wall.half_width = float(raw["half_width"])
             walls.append(wall)
         cfg.wall_segments = walls
     if "action_repeat" in sim_cfg:
