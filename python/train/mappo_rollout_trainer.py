@@ -609,6 +609,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
         raise ValueError("ppo.agent_loss_mask values must be non-negative")
     if not any(v > 0.0 for v in agent_loss_mask):
         raise ValueError("ppo.agent_loss_mask must leave at least one active agent")
+    _validate_mappo_hyperparameters(ppo_cfg)
     return MappoConfig(
         num_envs=int(ppo_cfg["num_envs"]),
         n_agents=n_agents,
@@ -680,3 +681,43 @@ def make_mappo_config(config: dict) -> MappoConfig:
         ),
         device=device,
     )
+
+
+def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
+    gamma = float(ppo_cfg["gamma"])
+    if not (0.0 < gamma <= 1.0):
+        raise ValueError(f"ppo.gamma must satisfy 0 < gamma <= 1, got {gamma!r}")
+
+    gae_lambda = float(ppo_cfg["gae_lambda"])
+    if not (0.0 <= gae_lambda <= 1.0):
+        raise ValueError(
+            f"ppo.gae_lambda must satisfy 0 <= gae_lambda <= 1, got {gae_lambda!r}"
+        )
+
+    clip_ratio = float(ppo_cfg["clip_ratio"])
+    if clip_ratio <= 0.0:
+        raise ValueError(f"ppo.clip_ratio must be > 0, got {clip_ratio!r}")
+
+    value_clip_ratio = float(ppo_cfg["value_clip_ratio"])
+    if value_clip_ratio <= 0.0:
+        raise ValueError(
+            f"ppo.value_clip_ratio must be > 0, got {value_clip_ratio!r}"
+        )
+
+    for key in (
+        "entropy_coef",
+        "value_coef",
+        "aim_aux_coef",
+        "mode_aux_coef",
+        "target_selection_aux_coef",
+    ):
+        value = float(ppo_cfg.get(key, 0.0))
+        if value < 0.0:
+            raise ValueError(f"ppo.{key} must be non-negative, got {value!r}")
+
+    team_spirit_ramp_fraction = float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3))
+    if not (0.0 <= team_spirit_ramp_fraction <= 1.0):
+        raise ValueError(
+            "ppo.team_spirit_ramp_fraction must satisfy 0 <= team_spirit_ramp_fraction <= 1, "
+            f"got {team_spirit_ramp_fraction!r}"
+        )
