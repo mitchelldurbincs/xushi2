@@ -116,6 +116,11 @@ class XushiVectorEnv:
     Terminal envs are reset immediately so rollouts can continue without a
     second trainer-side reset path; final observations and infos are preserved
     under Gymnasium-style ``final_*`` keys.
+
+    Action spaces are currently constrained to ``gym.spaces.Box``. The
+    wrappers assume a dense ndarray contract for action batching with stable
+    ``shape``/``dtype`` and ``low``/``high`` bounds used for vectorized
+    broadcast construction.
     """
 
     def __init__(
@@ -137,6 +142,15 @@ class XushiVectorEnv:
         first = self.envs[0]
         self.single_observation_space = first.observation_space
         self.single_action_space = first.action_space
+        if not isinstance(self.single_action_space, gym.spaces.Box):
+            raise TypeError(
+                "XushiVectorEnv currently supports only gym.spaces.Box action "
+                "spaces. Expected a dense ndarray contract with shape/dtype and "
+                "low/high bounds for vector batching; got "
+                f"{type(self.single_action_space).__name__}. Add explicit "
+                "serialization/stacking for non-Box spaces (for example Dict) "
+                "before enabling them."
+            )
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -244,7 +258,12 @@ class XushiVectorEnv:
 
 
 class XushiAsyncVectorEnv:
-    """Multiprocessing vector wrapper with the same API as ``XushiVectorEnv``."""
+    """Multiprocessing vector wrapper with the same API as ``XushiVectorEnv``.
+
+    Action spaces are currently constrained to ``gym.spaces.Box`` only.
+    Non-Box spaces require explicit serialization/stacking support before they
+    can be safely batched across workers.
+    """
 
     def __init__(
         self,
@@ -264,6 +283,15 @@ class XushiAsyncVectorEnv:
         try:
             self.single_observation_space = probe.observation_space
             self.single_action_space = probe.action_space
+            if not isinstance(self.single_action_space, gym.spaces.Box):
+                raise TypeError(
+                    "XushiAsyncVectorEnv currently supports only gym.spaces.Box "
+                    "action spaces. Expected a dense ndarray contract with "
+                    "shape/dtype and low/high bounds for worker batching; got "
+                    f"{type(self.single_action_space).__name__}. Add explicit "
+                    "serialization/stacking for non-Box spaces (for example "
+                    "Dict) before enabling them."
+                )
         finally:
             probe.close()
         self.observation_space = gym.spaces.Box(
