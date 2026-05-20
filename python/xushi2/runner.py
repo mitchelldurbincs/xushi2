@@ -40,6 +40,34 @@ _HERO_KIND_BY_NAME = {
 }
 
 
+def _seconds_to_ticks(value: float) -> int:
+    ticks = int(round(float(value) * float(_cpp.TICK_HZ)))
+    if ticks <= 0:
+        raise ValueError(f"objective timing seconds must resolve to >0 ticks, got {value!r}")
+    return ticks
+
+
+def _objective_timing_value(sim_cfg: dict, field: str, default_ticks: int) -> int:
+    ticks_key = f"objective_{field}_ticks"
+    seconds_key = f"objective_{field}_seconds"
+    nested = dict(sim_cfg.get("objective_timing", {}))
+    raw_ticks = sim_cfg.get(ticks_key, nested.get(f"{field}_ticks"))
+    raw_seconds = sim_cfg.get(seconds_key, nested.get(f"{field}_seconds"))
+    if raw_ticks is not None and raw_seconds is not None:
+        raise ValueError(
+            f"set only one of sim.{ticks_key} and sim.{seconds_key} "
+            f"(or objective_timing.{field}_*)"
+        )
+    if raw_ticks is not None:
+        ticks = int(raw_ticks)
+        if ticks <= 0:
+            raise ValueError(f"sim.{ticks_key} must be >0, got {ticks}")
+        return ticks
+    if raw_seconds is not None:
+        return _seconds_to_ticks(float(raw_seconds))
+    return int(default_ticks)
+
+
 @dataclass(frozen=True)
 class EpisodeResult:
     decision_hashes: list[int]
@@ -83,6 +111,12 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
     cfg.round_length_seconds = int(sim_cfg.get("round_length_seconds", 180))
     cfg.fog_of_war_enabled = bool(sim_cfg.get("fog_of_war_enabled", True))
     cfg.randomize_map = bool(sim_cfg.get("randomize_map", False))
+    cfg.objective_unlock_ticks = _objective_timing_value(
+        sim_cfg, "unlock", int(cfg.objective_unlock_ticks)
+    )
+    cfg.objective_capture_ticks = _objective_timing_value(
+        sim_cfg, "capture", int(cfg.objective_capture_ticks)
+    )
     map_cfg = dict(sim_cfg.get("map", {}))
     if map_cfg:
         cfg.map.min_x = float(map_cfg.get("min_x", cfg.map.min_x))

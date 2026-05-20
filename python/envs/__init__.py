@@ -8,6 +8,7 @@ from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
 from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
 from envs.phase4_combat_1v1_mappo import Phase4Combat1v1MappoEnv
 from envs.phase4_mappo import Phase4MappoEnv
+from envs.phase4_selfplay_mappo import Phase4CurrentSelfplayMappoEnv
 from envs.phase5_entity_mappo import Phase5EntityMappoEnv
 from envs.phase6_grid_mappo import Phase6GridMappoEnv
 from envs.phase7_fog_mappo import Phase7FogMappoEnv
@@ -22,6 +23,7 @@ __all__ = [
     "Phase4AimOnlyMappoEnv",
     "Phase4CapDuelMappoEnv",
     "Phase4Combat1v1MappoEnv",
+    "Phase4CurrentSelfplayMappoEnv",
     "Phase4MappoEnv",
     "Phase5EntityMappoEnv",
     "Phase6GridMappoEnv",

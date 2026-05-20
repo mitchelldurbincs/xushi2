@@ -93,6 +93,22 @@ def _async_worker(
             elif cmd == "set_team_spirit":
                 env.set_team_spirit(float(payload))
                 conn.send(None)
+            elif cmd == "set_majority_on_point_alpha":
+                setter = getattr(env, "set_majority_on_point_alpha", None)
+                if setter is not None:
+                    setter(float(payload))
+                conn.send(None)
+            elif cmd == "set_uncontested_on_point_alpha":
+                setter = getattr(env, "set_uncontested_on_point_alpha", None)
+                if setter is not None:
+                    setter(float(payload))
+                conn.send(None)
+            elif cmd == "set_objective_timing_seconds":
+                unlock_seconds, capture_seconds = payload
+                setter = getattr(env, "set_objective_timing_seconds", None)
+                if setter is not None:
+                    setter(float(unlock_seconds), float(capture_seconds))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -236,6 +252,29 @@ class XushiVectorEnv:
             setter = getattr(env, "set_team_spirit", None)
             if setter is not None:
                 setter(float(value))
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        """Push majority-on-point reward alpha to envs that support it."""
+        for env in self.envs:
+            setter = getattr(env, "set_majority_on_point_alpha", None)
+            if setter is not None:
+                setter(float(value))
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        """Push uncontested-on-point reward alpha to envs that support it."""
+        for env in self.envs:
+            setter = getattr(env, "set_uncontested_on_point_alpha", None)
+            if setter is not None:
+                setter(float(value))
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        """Push objective timing to envs that support timing curricula."""
+        for env in self.envs:
+            setter = getattr(env, "set_objective_timing_seconds", None)
+            if setter is not None:
+                setter(float(unlock_seconds), float(capture_seconds))
 
     def close(self) -> None:
         for env in self.envs:
@@ -395,6 +434,38 @@ class XushiAsyncVectorEnv:
         value = float(value)
         for conn in self._conns:
             conn.send(("set_team_spirit", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        """Push majority-on-point reward alpha to every worker."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        value = float(value)
+        for conn in self._conns:
+            conn.send(("set_majority_on_point_alpha", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        """Push uncontested-on-point reward alpha to every worker."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        value = float(value)
+        for conn in self._conns:
+            conn.send(("set_uncontested_on_point_alpha", value))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        """Push objective timing to every worker that supports it."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        payload = (float(unlock_seconds), float(capture_seconds))
+        for conn in self._conns:
+            conn.send(("set_objective_timing_seconds", payload))
         for i in range(self.num_envs):
             self._recv(i)
 

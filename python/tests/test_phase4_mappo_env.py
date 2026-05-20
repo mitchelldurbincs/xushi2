@@ -78,6 +78,53 @@ def test_reset_returns_correct_shapes():
     assert info["tick"] == 0
     assert info["winner"] == "Neutral"
     assert info["learner_team"] == "A"
+    assert info["objective_unlock_seconds"] == pytest.approx(15.0)
+    assert info["objective_capture_seconds"] == pytest.approx(8.0)
+
+
+def test_objective_timing_seconds_config_reaches_info():
+    cfg = _make_sim_cfg()
+    cfg["objective_unlock_seconds"] = 5.0
+    cfg["objective_capture_seconds"] = 2.0
+    env = Phase4MappoEnv(cfg, opponent_bot="noop")
+    _obs, info = env.reset(seed=0)
+
+    assert info["objective_unlock_ticks"] == 5 * _cpp.TICK_HZ
+    assert info["objective_capture_ticks"] == 2 * _cpp.TICK_HZ
+    assert info["objective_unlock_seconds"] == pytest.approx(5.0)
+    assert info["objective_capture_seconds"] == pytest.approx(2.0)
+
+
+def test_objective_timing_setter_overrides_seconds_config_on_future_reset():
+    cfg = _make_sim_cfg()
+    cfg["objective_unlock_seconds"] = 5.0
+    cfg["objective_capture_seconds"] = 2.0
+    env = Phase4MappoEnv(cfg, opponent_bot="noop")
+    env.set_objective_timing_seconds(6.0, 3.0)
+
+    _obs, info = env.reset(seed=0)
+
+    assert info["objective_unlock_ticks"] == 6 * _cpp.TICK_HZ
+    assert info["objective_capture_ticks"] == 3 * _cpp.TICK_HZ
+    assert info["objective_unlock_seconds"] == pytest.approx(6.0)
+    assert info["objective_capture_seconds"] == pytest.approx(3.0)
+
+
+def test_objective_timing_setter_updates_current_and_future_episodes():
+    env = _make_env()
+    env.set_objective_timing_seconds(5.0, 2.0)
+    _obs, info = env.reset(seed=0)
+    assert info["objective_unlock_seconds"] == pytest.approx(5.0)
+    assert info["objective_capture_seconds"] == pytest.approx(2.0)
+
+    env.set_objective_timing_seconds(6.0, 3.0)
+    _obs, _reward, _term, _trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
+    assert info["objective_unlock_seconds"] == pytest.approx(6.0)
+    assert info["objective_capture_seconds"] == pytest.approx(3.0)
+
+    _obs, info = env.reset(seed=1)
+    assert info["objective_unlock_seconds"] == pytest.approx(6.0)
+    assert info["objective_capture_seconds"] == pytest.approx(3.0)
 
 
 def test_team_b_learner_resets_with_correct_own_slots():
@@ -113,6 +160,21 @@ def test_step_returns_correct_shapes_and_finite_values():
     # Per-team reward summary remains scalar in info for downstream loggers.
     assert isinstance(info["reward_team_a"], float)
     assert isinstance(info["reward_team_b"], float)
+
+
+def test_majority_on_point_alpha_can_be_disabled_for_eval_info():
+    env = _make_env(
+        opponent_bot="noop",
+        reward_cfg={"majority_on_point_coef": 0.2},
+    )
+    env.reset(seed=0)
+    env.set_majority_on_point_alpha(0.0)
+    _obs, _reward, _term, _trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
+
+    assert info["majority_on_point_alpha"] == pytest.approx(0.0)
+    assert info["majority_on_point_reward_a"] == pytest.approx(0.0)
+    assert info["majority_on_point_reward_b"] == pytest.approx(0.0)
+    assert isinstance(info["objective_metrics"], dict)
 
 
 @pytest.mark.parametrize("bad_shape", [(6,), (3,), (3, 5), (4, 6)])

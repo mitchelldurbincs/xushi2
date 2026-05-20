@@ -5,7 +5,14 @@ import warnings
 from train.mappo_bc_pretrain import bc_pretrain_walk_to_objective
 from train.mappo_eval_checkpoint import train_phase4_from_config
 from train.mappo_evaluate import evaluate_mappo
-from train.mappo_model import MappoActorCritic, MappoConfig, MappoEvalStats, compute_team_spirit
+from train.mappo_model import (
+    MappoActorCritic,
+    MappoConfig,
+    MappoEvalStats,
+    compute_majority_on_point_alpha,
+    compute_objective_timing_seconds,
+    compute_team_spirit,
+)
 from train.mappo_rollout_trainer import MappoRollout, MappoTrainer, make_mappo_config
 
 __all__ = [
@@ -15,6 +22,8 @@ __all__ = [
     "MappoRollout",
     "MappoTrainer",
     "bc_pretrain_walk_to_objective",
+    "compute_majority_on_point_alpha",
+    "compute_objective_timing_seconds",
     "compute_team_spirit",
     "evaluate_mappo",
     "make_mappo_config",

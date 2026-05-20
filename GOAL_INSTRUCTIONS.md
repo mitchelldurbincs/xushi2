@@ -1,126 +1,354 @@
-# Kanban Monitor & Fixer — Continuous Operation Goal
+# Goal: Phase 4 Objective Timing Curriculum and Long-Run Progress
 
-## Your Purpose
-You are an autonomous kanban task executor for the xushi2 project. You run continuously, monitoring the kanban board and keeping tasks moving.
+## Purpose
 
-## Kanban Board Location
-- Board DB: `~/.hermes/kanban/boards/xushi2/kanban.db`
-- Logs: `~/.hermes/kanban/boards/xushi2/logs/`
-- Workspaces: `~/.hermes/kanban/boards/xushi2/workspaces/`
+Investigate and fix the Phase 4 failure mode where agents can create kill or
+majority-on-point advantage but cannot convert it into uncontested capture and
+score. This goal is specifically about the "episode too short / capture too
+slow / contest too brittle" axis.
 
-## Operation Loop (repeat indefinitely)
+This is not another smoke-only probe. Produce visible Phase 4 progress with
+longer W&B-backed experiments, checkpoints, replay artifacts where useful, and
+clear verification.
 
-### 1. CHECK BOARD STATE
-Query the SQLite database:
-```sql
-SELECT id, title, status, assignee FROM tasks ORDER BY created_at DESC;
-SELECT task_id, status, profile, started_at, ended_at, outcome, error, summary FROM task_runs ORDER BY started_at DESC LIMIT 5;
+## First Reads
+
+Before making code or config changes, read these in order:
+
+1. `docs/journal/reinforcement_learning_journal.md`
+2. `docs/game_design.md`
+3. `docs/rl_design.md`
+4. `docs/plans/README.md`
+5. Relevant active Phase 4 plans in `docs/plans/active/`
+
+Carry forward the journal evidence. Do not rediscover or repeat already
+falsified hyperparameter-only variants.
+
+## Context From Latest Phase 4 Evidence
+
+The majority-on-point curriculum was implemented and verified. It was useful as
+a diagnostic but did not clear Phase 4.
+
+Observed local results:
+
+- The no-anneal diagnostic produced Team A majority-on-point windows but still
+  scored `0.00/0.00`.
+- The annealed smoke produced live majority/cap-progress diagnostics, but final
+  real-reward eval at alpha `0.0` ended `0W/20L/0D`, score `0.00/2.90`.
+- Team A can have substantial majority-on-point time while still getting almost
+  no uncontested capture/scoring time.
+- This points at objective conversion: one living enemy contesting the point
+  freezes progress, capture takes 8 seconds, unlock takes 15 seconds, and
+  current Phase 4 episodes are often 30-60 seconds.
+
+Working hypothesis:
+
+```text
+The learner can reach/contest/fight on point, but the canonical objective timing
+is too steep for the current 3v3 Ranger policy to discover the full chain:
+
+fight -> clear contest -> complete capture -> keep owner uncontested -> score
 ```
 
-### 2. EVALUATE EACH TASK
+## Non-Negotiables
 
-**If a task is `blocked`:**
-- Read the latest `blocked` event payload for the reason
-- Diagnose the root cause
-- FIX IT if it is a technical blocker you can resolve:
-  - Git conflicts → `git reset --hard origin/main && git clean -fdx`
-  - Missing dependencies → install them
-  - Build failures → rebuild (`make build-cpp && make py-install`)
-  - W&B auth issues → check `wandb login` status, use ~/.netrc
-  - Syntax errors from merge conflicts → fix or reset file
-  - Missing files/directories → create them
-- After fixing, UPDATE the kanban DB:
-  - Insert an `unblocked` event into `task_events`
-  - Set `tasks.status = 'ready'` for that task_id
-  - If you cannot fix it (needs human design/replay judgment), leave it blocked with a detailed `HUMAN_INSPECTION_REQUIRED` comment
+- Use W&B for experiment runs. Do not set `WANDB_MODE=disabled` except for tiny
+  local import/config checks that are not claimed as experiment evidence.
+- If W&B auth or network fails, block with `HUMAN_INSPECTION_REQUIRED` and the
+  exact failure. Do not silently replace W&B with local-only tracking.
+- Do not call a smoke run Phase 4 progress. Smoke can verify plumbing only.
+- Do not silently change canonical game constants. Any objective timing change
+  must be explicitly curriculum-only or config-gated with canonical defaults.
+- Do not claim Phase 4 gate clearance from noncanonical objective timing.
+- Self-play win rate is not evidence by itself.
+- Keep MAPPO spelled MAPPO.
 
-**If a task is `ready`:**
-- Claim it by inserting a `claimed` event with a lock
-- Spawn a worker (or execute directly if appropriate) to run the task
-- The benchmarker/orchestrator profile knows how to run training configs
-- After starting, set `tasks.status = 'running'`
+## Primary Work
 
-**If a task is `running`:**
-- Check if the worker process is still alive (via PID from `task_events` `spawned` kind)
-- If the process died unexpectedly, read the log file, diagnose, insert a `crashed` or `failed` event, and set status back to `ready` or `blocked` with reason
-- If it has been running for an unreasonably long time (>6 hours for a training task), insert a `heartbeat` event to mark it still alive, or investigate if it is truly stuck
+Create a curriculum or controlled experiment path that directly tests objective
+timing:
 
-**If a task is `done`:**
-- Check if downstream tasks (via `task_links`) are unblocked
-- If a child task has all parents `done`, promote it to `ready`
+1. Verify whether objective unlock and capture duration are configurable today.
+2. If not configurable, add narrow config-gated support for objective timing:
+   - canonical defaults must remain unchanged,
+   - deterministic integer-tick behavior must be preserved,
+   - replay/obs contracts must remain coherent,
+   - docs/tests must make the curriculum-vs-canonical distinction explicit.
+3. Add trainer/environment scheduling if needed so a run can start with easier
+   objective timing and anneal toward canonical timing.
+4. Run longer W&B experiments that can produce meaningful behavior, not just
+   import or one-update checks.
+5. Record results in the RL journal with W&B URLs, config paths, seeds,
+   checkpoints, replay paths, metrics, and a decision.
 
-### 3. REPO HYGIENE
-- The working directory is `/home/aspect/source/personal/xushi2`
-- Before any training run, ensure:
-  1. `git status` is clean (or reset to origin/main if dirty)
-  2. `make build-cpp` succeeds
-  3. `make py-install` succeeds
-  4. `wandb login` works (check `~/.netrc` or `wandb login` output)
-- NEVER let merge conflicts block a run. If conflicts exist, reset to `origin/main`.
+## Suggested Implementation Shape
 
-### 4. CONTEXT & RULES
-Read `/home/aspect/source/personal/xushi2/AGENTS.md` for full project context. Key rules:
-- Algorithm is **MAPPO**, not MAPO
-- Phase 4 is the current focus (recurrent MAPPO, 3v3 Ranger)
-- Every experiment result needs: git commit + config path + seeds + W&B URL + replay path
-- Do NOT silently change game rules, reward functions, obs/action spaces, determinism behavior
-- Use `make` wrappers when possible
-- Self-play win rate → 50% by construction; do NOT use it as a gate metric alone
+Prefer config-gated objective timing fields with canonical defaults. Names can
+change if the codebase has a better local pattern, but the behavior should be
+equivalent to:
 
-### 5. REPORTING
-After each loop iteration, append a summary to a status log:
-- What you checked
-- What you fixed (if anything)
-- What is currently running
-- What is blocked and why
-- What is next
+```yaml
+env:
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 5
+    initial_capture_seconds: 2
+    final_unlock_seconds: 15
+    final_capture_seconds: 8
+    anneal_updates: 400
+    eval_canonical_every: 25
+```
 
-Log file: `~/.hermes/kanban/boards/xushi2/logs/codex-monitor.log`
+If this is implemented in C++ `MatchConfig`, preserve the canonical default:
 
-## Failure Modes to Auto-Fix
-| Blocker | Fix Action |
-|---|---|
-| Git merge conflicts / dirty tree | `git merge --abort 2>/dev/null; git reset --hard origin/main; git clean -fdx` |
-| `xushi2_cpp` import failure | `make build-cpp && make py-install` |
-| W&B not authenticated | Check `~/.netrc` for `machine api.wandb.ai`; if missing, cannot fix without key — block with `HUMAN_INSPECTION_REQUIRED` |
-| Python venv missing | `cd python && python3 -m venv .venv && .venv/bin/pip install -e .` |
-| Config file not found | Search in `experiments/configs/` for the intended config; if it moved to `legacy/archive/`, use the archived path |
-| SyntaxError in Python file | Check for `<<<<<<<` conflict markers; if present, `git checkout -- <file>` or reset |
-| Training process zombie | `kill -9 <pid>` if needed, then restart |
+```text
+objective_unlock_seconds = 15
+objective_capture_seconds = 8
+```
 
-## Human Inspection Protocol
-When a task requires human judgment (replay review, design decision, unclear spec):
-1. Insert a `task_comments` row with author=`codex-monitor` and body starting with `HUMAN_INSPECTION_REQUIRED`
-2. Include W&B URL, replay path, and specific questions
-3. Block the task with detailed reason
-4. Move to next available task — do NOT stall the whole pipeline
+If curriculum timing is trainer-side, make sure:
 
-## Safety
-- You have `--dangerously-bypass-approvals-and-sandbox` — do NOT delete non-git-tracked data unless it is clearly build artifacts
-- Do NOT push to origin/main or create PRs — this agent operates locally only
-- Do NOT modify `~/.hermes/config.yaml` or other global Hermes settings
-- It is OK to wipe build dirs and Python `__pycache__` — they are reproducible
+- rollout envs get the scheduled timing before rollout collection,
+- normal eval can report both current-curriculum eval and canonical eval,
+- final eval includes canonical timing,
+- W&B logs current unlock/capture seconds every update.
 
-## Loop Cadence
-Wait 5 minutes between full board checks. If a task is actively running training, you may wait longer (15-30 min) before the next check to avoid interrupting long processes.
+## Diagnostics To Preserve And Use
 
----
+Use the existing Phase 4 diagnostics from the majority-on-point work:
 
-# Phase 4 Escape Protocol — Critical Override
+- `mean_majority_on_point_seconds_a/b`
+- `mean_uncontested_on_point_seconds_a/b`
+- `mean_alive_edge_no_score_seconds_a/b`
+- `mean_cap_progress_gain_ticks`
+- `mean_cap_progress_loss_ticks`
+- Team A/B score, kills, hit/fire, visible fire, aim error
+- rollout `self_on_point_fraction`
+- majority shaping alpha if used
+- objective timing values if newly added
 
-For ALL Phase 4 (3v3 MAPPO) tasks, you MUST also follow `docs/ESCAPE_PROTOCOL.md`.
+Add missing diagnostics only if they are necessary to answer the timing
+question.
 
-**The problem:** We are stuck in a draw basin. 13+ variants across damage, round length, fire rate, BC pretraining, LR, and entropy all produce identical results: 50/50 draws, score 0/0, kills 4-6 per 50 episodes, mean_reward ~+0.96. **Hyperparameter whack-a-mole is exhausted.**
+## Experiments To Create
 
-**What you have been doing wrong:** Creating a new YAML with one tweaked parameter, queuing it, getting the same draw result, and repeating. This stops now.
+Create configs under `experiments/configs/phase4/probe/`. Include
+`metadata.hypothesis`, `metadata.falsification_criteria`, and
+`metadata.max_updates_if_no_signal` on every config.
 
-**Before creating ANY new Phase 4 config or task:**
+### 1. Fixed Easy Timing Long Diagnostic
 
-1. **Read `docs/ESCAPE_PROTOCOL.md` Sections 1-3.**
-2. **Run the Circling Detector query.** If 3+ of the last 5 Phase 4 tasks match the draw pattern (50/50 draws, score 0/0, kills <10, mean_reward ≈ +0.96), **STOP creating hyperparameter variants.**
-3. **Perform Behavioral Autopsy.** Dump replays with `--stochastic`, answer the 6 diagnostic questions in ESCAPE_PROTOCOL Section 2, and write findings to the journal. No journal entry without replay evidence.
-4. **Every new config MUST have a `metadata.hypothesis` and `metadata.falsification_criteria` field.** If you cannot articulate a falsifiable hypothesis that has NOT already been tested (see ESCAPE_PROTOCOL Appendix), do NOT create the config.
-5. **Use Diagnostic Shortcuts (ESCAPE_PROTOCOL Section 4) before burning 90+ minutes on 1000-update PPO runs.** If a hypothesis can be tested in <10 minutes (BC-only eval, stochastic eval, self-play eval), run that FIRST.
-6. **If all opponent/hyperparameter hypotheses are exhausted,** follow ESCAPE_PROTOCOL Section 5 (architecture changes, ONE at a time) or Section 6 (Human Escalation with `HUMAN_INSPECTION_REQUIRED`).
+Path suggestion:
 
-**Replays and behavioral diagnosis come BEFORE new configs. Always.**
+```text
+experiments/configs/phase4/probe/phase4_mappo_objective_timing_easy_long.yaml
+```
+
+Purpose: prove that the current policy/training stack can score when the
+objective conversion chain is made learnable.
+
+Recommended shape:
+
+- opponent: `weak_basic_v2`
+- warm-start: `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`
+- BC: existing `walk_and_shoot`
+- objective unlock: 5 seconds
+- capture: 2 seconds
+- round length: 60 seconds
+- updates: at least 250
+- eval every: 25
+- eval episodes: at least 50
+- W&B enabled
+
+This is diagnostic only, not Phase 4 gate evidence.
+
+### 2. Timing Curriculum Long Run
+
+Path suggestion:
+
+```text
+experiments/configs/phase4/probe/phase4_mappo_objective_timing_curriculum_long.yaml
+```
+
+Purpose: test whether the easier objective can be annealed back toward the
+canonical rule without losing score conversion.
+
+Recommended shape:
+
+- opponent: `weak_basic_v2`
+- warm-start: `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`
+- BC: existing `walk_and_shoot`
+- objective unlock: 5s -> 15s
+- capture: 2s -> 8s
+- anneal: 300-500 updates
+- total updates: at least 500
+- eval every: 25
+- eval episodes: at least 50
+- include canonical eval every eval interval if feasible
+- W&B enabled
+
+This is the main run for visible progress.
+
+### 3. Canonical Longer-Episode Control
+
+Path suggestion:
+
+```text
+experiments/configs/phase4/probe/phase4_mappo_canonical_120s_long.yaml
+```
+
+Purpose: separate "episode too short" from "capture timing too steep."
+
+Recommended shape:
+
+- canonical unlock: 15 seconds
+- canonical capture: 8 seconds
+- round length: 120 seconds
+- opponent: `weak_basic_v2`
+- warm-start and BC same as above
+- total updates: at least 250
+- eval every: 25
+- eval episodes: at least 50
+- W&B enabled
+
+If this scores while 60s canonical does not, episode length is a real blocker.
+If this still does not score while easy timing does, capture/contest difficulty
+is the main blocker.
+
+## Run Strategy
+
+Run in this order:
+
+1. Do a tiny local config/import check only if needed. Do not log it as
+   experiment evidence.
+2. Run the fixed easy timing long diagnostic.
+3. If it cannot produce score or cap conversion by its stop point, stop and
+   write the falsification.
+4. If it does produce score/cap conversion, run the timing curriculum long run.
+5. Run the canonical 120s control unless the first two runs already clearly
+   prove a different blocker.
+6. If any long run shows positive score conversion, rerun the best config on
+   at least three seeds before making a strong claim.
+
+Use these seeds unless there is a reason to choose different ones:
+
+```text
+3519994490
+3519994491
+3519994492
+```
+
+## Stop And Continue Criteria
+
+Stop early and record falsification if by `metadata.max_updates_if_no_signal`:
+
+- Team A score is still zero,
+- Team A cap-progress gain is not meaningfully above the prior majority smoke,
+- Team A uncontested-on-point seconds remain near zero,
+- rollout `self_on_point_fraction < 0.25`,
+- Team A hit/fire collapses below recent weak_basic_v2 baselines.
+
+Continue a run if at least one is true:
+
+- Team A score is nonzero,
+- Team A wins at least one eval episode,
+- Team A uncontested-on-point seconds rise materially,
+- Team A cap-progress gain rises materially,
+- replay shows coherent fight-then-point behavior.
+
+## Verification Before Long Runs
+
+Run the relevant build/tests before claiming the code path is ready:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=C:\Python313\python.exe
+cmake --build build --config Release
+cd python
+py -3.13 -m pytest tests/test_reward.py tests/test_phase4_mappo_env.py tests/test_mappo_team_spirit_ramp.py tests/test_mappo_bc_freeze.py tests/test_mappo_public_api.py tests/test_bindings_obs.py tests/test_obs_manifest.py -q
+```
+
+If C++ objective rules/configs are touched, also run:
+
+```powershell
+ctest --test-dir build -C Release -R "Objective|Determinism|GoldenReplay|ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils" --output-on-failure
+```
+
+Add focused tests for any new objective timing config:
+
+- canonical defaults match existing 15s unlock and 8s capture,
+- shortened capture completes in the expected integer number of ticks,
+- shortened unlock starts objective updates at the expected tick,
+- same seed plus same actions remains deterministic,
+- canonical eval ignores curriculum timing when requested.
+
+## W&B And Artifact Requirements
+
+For every long experiment, record:
+
+- git commit,
+- config path,
+- seed,
+- W&B run URL,
+- checkpoint path,
+- replay path if produced,
+- objective timing schedule used,
+- majority/capture diagnostics,
+- score/win/loss/draw,
+- Team A/B kills,
+- Team A/B hit/fire and aim error,
+- whether eval was curriculum timing or canonical timing.
+
+The trainer may not print the W&B URL directly. Parse it from the run metadata
+under the relevant `wandb/latest-run/files/wandb-metadata.json` path if needed.
+Do not fabricate URLs.
+
+Dump a replay for:
+
+- any run with Team A score > 0,
+- any run with Team A win > 0,
+- any run where cap-progress conversion materially improves,
+- the best checkpoint of the main timing curriculum run.
+
+If replay judgment is required, block with:
+
+```text
+HUMAN_INSPECTION_REQUIRED
+```
+
+Include W&B URL, replay path, viewer command, exact questions for the human,
+and the comment format needed to unblock.
+
+## Journal Update
+
+After each run, append to `docs/journal/reinforcement_learning_journal.md`.
+Each entry must include:
+
+- hypothesis,
+- config path,
+- seed,
+- git commit,
+- W&B URL,
+- checkpoints,
+- replay artifacts,
+- test commands and results,
+- objective timing values,
+- key metrics,
+- decision: cleared, not cleared, falsified, blocked, or evidence insufficient.
+
+## Expected Outcome
+
+The goal is not merely to create configs. The goal is to determine whether
+objective timing is a real blocker and to create visible Phase 4 progress.
+
+Useful outcomes include:
+
+- fixed easy timing scores but canonical longer episode does not: capture/contest
+  timing is the blocker,
+- canonical 120s scores but 60s does not: episode length is the blocker,
+- timing curriculum scores early but loses score as it anneals: need a slower or
+  staged curriculum,
+- none of the timing variants score: objective timing is probably not the only
+  blocker, and attention should return to actor information/coordination.
+
+Do not stop at "implemented." Run the experiments, verify them, record the
+evidence, and make a concrete next recommendation.

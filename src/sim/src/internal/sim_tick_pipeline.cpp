@@ -39,8 +39,8 @@ static void stage_respawn(MatchState& state, const MatchConfig& config) {
         respawn_tick_update(state.heroes[i], i, state.tick, config);
 }
 
-static void stage_objective(MatchState& state, const MapBounds& map) {
-    objective_tick_update(state.objective, state.heroes, state.tick, map);
+static void stage_objective(MatchState& state, const MatchConfig& config) {
+    objective_tick_update(state.objective, state.heroes, state.tick, config);
 }
 
 void apply_one_tick(MatchState& state,
@@ -66,7 +66,7 @@ void apply_one_tick(MatchState& state,
     stage_apply_damage(state, buf, has_damage);
     stage_process_deaths(state, buf, has_damage, config);
     stage_respawn(state, config);
-    stage_objective(state, config.map);
+    stage_objective(state, config);
     state.tick += 1;
 }
 
