@@ -225,7 +225,7 @@ class Phase4MappoEnv(gym.Env):
 
     @staticmethod
     def _action_to_cpp_for_team(a: np.ndarray, team: str) -> _cpp.Action:
-        a = np.asarray(a, dtype=np.float32).reshape(-1)
+        a = np.array(a, dtype=np.float32, copy=True).reshape(-1)
         if a.shape[0] < 6:
             raise ValueError(f"action must have at least 6 fields, got {a.shape}")
         a[:3] = np.clip(a[:3], -1.0, 1.0)

@@ -185,6 +185,25 @@ def test_action_shape_validation_raises(bad_shape):
         env.step(np.zeros(bad_shape, dtype=np.float32))
 
 
+
+
+def test_step_does_not_mutate_caller_action_array():
+    env = _make_env(opponent_bot="noop")
+    env.reset(seed=0)
+    action = np.array(
+        [
+            [2.0, -2.0, 1.5, -1.0, 2.0, 0.75],
+            [-1.5, 1.25, -2.0, 1.5, -0.5, 0.49],
+            [0.25, -0.25, 3.0, 0.25, 1.25, -3.0],
+        ],
+        dtype=np.float32,
+    )
+    original = action.copy()
+
+    env.step(action)
+
+    np.testing.assert_array_equal(action, original)
+
 def test_per_agent_reward_sum_stays_finite_across_full_episode():
     env = _make_env(opponent_bot="noop")
     env.reset(seed=42)
