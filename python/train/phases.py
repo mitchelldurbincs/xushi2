@@ -14,12 +14,9 @@ PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COU
 
 
 def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
-    from envs.memory_toy import MemoryToyEnv
+    from envs.runtime_factory import make_memory_toy_env
 
-    return MemoryToyEnv(
-        episode_length=episode_length,
-        cue_visible_ticks=cue_visible_ticks,
-    )
+    return make_memory_toy_env(episode_length, cue_visible_ticks)
 
 
 def _make_phase3_env(
@@ -28,13 +25,13 @@ def _make_phase3_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs import Phase3RangerEnv
+    from envs.runtime_factory import make_ranger_duel_env
 
-    return Phase3RangerEnv(
+    return make_ranger_duel_env(
         sim_cfg,
-        opponent_bot=opponent_bot,
-        learner_team=learner_team,
-        reward_cfg=reward_cfg,
+        opponent_bot,
+        learner_team,
+        reward_cfg,
     )
 
 
@@ -49,39 +46,20 @@ def _make_phase4_env(
     self_play_schedule: dict | None = None,
     snapshot_league: dict | None = None,
 ):
-    if self_play:
-        if mini_game not in (None, ""):
-            raise ValueError("phase4 self_play cannot be combined with mini_game")
-        from envs import Phase4CurrentSelfplayMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-        return Phase4CurrentSelfplayMappoEnv(
-            sim_cfg,
-            reward_cfg=reward_cfg,
-            self_play_schedule=self_play_schedule,
-            snapshot_league=snapshot_league,
-        )
-    if mini_game == "aim_only":
-        from envs import Phase4AimOnlyMappoEnv
-
-        return Phase4AimOnlyMappoEnv(**dict(mini_game_cfg or {}))
-    if mini_game == "combat_1v1":
-        from envs import Phase4Combat1v1MappoEnv
-
-        return Phase4Combat1v1MappoEnv(**dict(mini_game_cfg or {}))
-    if mini_game == "cap_duel":
-        from envs import Phase4CapDuelMappoEnv
-
-        return Phase4CapDuelMappoEnv(**dict(mini_game_cfg or {}))
-    if mini_game not in (None, ""):
-        raise ValueError(f"unknown phase4 mini_game {mini_game!r}")
-
-    from envs import Phase4MappoEnv
-
-    return Phase4MappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="flat",
+        mini_game=mini_game,
+        mini_game_cfg=mini_game_cfg,
+        self_play=self_play,
+        self_play_schedule=self_play_schedule,
+        snapshot_league=snapshot_league,
+        n_agents=6 if self_play else 3,
     )
 
 
@@ -91,13 +69,14 @@ def _make_phase5_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs import Phase5EntityMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase5EntityMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="entity",
     )
 
 
@@ -107,13 +86,14 @@ def _make_phase6_env(
     learner_team: str,
     reward_cfg: dict,
 ):
-    from envs import Phase6GridMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase6GridMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="entity_grid",
     )
 
 
@@ -125,13 +105,14 @@ def _make_phase7_env(
     fog_mode: str,
     visible_radius: float,
 ):
-    from envs import Phase7FogMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase7FogMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="multi_enemy_entity_grid",
         fog_mode=fog_mode,
         visible_radius=visible_radius,
     )
@@ -146,13 +127,14 @@ def _make_phase8_env(
     visible_radius: float,
     map_randomization: dict,
 ):
-    from envs import Phase8RandomMapMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase8RandomMapMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="multi_enemy_entity_grid",
         fog_mode=fog_mode,
         visible_radius=visible_radius,
         map_randomization=map_randomization,
@@ -170,17 +152,18 @@ def _make_phase9_env(
     snapshot_paths: tuple[str, ...],
     snapshot_league: dict,
 ):
-    from envs import Phase9SnapshotMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase9SnapshotMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="multi_enemy_entity_grid",
         fog_mode=fog_mode,
         visible_radius=visible_radius,
         map_randomization=map_randomization,
-        snapshot_paths=list(snapshot_paths),
+        snapshot_paths=tuple(snapshot_paths),
         snapshot_league=snapshot_league,
     )
 
@@ -194,16 +177,18 @@ def _make_phase10_env(
     visible_radius: float,
     map_randomization: dict,
 ):
-    from envs import Phase10TargetSlotMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase10TargetSlotMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
+        actor_obs="multi_enemy_entity_grid",
         fog_mode=fog_mode,
         visible_radius=visible_radius,
         map_randomization=map_randomization,
+        target_slot=True,
     )
 
 
@@ -216,16 +201,18 @@ def _make_phase11_env(
     self_play_schedule: dict | None,
     snapshot_league: dict,
 ):
-    from envs import Phase11CurrentSelfplayMappoEnv
+    from envs.runtime_factory import make_mappo_match_env
 
-    return Phase11CurrentSelfplayMappoEnv(
-        sim_cfg,
+    return make_mappo_match_env(
+        sim_cfg=sim_cfg,
         reward_cfg=reward_cfg,
+        actor_obs="multi_enemy_entity_grid",
         fog_mode=fog_mode,
         visible_radius=visible_radius,
         map_randomization=map_randomization,
         self_play_schedule=self_play_schedule,
         snapshot_league=snapshot_league,
+        n_agents=6,
     )
 
 

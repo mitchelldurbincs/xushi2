@@ -3,14 +3,21 @@ from __future__ import annotations
 from train.train import NormalizedEntryConfig, format_phase_banner, run_phase
 
 
-def _normalized(phase_int: int) -> NormalizedEntryConfig:
+def _normalized(
+    phase_int: int | None,
+    *,
+    learner_kind: str = "scripted_determinism",
+    env_kind: str = "scripted_determinism",
+) -> NormalizedEntryConfig:
     return NormalizedEntryConfig(
         phase_int=phase_int,
-        phase_label=f"phase{phase_int}",
+        phase_label=f"phase{phase_int}" if phase_int is not None else env_kind,
         sim_cfg={"seed": 1},
         env_cfg={"opponent_bot": "basic", "learner_team": "A"},
         run_cfg={"episodes": 2, "team_a_bot": "basic", "team_b_bot": "noop"},
         base_seed=7,
+        learner_kind=learner_kind,
+        env_kind=env_kind,
     )
 
 
@@ -21,19 +28,24 @@ def test_format_phase_banner_phase0_default() -> None:
 
 
 def test_format_phase_banner_phase3() -> None:
-    banner = format_phase_banner(_normalized(3), "phase3")
+    banner = format_phase_banner(
+        _normalized(3, learner_kind="ppo_recurrent", env_kind="ranger_duel"),
+        "phase3",
+    )
     assert "opponent=basic" in banner
     assert "learner_team=A" in banner
 
 
 def test_format_phase_banner_phase11() -> None:
-    banner = format_phase_banner(_normalized(11), "phase11")
+    n = _normalized(11, learner_kind="mappo", env_kind="mappo_match")
+    n = NormalizedEntryConfig(**{**n.__dict__, "env_cfg": {"n_agents": 6}})
+    banner = format_phase_banner(n, "phase11")
     assert "match_type=current" in banner
-    assert "learner_team=both" in banner
+    assert "mappo" in banner
 
 
 def test_format_phase_banner_phase4_selfplay() -> None:
-    n = _normalized(4)
+    n = _normalized(4, learner_kind="mappo", env_kind="mappo_match")
     n = NormalizedEntryConfig(
         **{
             **n.__dict__,
@@ -42,11 +54,14 @@ def test_format_phase_banner_phase4_selfplay() -> None:
     )
     banner = format_phase_banner(n, "phase4")
     assert "match_type=current" in banner
-    assert "learner_team=both" in banner
+    assert "mappo" in banner
 
 
 def test_run_phase_unsupported() -> None:
-    rc = run_phase(_normalized(99), {"phase": "phase99"})
+    rc = run_phase(
+        _normalized(99, learner_kind="unknown", env_kind="unknown"),
+        {"phase": "phase99"},
+    )
     assert rc == 2
 
 

@@ -35,7 +35,7 @@ from train.mappo_model import (
     compute_team_spirit,
 )
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.phases import resolve_phase
+from train.runtime_specs import resolve_runtime_spec
 from train.wandb_logger import make_logger
 from xushi2.snapshot_retention import SnapshotRetention
 
@@ -43,7 +43,7 @@ from xushi2.snapshot_retention import SnapshotRetention
 @dataclass(frozen=True)
 class RuntimeContext:
     config: dict[str, Any]
-    phase: int
+    phase: int | None
     phase_label: str
     env_fn: Any
     ckpt_env_cfg: dict[str, Any]
@@ -56,12 +56,32 @@ class RuntimeContext:
     checkpoint_every: int
     output_dir: Path
     retention: SnapshotRetention | None
+    objective_timing_enabled: bool
+    objective_initial_unlock_seconds: float
+    objective_initial_capture_seconds: float
+    objective_final_unlock_seconds: float
+    objective_final_capture_seconds: float
+    objective_timing_anneal_updates: int
+    objective_eval_canonical_every: int
+    majority_on_point_initial: float
+    majority_on_point_anneal_updates: int
+    uncontested_on_point_initial: float
+    uncontested_on_point_anneal_updates: int
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
-    phase, phase_spec = resolve_phase(config)
-    phase_label = str(phase_spec["label"])
-    env_fn, ckpt_env_cfg, seed_base = phase_spec["env_bundle"](config)
+    runtime = resolve_runtime_spec(config)
+    if runtime.learner.kind != "mappo":
+        raise ValueError(
+            f"MAPPO runtime requires learner.kind='mappo', got {runtime.learner.kind!r}"
+        )
+    if runtime.env_fn is None:
+        raise ValueError("MAPPO runtime requires an environment factory")
+    phase = runtime.phase_int
+    phase_label = runtime.phase_label
+    env_fn = runtime.env_fn
+    ckpt_env_cfg = runtime.ckpt_env_cfg
+    seed_base = runtime.seed_base
     cfg = make_mappo_config(config)
     env_cfg = dict(config.get("env", {}))
     run_cfg = config.get("run", {})
@@ -145,7 +165,7 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         )
     return RuntimeContext(
         config=config,
-        phase=int(phase),
+        phase=phase,
         phase_label=phase_label,
         env_fn=env_fn,
         ckpt_env_cfg=dict(ckpt_env_cfg),
@@ -158,6 +178,17 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         checkpoint_every=checkpoint_every,
         output_dir=output_dir,
         retention=retention,
+        objective_timing_enabled=objective_timing_enabled,
+        objective_initial_unlock_seconds=objective_initial_unlock_seconds,
+        objective_initial_capture_seconds=objective_initial_capture_seconds,
+        objective_final_unlock_seconds=objective_final_unlock_seconds,
+        objective_final_capture_seconds=objective_final_capture_seconds,
+        objective_timing_anneal_updates=objective_timing_anneal_updates,
+        objective_eval_canonical_every=objective_eval_canonical_every,
+        majority_on_point_initial=majority_on_point_initial,
+        majority_on_point_anneal_updates=majority_on_point_anneal_updates,
+        uncontested_on_point_initial=uncontested_on_point_initial,
+        uncontested_on_point_anneal_updates=uncontested_on_point_anneal_updates,
     )
 
 
@@ -297,7 +328,7 @@ def maybe_run_bc_pretrain(context: RuntimeContext, trainer: MappoTrainer, logger
         aim_rehearsal_env_fn = None
         aim_rehearsal_batch_size = int(run_cfg.get("bc_aim_rehearsal_batch_size", 0))
         if aim_rehearsal_batch_size > 0:
-            from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
+            from envs import Phase4AimOnlyMappoEnv
             target_ckpt = run_cfg.get("bc_aim_target_checkpoint")
             if not target_ckpt:
                 raise ValueError("bc_aim_rehearsal_batch_size requires bc_aim_target_checkpoint")
@@ -348,7 +379,7 @@ def maybe_run_bc_pretrain(context: RuntimeContext, trainer: MappoTrainer, logger
     return passed
 
 
-def train_phase4_from_config(config: dict) -> dict[str, float]:
+def train_mappo_from_config(config: dict) -> dict[str, float]:
     context = build_runtime_context(config)
     phase = context.phase
     phase_label = context.phase_label
@@ -363,6 +394,17 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     checkpoint_every = context.checkpoint_every
     output_dir = context.output_dir
     retention = context.retention
+    objective_timing_enabled = context.objective_timing_enabled
+    objective_initial_unlock_seconds = context.objective_initial_unlock_seconds
+    objective_initial_capture_seconds = context.objective_initial_capture_seconds
+    objective_final_unlock_seconds = context.objective_final_unlock_seconds
+    objective_final_capture_seconds = context.objective_final_capture_seconds
+    objective_timing_anneal_updates = context.objective_timing_anneal_updates
+    objective_eval_canonical_every = context.objective_eval_canonical_every
+    majority_on_point_initial = context.majority_on_point_initial
+    majority_on_point_anneal_updates = context.majority_on_point_anneal_updates
+    uncontested_on_point_initial = context.uncontested_on_point_initial
+    uncontested_on_point_anneal_updates = context.uncontested_on_point_anneal_updates
 
     trainer = MappoTrainer(env_fn, cfg, seed=seed_base)
 
@@ -370,7 +412,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         config=config,
         run_name=f"{phase_label}_mappo_seed{seed_base}",
         run_config={
-            "phase": int(phase),
+            "phase": phase,
             "phase_label": phase_label,
             "variant": "mappo",
             "seed": int(seed_base),
@@ -380,7 +422,11 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
             "mappo": dict(cfg.__dict__),
             "env": dict(ckpt_env_cfg),
         },
-        tags=[f"phase{int(phase)}", phase_label, "mappo"],
+        tags=[
+            *( [f"phase{int(phase)}"] if phase is not None else [] ),
+            phase_label,
+            "mappo",
+        ],
     )
 
     # Warm-start: optionally load a previously-trained checkpoint into the
@@ -654,7 +700,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                     {
                         "model_state_dict": trainer.model.state_dict(),
                         "config": {
-                            "phase": phase,
+                            "phase": phase_label if phase is None else phase,
                             "env": ckpt_env_cfg,
                             "mappo": cfg.__dict__,
                         },
@@ -700,21 +746,33 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
     torch.save(
         {
             "model_state_dict": last_state,
-            "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
+            "config": {
+                "phase": phase_label if phase is None else phase,
+                "env": ckpt_env_cfg,
+                "mappo": cfg.__dict__,
+            },
         },
         ckpt_last_path,
     )
     torch.save(
         {
             "model_state_dict": final_state,
-            "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
+            "config": {
+                "phase": phase_label if phase is None else phase,
+                "env": ckpt_env_cfg,
+                "mappo": cfg.__dict__,
+            },
         },
         ckpt_best_eval_path,
     )
     torch.save(
         {
             "model_state_dict": final_state,
-            "config": {"phase": phase, "env": ckpt_env_cfg, "mappo": cfg.__dict__},
+            "config": {
+                "phase": phase_label if phase is None else phase,
+                "env": ckpt_env_cfg,
+                "mappo": cfg.__dict__,
+            },
         },
         ckpt_final_path,
     )
@@ -748,7 +806,7 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
         matrix_model.eval()
         rows = run_mappo_matrix_eval(
             model=matrix_model,
-            phase=phase,
+            phase=0 if phase is None else phase,
             ckpt_env_cfg=CheckpointEnvConfig(ckpt_env_cfg),
             matrix_cfg=MatrixEvalConfig.from_dict(dict(run_cfg.get("matrix_eval", {}))),
             output_dir=output_dir,
@@ -783,6 +841,10 @@ def train_phase4_from_config(config: dict) -> dict[str, float]:
                 flush=True,
             )
     return {"mappo": best_eval if best_eval > float("-inf") else last_eval}
+
+
+# Compatibility alias for existing scripts/tests/checkpoints.
+train_phase4_from_config = train_mappo_from_config
 
 
 # Compatibility re-exports (temporary)

@@ -1,354 +1,324 @@
-# Goal: Phase 4 Objective Timing Curriculum and Long-Run Progress
+# Goal: Remove Hardcoded Phase Runtime Architecture
 
 ## Purpose
 
-Investigate and fix the Phase 4 failure mode where agents can create kill or
-majority-on-point advantage but cannot convert it into uncontested capture and
-score. This goal is specifically about the "episode too short / capture too
-slow / contest too brittle" axis.
+Refactor the Python runtime architecture so experiment phases remain useful
+metadata, documentation, and config organization, but environments, learners,
+dispatch, and reusable runtime helpers are not hardcoded around `phaseX`.
 
-This is not another smoke-only probe. Produce visible Phase 4 progress with
-longer W&B-backed experiments, checkpoints, replay artifacts where useful, and
-clear verification.
+The current project uses phase labels in two different ways:
+
+1. **Good use:** experiment identity, config paths, W&B tags, phase-gate history,
+   docs, and journal lineage.
+2. **Problem use:** runtime architecture, env class names, trainer routing,
+   observation/action dimensions, feature toggles, and env wrapper inheritance.
+
+Preserve the first use. Unwind the second use.
 
 ## First Reads
 
-Before making code or config changes, read these in order:
+Before changing code, read these in order:
 
-1. `docs/journal/reinforcement_learning_journal.md`
-2. `docs/game_design.md`
-3. `docs/rl_design.md`
-4. `docs/plans/README.md`
-5. Relevant active Phase 4 plans in `docs/plans/active/`
+1. `docs/architecture/python_layers.md`
+2. `docs/rl_design.md`
+3. `docs/observation_spec.md`
+4. `docs/action_spec.md`
+5. `docs/coding_philosophy.md`
+6. `docs/standards/python_training_checklist.md`
+7. `python/train/phases.py`
+8. `python/train/train.py`
+9. `python/train/mappo_rollout_trainer.py`
+10. `python/train/mappo_eval_checkpoint.py`
+11. `python/envs/__init__.py`
 
-Carry forward the journal evidence. Do not rediscover or repeat already
-falsified hyperparameter-only variants.
+Also inspect the current worktree before relying on this file. There may be
+unrelated local changes.
 
-## Context From Latest Phase 4 Evidence
+## Current Scope From Initial Audit
 
-The majority-on-point curriculum was implemented and verified. It was useful as
-a diagnostic but did not clear Phase 4.
+The main hardcoded runtime phase coupling is in:
 
-Observed local results:
+- `python/train/phases.py`
+  - central `PHASE_REGISTRY`;
+  - `_make_phaseN_env` factories;
+  - `_phaseN_env_bundle` config extractors;
+  - `resolve_phase(config)` returning learner/env dimensions from numeric phase.
+- `python/train/train.py`
+  - dispatches phase 0, phases 2-3, and phases 4-11 explicitly;
+  - calls `train_phase4_from_config` for all MAPPO phases;
+  - formats user-facing banners by numeric phase groups.
+- `python/train/mappo_rollout_trainer.py`
+  - `make_mappo_config` gets `obs_dim`, `critic_obs_dim`, `n_agents`, action
+    dimensions, and target-action support from `resolve_phase`.
+- `python/train/mappo_eval_checkpoint.py`
+  - `build_runtime_context` depends on `resolve_phase`;
+  - exported function name `train_phase4_from_config` now handles more than
+    Phase 4;
+  - composition/BC paths still contain Phase 4-specific helper names.
+- `python/train/composition_rehearsal.py`
+  - imports private `_make_phase4_env` from `train.phases`.
+- `python/envs/`
+  - env classes and modules are phase-named;
+  - later envs wrap/import earlier phase envs, especially `Phase4MappoEnv`;
+  - examples include Phase 5/6/7/9/11 using `Phase4MappoEnv`, Phase 8 using
+    `Phase7FogMappoEnv`, and Phase 10 using `Phase8RandomMapMappoEnv`.
+- `python/scripts/` and `python/eval/`
+  - replay/eval helper names and modes still refer to phase-specific contracts.
 
-- The no-anneal diagnostic produced Team A majority-on-point windows but still
-  scored `0.00/0.00`.
-- The annealed smoke produced live majority/cap-progress diagnostics, but final
-  real-reward eval at alpha `0.0` ended `0W/20L/0D`, score `0.00/2.90`.
-- Team A can have substantial majority-on-point time while still getting almost
-  no uncontested capture/scoring time.
-- This points at objective conversion: one living enemy contesting the point
-  freezes progress, capture takes 8 seconds, unlock takes 15 seconds, and
-  current Phase 4 episodes are often 30-60 seconds.
+Some phase references in docs, config filenames, W&B tags, tests, and journal
+entries are acceptable and should remain unless they block the architecture.
 
-Working hypothesis:
+## Important Existing Issue
 
-```text
-The learner can reach/contest/fight on point, but the canonical objective timing
-is too steep for the current 3v3 Ranger policy to discover the full chain:
+At the time this goal was written, running the import-boundary checker failed
+before it could evaluate boundaries because `python/tests/test_reward.py`
+contained conflict markers around line 639:
 
-fight -> clear contest -> complete capture -> keep owner uncontested -> score
+the Git conflict marker for `HEAD`.
+
+Before relying on `python -m scripts.check_import_boundaries`, inspect and fix
+that file if the conflict markers are still present. Do not silently discard
+user changes while resolving it.
+
+## Architectural Direction
+
+Move from a phase registry to an explicit runtime task/environment registry.
+
+Target config concepts:
+
+```yaml
+experiment:
+  phase: phase4              # optional metadata for docs/W&B/gates
+  tags: [...]
+
+learner:
+  kind: mappo                # mappo, ppo_recurrent, scripted_determinism, etc.
+
+env:
+  kind: mappo_match          # mappo_match, memory_toy, aim_only, cap_duel, etc.
+  actor_obs: flat            # flat, entity, entity_grid, etc.
+  critic_obs: team_global
+  team_size: 3
+  learner_team: A
+  opponent:
+    kind: basic              # basic, noop, weak_basic_v2, snapshot, current
+  features:
+    fog: none                # none, team_shared, per_agent
+    map_randomization: false
+    target_slot: false
+    current_selfplay: false
 ```
+
+Exact field names may differ if the codebase has a better local pattern. The
+important property is that runtime behavior is selected by explicit
+capabilities, not `phase == N`.
+
+Backward compatibility is required. Existing phase configs should keep working
+through a compatibility adapter while new configs can use the task/env shape.
 
 ## Non-Negotiables
 
-- Use W&B for experiment runs. Do not set `WANDB_MODE=disabled` except for tiny
-  local import/config checks that are not claimed as experiment evidence.
-- If W&B auth or network fails, block with `HUMAN_INSPECTION_REQUIRED` and the
-  exact failure. Do not silently replace W&B with local-only tracking.
-- Do not call a smoke run Phase 4 progress. Smoke can verify plumbing only.
-- Do not silently change canonical game constants. Any objective timing change
-  must be explicitly curriculum-only or config-gated with canonical defaults.
-- Do not claim Phase 4 gate clearance from noncanonical objective timing.
-- Self-play win rate is not evidence by itself.
 - Keep MAPPO spelled MAPPO.
+- Do not change game rules, reward functions, observation layouts, action
+  semantics, replay format, deterministic sim behavior, or W&B metric schemas
+  unless the change is explicitly required and called out.
+- Keep phase labels in experiment docs/config organization where useful.
+- Do not remove existing phase configs or break old checkpoints without an
+  explicit migration plan.
+- Do not perform a broad rename-only churn pass before the runtime abstraction
+  exists.
+- Preserve actor/critic separation. No actor-observation path may call helpers
+  that expose hidden enemies or full state.
+- Keep diffs narrow and staged. This should be an incremental migration, not a
+  one-shot rewrite.
 
-## Primary Work
+## Recommended Migration Plan
 
-Create a curriculum or controlled experiment path that directly tests objective
-timing:
+### Step 1: Create Runtime Specs
 
-1. Verify whether objective unlock and capture duration are configurable today.
-2. If not configurable, add narrow config-gated support for objective timing:
-   - canonical defaults must remain unchanged,
-   - deterministic integer-tick behavior must be preserved,
-   - replay/obs contracts must remain coherent,
-   - docs/tests must make the curriculum-vs-canonical distinction explicit.
-3. Add trainer/environment scheduling if needed so a run can start with easier
-   objective timing and anneal toward canonical timing.
-4. Run longer W&B experiments that can produce meaningful behavior, not just
-   import or one-update checks.
-5. Record results in the RL journal with W&B URLs, config paths, seeds,
-   checkpoints, replay paths, metrics, and a decision.
+Introduce a small explicit spec layer, likely under `python/train/` or
+`python/xushi2/`, with dataclasses or typed dictionaries for:
 
-## Suggested Implementation Shape
+- experiment metadata,
+- learner spec,
+- env spec,
+- observation spec,
+- action spec,
+- opponent/self-play spec,
+- map/fog/snapshot feature spec.
 
-Prefer config-gated objective timing fields with canonical defaults. Names can
-change if the codebase has a better local pattern, but the behavior should be
-equivalent to:
+The spec should be constructible from:
 
-```yaml
-env:
-  objective_timing_curriculum:
-    enabled: true
-    initial_unlock_seconds: 5
-    initial_capture_seconds: 2
-    final_unlock_seconds: 15
-    final_capture_seconds: 8
-    anneal_updates: 400
-    eval_canonical_every: 25
-```
+1. existing phase configs,
+2. new explicit task/env configs.
 
-If this is implemented in C++ `MatchConfig`, preserve the canonical default:
+Keep `resolve_phase` temporarily as a compatibility adapter, but stop spreading
+new call sites that depend on numeric phases.
 
-```text
-objective_unlock_seconds = 15
-objective_capture_seconds = 8
-```
+### Step 2: Replace Trainer Dependence On Phase Numbers
 
-If curriculum timing is trainer-side, make sure:
+Refactor learner entrypoints so they dispatch on `learner.kind` and env/task
+capabilities:
 
-- rollout envs get the scheduled timing before rollout collection,
-- normal eval can report both current-curriculum eval and canonical eval,
-- final eval includes canonical timing,
-- W&B logs current unlock/capture seconds every update.
+- PPO recurrent path should receive an explicit `TaskSpec`.
+- MAPPO path should receive explicit dimensions and env factory from the runtime
+  spec.
+- `make_mappo_config` should not need `phase in (4, 5, 6, 7, 8, 9, 10, 11)`.
+- Rename or alias `train_phase4_from_config` to a neutral name such as
+  `train_mappo_from_config`, while preserving old imports if tests or scripts
+  depend on them.
 
-## Diagnostics To Preserve And Use
+### Step 3: Move Env Construction Out Of `train.phases`
 
-Use the existing Phase 4 diagnostics from the majority-on-point work:
+Create an env registry/factory that maps explicit env specs to constructors.
 
-- `mean_majority_on_point_seconds_a/b`
-- `mean_uncontested_on_point_seconds_a/b`
-- `mean_alive_edge_no_score_seconds_a/b`
-- `mean_cap_progress_gain_ticks`
-- `mean_cap_progress_loss_ticks`
-- Team A/B score, kills, hit/fire, visible fire, aim error
-- rollout `self_on_point_fraction`
-- majority shaping alpha if used
-- objective timing values if newly added
+The training layer should ask for "build env from spec", not import or call
+`_make_phase4_env`. Composition rehearsal should also use the public factory.
 
-Add missing diagnostics only if they are necessary to answer the timing
-question.
+Avoid adding new direct imports from `train` into phase-private env modules.
 
-## Experiments To Create
+### Step 4: Rename Or Wrap Reusable Env Concepts
 
-Create configs under `experiments/configs/phase4/probe/`. Include
-`metadata.hypothesis`, `metadata.falsification_criteria`, and
-`metadata.max_updates_if_no_signal` on every config.
+After the spec/factory exists, start moving phase-named envs toward capability
+names. Suggested target names:
 
-### 1. Fixed Easy Timing Long Diagnostic
+- `Phase4MappoEnv` -> `RangerMappoMatchEnv` or `FlatRangerMappoMatchEnv`
+- `Phase4CurrentSelfplayMappoEnv` -> `CurrentSelfplayMappoMatchEnv`
+- `Phase5EntityMappoEnv` -> `EntityObsMappoWrapper`
+- `Phase6GridMappoEnv` -> `EntityGridObsMappoWrapper`
+- `Phase7FogMappoEnv` -> `FogMappoMatchEnv` or `FogObsMappoWrapper`
+- `Phase8RandomMapMappoEnv` -> `RandomizedMapMappoEnv`
+- `Phase9SnapshotMappoEnv` -> `SnapshotOpponentMappoEnv`
+- `Phase10TargetSlotMappoEnv` -> `TargetSlotMappoEnv`
+- `Phase11CurrentSelfplayMappoEnv` -> `SixAgentCurrentSelfplayMappoEnv`
 
-Path suggestion:
+Use compatibility aliases during the migration so existing tests, checkpoints,
+and scripts do not all have to change in one commit.
 
-```text
-experiments/configs/phase4/probe/phase4_mappo_objective_timing_easy_long.yaml
-```
+### Step 5: Keep Experiment Identity Separate
 
-Purpose: prove that the current policy/training stack can score when the
-objective conversion chain is made learnable.
+Add or preserve experiment metadata fields used for:
 
-Recommended shape:
+- W&B run names/tags,
+- journal entries,
+- config listing,
+- gate decisions,
+- phase-specific docs.
 
-- opponent: `weak_basic_v2`
-- warm-start: `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`
-- BC: existing `walk_and_shoot`
-- objective unlock: 5 seconds
-- capture: 2 seconds
-- round length: 60 seconds
-- updates: at least 250
-- eval every: 25
-- eval episodes: at least 50
-- W&B enabled
+The phase label can still be logged. It just should not determine learner
+shape or env behavior by itself after migration.
 
-This is diagnostic only, not Phase 4 gate evidence.
+### Step 6: Update Tests And Boundaries
 
-### 2. Timing Curriculum Long Run
+Add focused tests proving:
 
-Path suggestion:
+- legacy phase configs still resolve and train/import correctly;
+- new explicit runtime configs resolve to the same env/learner specs;
+- MAPPO dimensions come from runtime specs/env spaces rather than hardcoded
+  phase numbers;
+- `train` does not import phase-private env modules directly where the boundary
+  checker forbids it;
+- actor/critic leak tests still pass after any env/observation changes.
 
-```text
-experiments/configs/phase4/probe/phase4_mappo_objective_timing_curriculum_long.yaml
-```
+## Suggested First Slice
 
-Purpose: test whether the easier objective can be annealed back toward the
-canonical rule without losing score conversion.
+A good first implementation slice is:
 
-Recommended shape:
+1. Add a neutral runtime spec module.
+2. Add a compatibility adapter from the current `PHASE_REGISTRY` entries into
+   that runtime spec.
+3. Change `make_mappo_config`, `build_runtime_context`, and benchmark scripts
+   to consume the runtime spec instead of raw phase spec dictionaries.
+4. Add one explicit non-phase config fixture in tests that is equivalent to the
+   Phase 4 smoke config.
+5. Keep all existing phase configs working.
 
-- opponent: `weak_basic_v2`
-- warm-start: `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`
-- BC: existing `walk_and_shoot`
-- objective unlock: 5s -> 15s
-- capture: 2s -> 8s
-- anneal: 300-500 updates
-- total updates: at least 500
-- eval every: 25
-- eval episodes: at least 50
-- include canonical eval every eval interval if feasible
-- W&B enabled
+This creates the architectural direction without forcing a full env rename in
+the same patch.
 
-This is the main run for visible progress.
+## Verification Commands
 
-### 3. Canonical Longer-Episode Control
+Use PowerShell-friendly commands on native Windows.
 
-Path suggestion:
-
-```text
-experiments/configs/phase4/probe/phase4_mappo_canonical_120s_long.yaml
-```
-
-Purpose: separate "episode too short" from "capture timing too steep."
-
-Recommended shape:
-
-- canonical unlock: 15 seconds
-- canonical capture: 8 seconds
-- round length: 120 seconds
-- opponent: `weak_basic_v2`
-- warm-start and BC same as above
-- total updates: at least 250
-- eval every: 25
-- eval episodes: at least 50
-- W&B enabled
-
-If this scores while 60s canonical does not, episode length is a real blocker.
-If this still does not score while easy timing does, capture/contest difficulty
-is the main blocker.
-
-## Run Strategy
-
-Run in this order:
-
-1. Do a tiny local config/import check only if needed. Do not log it as
-   experiment evidence.
-2. Run the fixed easy timing long diagnostic.
-3. If it cannot produce score or cap conversion by its stop point, stop and
-   write the falsification.
-4. If it does produce score/cap conversion, run the timing curriculum long run.
-5. Run the canonical 120s control unless the first two runs already clearly
-   prove a different blocker.
-6. If any long run shows positive score conversion, rerun the best config on
-   at least three seeds before making a strong claim.
-
-Use these seeds unless there is a reason to choose different ones:
-
-```text
-3519994490
-3519994491
-3519994492
-```
-
-## Stop And Continue Criteria
-
-Stop early and record falsification if by `metadata.max_updates_if_no_signal`:
-
-- Team A score is still zero,
-- Team A cap-progress gain is not meaningfully above the prior majority smoke,
-- Team A uncontested-on-point seconds remain near zero,
-- rollout `self_on_point_fraction < 0.25`,
-- Team A hit/fire collapses below recent weak_basic_v2 baselines.
-
-Continue a run if at least one is true:
-
-- Team A score is nonzero,
-- Team A wins at least one eval episode,
-- Team A uncontested-on-point seconds rise materially,
-- Team A cap-progress gain rises materially,
-- replay shows coherent fight-then-point behavior.
-
-## Verification Before Long Runs
-
-Run the relevant build/tests before claiming the code path is ready:
+Minimum focused checks after the first slice:
 
 ```powershell
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPYTHON_EXECUTABLE=C:\Python313\python.exe
-cmake --build build --config Release
 cd python
-py -3.13 -m pytest tests/test_reward.py tests/test_phase4_mappo_env.py tests/test_mappo_team_spirit_ramp.py tests/test_mappo_bc_freeze.py tests/test_mappo_public_api.py tests/test_bindings_obs.py tests/test_obs_manifest.py -q
+py -3.13 -m pytest tests/test_train_dispatch.py tests/test_phase_registry.py tests/test_mappo_public_api.py tests/test_mappo_phase_env_parity.py tests/test_vector_env.py -q
+py -3.13 -m scripts.check_import_boundaries
 ```
 
-If C++ objective rules/configs are touched, also run:
+If observation builders or actor/critic paths are touched, also run:
 
 ```powershell
-ctest --test-dir build -C Release -R "Objective|Determinism|GoldenReplay|ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils" --output-on-failure
+cd python
+py -3.13 -m pytest tests/test_bindings_obs.py tests/test_obs_manifest.py tests/test_phase5_entity_obs.py tests/test_phase6_grid_obs.py tests/test_phase7_partial_obs.py tests/test_phase10_target_slot.py -q
 ```
 
-Add focused tests for any new objective timing config:
+If C++ observation or sim code is touched, also run the relevant C++ tests:
 
-- canonical defaults match existing 15s unlock and 8s capture,
-- shortened capture completes in the expected integer number of ticks,
-- shortened unlock starts objective updates at the expected tick,
-- same seed plus same actions remains deterministic,
-- canonical eval ignores curriculum timing when requested.
+```powershell
+cmake --build build --config Release
+ctest --test-dir build -C Release -R "ActorLeak|ActorObs|CriticObs|ObsDims|ObsUtils|Determinism|GoldenReplay" --output-on-failure
+```
 
-## W&B And Artifact Requirements
+Do not run long training jobs for this architectural goal unless a later card
+explicitly asks for behavioral experiment evidence.
 
-For every long experiment, record:
+## Completion Criteria
 
-- git commit,
-- config path,
-- seed,
-- W&B run URL,
-- checkpoint path,
-- replay path if produced,
-- objective timing schedule used,
-- majority/capture diagnostics,
-- score/win/loss/draw,
-- Team A/B kills,
-- Team A/B hit/fire and aim error,
-- whether eval was curriculum timing or canonical timing.
+This goal is complete when:
 
-The trainer may not print the W&B URL directly. Parse it from the run metadata
-under the relevant `wandb/latest-run/files/wandb-metadata.json` path if needed.
-Do not fabricate URLs.
+- runtime env/learner behavior can be selected without hardcoding a numeric
+  `phase`;
+- existing phase configs still work through compatibility;
+- at least one explicit non-phase runtime config/test path works;
+- MAPPO config construction no longer requires membership in a hardcoded
+  phase range;
+- public env construction goes through a neutral factory/spec layer;
+- direct trainer imports of phase-private env modules are removed or isolated
+  behind compatibility shims;
+- docs explain the distinction between experiment phase metadata and runtime
+  capability specs;
+- focused tests and import-boundary checks pass, or any remaining failure is
+  clearly documented as unrelated pre-existing worktree state.
 
-Dump a replay for:
+## Completion Metadata
 
-- any run with Team A score > 0,
-- any run with Team A win > 0,
-- any run where cap-progress conversion materially improves,
-- the best checkpoint of the main timing curriculum run.
+When reporting completion, include:
 
-If replay judgment is required, block with:
+```json
+{
+  "changed_files": [],
+  "verification": [],
+  "commit": null,
+  "config_path": null,
+  "seeds": [],
+  "wandb_run_url": null,
+  "replay_artifacts": [],
+  "viewer_command": null,
+  "tests_run": [],
+  "behavior_changes": [],
+  "reward_changes": [],
+  "config_changes": [],
+  "blocked_reason": null,
+  "residual_risk": []
+}
+```
+
+For this architecture goal, `wandb_run_url`, `replay_artifacts`, and
+`viewer_command` are normally null unless the work unexpectedly includes
+training/eval runs.
+
+## Good `/goal` Prompt
+
+Use this prompt:
 
 ```text
-HUMAN_INSPECTION_REQUIRED
+Use GOAL_INSTRUCTIONS.md as the active goal. Refactor xushi2 so phase labels
+remain experiment metadata, but runtime env and learner behavior are selected
+from explicit task/env/learner specs rather than hardcoded phase numbers. Work
+incrementally, preserve existing phase configs through compatibility, avoid
+changing game/reward/observation semantics, and verify with focused Python tests
+plus the import-boundary checker.
 ```
-
-Include W&B URL, replay path, viewer command, exact questions for the human,
-and the comment format needed to unblock.
-
-## Journal Update
-
-After each run, append to `docs/journal/reinforcement_learning_journal.md`.
-Each entry must include:
-
-- hypothesis,
-- config path,
-- seed,
-- git commit,
-- W&B URL,
-- checkpoints,
-- replay artifacts,
-- test commands and results,
-- objective timing values,
-- key metrics,
-- decision: cleared, not cleared, falsified, blocked, or evidence insufficient.
-
-## Expected Outcome
-
-The goal is not merely to create configs. The goal is to determine whether
-objective timing is a real blocker and to create visible Phase 4 progress.
-
-Useful outcomes include:
-
-- fixed easy timing scores but canonical longer episode does not: capture/contest
-  timing is the blocker,
-- canonical 120s scores but 60s does not: episode length is the blocker,
-- timing curriculum scores early but loses score as it anneals: need a slower or
-  staged curriculum,
-- none of the timing variants score: objective timing is probably not the only
-  blocker, and attention should return to actor information/coordination.
-
-Do not stop at "implemented." Run the experiments, verify them, record the
-evidence, and make a concrete next recommendation.

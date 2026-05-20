@@ -3,7 +3,7 @@
 import warnings
 
 from train.mappo_bc_pretrain import bc_pretrain_walk_to_objective
-from train.mappo_eval_checkpoint import train_phase4_from_config
+from train.mappo_eval_checkpoint import train_mappo_from_config, train_phase4_from_config
 from train.mappo_evaluate import evaluate_mappo
 from train.mappo_model import (
     MappoActorCritic,
@@ -27,6 +27,7 @@ __all__ = [
     "compute_team_spirit",
     "evaluate_mappo",
     "make_mappo_config",
+    "train_mappo_from_config",
     "train_phase4_from_config",
 ]
 

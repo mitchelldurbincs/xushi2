@@ -6,8 +6,8 @@ import numpy as np
 import torch
 
 from train.mappo import MappoActorCritic, MappoConfig
-from train.phases import resolve_phase
 from train.ppo_recurrent.orchestration import make_env_fn
+from train.runtime_specs import resolve_runtime_spec
 
 from .formatting import (
     action_to_fields,
@@ -95,14 +95,21 @@ def dump_mappo(
     output_path: Path,
     stochastic: bool = False,
 ) -> int:
-    wanted_phase = int(ckpt_config.get("phase", 4))
+    raw_phase = ckpt_config.get("phase", 4)
+    try:
+        wanted_phase = int(str(raw_phase).removeprefix("phase"))
+    except ValueError:
+        wanted_phase = 4
     if wanted_phase != 11 and ckpt_config["env"].get("learner_team", "A") != "A":
         raise ValueError("MAPPO replay dumping currently supports learner_team='A'")
 
-    phase, spec = resolve_phase({"phase": wanted_phase, "env": ckpt_config["env"]})
-    if phase not in (4, 5, 6, 7, 8, 9, 10, 11):
-        raise AssertionError("internal phase resolution error")
-    env_fn, _env_meta, _seed_base = spec["env_bundle"]({"phase": phase, "env": ckpt_config["env"]})
+    runtime = resolve_runtime_spec({"phase": raw_phase, "env": ckpt_config["env"]})
+    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
+        raise ValueError(
+            "MAPPO replay dumping requires a MAPPO runtime, "
+            f"got learner={runtime.learner.kind!r} env={runtime.env.kind!r}"
+        )
+    env_fn = runtime.env_fn
     header = header_fields(ckpt_config, seed=seed)
     include_target = int(model.cfg.target_action_dim) > 0
     zero_slot = [0.0] * (7 if include_target else 6)
@@ -136,7 +143,7 @@ def dump_mappo(
                         )
                         for i in range(model.cfg.n_agents)
                     ]
-                    if phase == 11:
+                    if wanted_phase == 11:
                         if len(policy_slots) != 6:
                             raise ValueError("phase11 replay dump requires six policy action slots")
                         obs, _reward, term, trunc, info = env.step(action)

@@ -14,9 +14,9 @@ from pathlib import Path
 import torch
 
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.phases import resolve_phase
 from train.ppo_recurrent.orchestration import make_ppo_config
 from train.ppo_recurrent.trainer import PPOTrainer
+from train.runtime_specs import resolve_runtime_spec
 from train.train import load_config
 
 
@@ -70,8 +70,11 @@ def _metadata() -> BenchMetadata:
 
 
 def _build_trainers(config: dict, target: str, seed: int, vector_env: str):
-    phase, phase_spec = resolve_phase(config)
-    env_fn, _env_cfg, seed_base = phase_spec["env_bundle"](config)
+    runtime = resolve_runtime_spec(config)
+    if runtime.env_fn is None:
+        raise ValueError(f"benchmark target requires an env runtime, got env={runtime.env.kind!r}")
+    env_fn = runtime.env_fn
+    seed_base = runtime.seed_base
     run_seed = int(seed_base) + int(seed)
 
     if target in ("ppo_recurrent", "env_step_only", "update_only"):
@@ -87,8 +90,10 @@ def _build_trainers(config: dict, target: str, seed: int, vector_env: str):
         return trainer, "ppo"
 
     if target == "mappo":
-        if phase not in (4, 5, 6, 7, 8, 9, 10, 11):
-            raise ValueError(f"mappo target requires phase in 4-11, got {phase}")
+        if runtime.learner.kind != "mappo":
+            raise ValueError(
+                f"mappo target requires learner.kind='mappo', got {runtime.learner.kind!r}"
+            )
         ppo_cfg = dict(config.get("ppo", {}))
         ppo_cfg["vector_env"] = vector_env
         local_cfg = dict(config)

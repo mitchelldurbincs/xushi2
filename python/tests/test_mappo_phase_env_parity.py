@@ -17,7 +17,12 @@ def _cfg() -> dict:
         "fog_of_war_enabled": False,
         "randomize_map": False,
         "action_repeat": 3,
-        "mechanics": {"respawn_ticks": 120},
+        "mechanics": {
+            "revolver_damage_centi_hp": 7500,
+            "revolver_fire_cooldown_ticks": 15,
+            "revolver_hitbox_radius": 0.75,
+            "respawn_ticks": 120,
+        },
     }
 
 

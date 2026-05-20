@@ -13,7 +13,7 @@ import torch.nn as nn
 
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
 from train.mappo_model import MappoActorCritic, MappoConfig, mode_aux_loss_and_accuracy
-from train.phases import _make_phase4_env
+from envs import make_mappo_match_env
 from xushi2.obs_manifest import actor_field_slice
 
 _MOVE_ACTION_INDICES = (0, 1)
@@ -310,13 +310,29 @@ def build_phase4_env_fn_with_overrides(
             env_cfg[key] = value
     mini_game = env_cfg.get("mini_game")
     mini_game_cfg = dict(env_cfg.get("mini_game_config", {}))
-    return lambda: _make_phase4_env(
-        dict(env_cfg.get("sim", {})),
-        str(env_cfg.get("opponent_bot", "basic")),
-        str(env_cfg.get("learner_team", "A")),
-        dict(env_cfg.get("reward", {})),
-        None if mini_game is None else str(mini_game),
-        mini_game_cfg,
+    return lambda: make_mappo_match_env(
+        sim_cfg=dict(env_cfg.get("sim", {})),
+        opponent_bot=str(env_cfg.get("opponent_bot", "basic")),
+        learner_team=str(env_cfg.get("learner_team", "A")),
+        reward_cfg=dict(env_cfg.get("reward", {})),
+        actor_obs=str(env_cfg.get("actor_obs", "flat")),
+        fog_mode=str(env_cfg.get("fog_mode", "none")),
+        visible_radius=float(env_cfg.get("visible_radius", 0.65)),
+        map_randomization=dict(env_cfg.get("map_randomization", {})),
+        mini_game=None if mini_game is None else str(mini_game),
+        mini_game_cfg=mini_game_cfg,
+        self_play=bool(dict(env_cfg.get("self_play", {})).get("enabled", False)),
+        self_play_schedule=(
+            dict(env_cfg.get("self_play_schedule", {}))
+            if "self_play_schedule" in env_cfg
+            else None
+        ),
+        snapshot_paths=tuple(str(p) for p in env_cfg.get("snapshot_paths", ())),
+        snapshot_league=(
+            dict(env_cfg.get("snapshot_league", {})) if "snapshot_league" in env_cfg else None
+        ),
+        target_slot=bool(env_cfg.get("target_slot", False)),
+        n_agents=int(env_cfg.get("n_agents", env_cfg.get("team_size", 3))),
     )
 
 

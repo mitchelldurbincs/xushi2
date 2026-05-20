@@ -10,7 +10,6 @@ from pathlib import Path
 import torch
 
 from train.models import ActorCritic
-from train.phases import resolve_phase
 from train.ppo_recurrent.config import PPOConfig
 from train.ppo_recurrent.evaluate import evaluate_policy_stats
 from train.ppo_recurrent.logging import (
@@ -22,34 +21,34 @@ from train.ppo_recurrent.logging import (
 )
 from train.common_orchestration import LoopConfig, run_training_loop
 from train.ppo_recurrent.trainer import PPOTrainer
+from train.runtime_specs import resolve_runtime_spec
 from train.wandb_logger import make_logger
 
 _CKPT_SCHEMA_VERSION = 1
 
 
 def make_env_fn(config: dict) -> tuple[Callable[[], object], dict, int]:
-    _, phase_spec = resolve_phase(config)
-    env_bundle = phase_spec.get("env_bundle")
-    if env_bundle is None:
-        raise ValueError(f"unsupported phase/config shape: phase={config.get('phase')!r}")
-    return env_bundle(config)
+    runtime = resolve_runtime_spec(config)
+    if runtime.env_fn is None:
+        raise ValueError(f"unsupported runtime env shape: env={config.get('env')!r}")
+    return runtime.env_fn, runtime.ckpt_env_cfg, runtime.seed_base
 
 
 def _phase_task_spec(config: dict) -> dict:
-    _, phase_spec = resolve_phase(config)
-    required = (
-        "label",
-        "obs_dim",
-        "action_dim",
-        "continuous_action_dim",
-        "binary_action_dim",
-    )
-    missing = [k for k in required if k not in phase_spec]
-    if missing:
+    runtime = resolve_runtime_spec(config)
+    if runtime.learner.kind != "ppo_recurrent":
         raise ValueError(
-            f"unsupported phase/config shape: phase={config.get('phase')!r} missing={missing}"
+            f"recurrent PPO requires learner.kind='ppo_recurrent', got {runtime.learner.kind!r}"
         )
-    return {k: phase_spec[k] for k in required}
+    return {
+        "label": runtime.phase_label,
+        "phase": runtime.phase_int,
+        "obs_dim": runtime.shapes.obs_dim,
+        "action_dim": runtime.shapes.action_dim,
+        "continuous_action_dim": runtime.shapes.continuous_action_dim,
+        "binary_action_dim": runtime.shapes.binary_action_dim,
+        "training_variants": runtime.learner.training_variants,
+    }
 
 
 def make_ppo_config(config: dict, *, use_recurrence: bool) -> PPOConfig:
@@ -145,7 +144,7 @@ def _build_checkpoint_config(
         head_hidden=int(model_cfg["head_hidden"]),
     )
     run = CheckpointRunContext(
-        phase=int(config.get("phase", 2)),
+        phase=int(task_spec["phase"]) if task_spec.get("phase") is not None else 0,
         env=ckpt_env_cfg,
         ppo=dict(config.get("ppo", {})),
     )
@@ -459,12 +458,16 @@ def _run_variant(
 
 def train_from_config(config: dict) -> dict[str, float]:
     """Train one or more variants for the selected recurrent PPO phase."""
-    phase, phase_spec = resolve_phase(config)
+    runtime = resolve_runtime_spec(config)
     run_cfg = config.get("run", {})
-    default_out = "runs/phase2_memory_toy" if phase == 2 else "runs/phase3_ranger"
+    default_out = (
+        "runs/phase2_memory_toy"
+        if runtime.env.kind == "memory_toy"
+        else "runs/phase3_ranger"
+    )
     out_root = Path(str(run_cfg.get("output_dir", default_out)))
     rec_eval = _run_variant(config, use_recurrence=True, output_dir=out_root / "recurrent")
-    if "feedforward" in phase_spec.get("training_variants", ()):
+    if "feedforward" in runtime.learner.training_variants:
         ff_eval = _run_variant(config, use_recurrence=False, output_dir=out_root / "feedforward")
         return {"recurrent": rec_eval, "feedforward": ff_eval}
     return {"recurrent": rec_eval}

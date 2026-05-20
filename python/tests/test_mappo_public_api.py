@@ -14,5 +14,6 @@ def test_mappo_public_api_surface() -> None:
         "compute_team_spirit",
         "evaluate_mappo",
         "make_mappo_config",
+        "train_mappo_from_config",
         "train_phase4_from_config",
     ]

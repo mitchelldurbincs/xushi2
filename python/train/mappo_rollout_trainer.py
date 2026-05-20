@@ -23,7 +23,6 @@ from train.mappo_model import (
     target_selection_aux_metrics,
 )
 from train.mappo_rollout import collect_rollout, step_loss_mask
-from train.phases import resolve_phase
 from train.ppo_recurrent.losses import (
     _masked_mean,
     action_logprob_and_entropy_parts,
@@ -35,6 +34,7 @@ from train.recurrent_common import (
     next_update_sampling_state,
     set_optimizer_learning_rate,
 )
+from train.runtime_specs import resolve_runtime_spec
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
@@ -589,9 +589,13 @@ class MappoTrainer:
 
 
 def make_mappo_config(config: dict) -> MappoConfig:
-    phase, phase_spec = resolve_phase(config)
-    if phase not in (4, 5, 6, 7, 8, 9, 10, 11):
-        raise ValueError(f"MAPPO trainer only supports phases 4-11, got phase={phase!r}")
+    runtime = resolve_runtime_spec(config)
+    if runtime.learner.kind != "mappo":
+        raise ValueError(
+            f"MAPPO trainer requires learner.kind='mappo', got {runtime.learner.kind!r}"
+        )
+    if runtime.shapes.critic_obs_dim is None:
+        raise ValueError("MAPPO trainer requires a centralized critic observation spec")
     model_cfg = config.get("model", {})
     ppo_cfg = config.get("ppo", {})
     run_cfg = config.get("run", {})
@@ -599,7 +603,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
     # is accepted as a fallback for symmetry with the rest of the PPO block.
     device = str(run_cfg.get("device", ppo_cfg.get("device", "cpu")))
     obs_encoder = str(model_cfg.get("obs_encoder", "flat"))
-    n_agents = int(phase_spec["n_agents"])
+    n_agents = int(runtime.shapes.n_agents)
     raw_agent_loss_mask = ppo_cfg.get("agent_loss_mask", [1.0] * n_agents)
     agent_loss_mask = tuple(float(v) for v in raw_agent_loss_mask)
     if len(agent_loss_mask) != n_agents:
@@ -616,12 +620,12 @@ def make_mappo_config(config: dict) -> MappoConfig:
         n_agents=n_agents,
         agent_loss_mask=agent_loss_mask,
         rollout_len=int(ppo_cfg["rollout_len"]),
-        obs_dim=int(phase_spec["obs_dim"]),
-        critic_obs_dim=int(phase_spec["critic_obs_dim"]),
-        action_dim=int(phase_spec["action_dim"]),
-        continuous_action_dim=int(phase_spec["continuous_action_dim"]),
-        binary_action_dim=int(phase_spec["binary_action_dim"]),
-        target_action_dim=int(phase_spec.get("target_action_dim", 0)),
+        obs_dim=int(runtime.shapes.obs_dim),
+        critic_obs_dim=int(runtime.shapes.critic_obs_dim),
+        action_dim=int(runtime.shapes.action_dim),
+        continuous_action_dim=int(runtime.shapes.continuous_action_dim),
+        binary_action_dim=int(runtime.shapes.binary_action_dim),
+        target_action_dim=int(runtime.shapes.target_action_dim),
         value_per_agent=bool(ppo_cfg.get("value_per_agent", False)),
         mask_fire_when_no_visible_enemy=bool(
             ppo_cfg.get("mask_fire_when_no_visible_enemy", False)

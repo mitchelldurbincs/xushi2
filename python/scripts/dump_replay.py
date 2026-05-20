@@ -70,8 +70,8 @@ def main() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     raw_ckpt = torch.load(Path(args.checkpoint), map_location="cpu", weights_only=False)
-    phase = int(raw_ckpt.get("config", {}).get("phase", 3))
-    if phase in (4, 5, 6, 7, 8, 9, 10, 11):
+    ckpt_config = dict(raw_ckpt.get("config", {}))
+    if "mappo" in ckpt_config:
         model, ckpt_config = load_phase4_checkpoint(args.checkpoint)
         n_decisions = dump_mappo(
             model,

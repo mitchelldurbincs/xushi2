@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
 from train.mappo_evaluate import eval_stats_dict
-from train.phases import resolve_phase
+from train.runtime_specs import resolve_runtime_spec
 
 
 def _load_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
@@ -74,8 +74,6 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
     phase = int(ckpt_config.get("phase", 4))
     if phase == 9:
         phase = 8
-    if phase not in (4, 5, 6, 7, 8, 10):
-        raise ValueError(f"unsupported bot-eval phase {phase}")
     if learner_team not in ("A", "B"):
         raise ValueError(f"learner_team must be A or B, got {learner_team!r}")
     env_cfg = dict(ckpt_config.get("env", {}))
@@ -83,9 +81,13 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
     env_cfg.pop("match_type", None)
     env_cfg["opponent_bot"] = str(bot)
     env_cfg["learner_team"] = learner_team
-    _phase, spec = resolve_phase({"phase": phase, "env": env_cfg})
-    env_fn, _meta, _seed = spec["env_bundle"]({"phase": phase, "env": env_cfg})
-    return env_fn
+    runtime = resolve_runtime_spec({"phase": phase, "env": env_cfg})
+    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
+        raise ValueError(
+            "native bot matrix eval requires a MAPPO runtime, "
+            f"got learner={runtime.learner.kind!r} env={runtime.env.kind!r}"
+        )
+    return runtime.env_fn
 
 
 def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
@@ -97,9 +99,13 @@ def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
         "latest": [snapshot_path],
         "weights": {"latest": 1.0},
     }
-    _phase, spec = resolve_phase({"phase": 9, "env": env_cfg})
-    env_fn, _meta, _seed = spec["env_bundle"]({"phase": 9, "env": env_cfg})
-    return env_fn
+    runtime = resolve_runtime_spec({"phase": 9, "env": env_cfg})
+    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
+        raise ValueError(
+            "snapshot matrix eval requires a MAPPO runtime, "
+            f"got learner={runtime.learner.kind!r} env={runtime.env.kind!r}"
+        )
+    return runtime.env_fn
 
 
 def _result_row(

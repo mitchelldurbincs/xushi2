@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import faulthandler
 import signal
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
@@ -19,12 +18,14 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class NormalizedEntryConfig:
-    phase_int: int
+    phase_int: int | None
     phase_label: str
     sim_cfg: dict
     env_cfg: dict
     run_cfg: dict
     base_seed: int
+    learner_kind: str
+    env_kind: str
 
 
 def load_config(path: Path) -> dict:
@@ -120,22 +121,24 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
 
 
 def normalize_entry_config(config: dict) -> NormalizedEntryConfig:
-    from train.phases import resolve_phase
+    from train.runtime_specs import resolve_runtime_spec
 
-    phase_int, phase_spec = resolve_phase(config)
+    runtime = resolve_runtime_spec(config)
     env_cfg = dict(config.get("env", {}))
     sim_cfg = dict(config.get("sim", {}))
-    if phase_int in (2, 3, 4):
+    if runtime.env.kind in ("memory_toy", "ranger_duel", "mappo_match"):
         sim_cfg = dict(env_cfg.get("sim", {}))
     run_cfg = dict(config.get("run", {}))
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
     return NormalizedEntryConfig(
-        phase_int=phase_int,
-        phase_label=str(phase_spec["label"]),
+        phase_int=runtime.phase_int,
+        phase_label=runtime.phase_label,
+        learner_kind=runtime.learner.kind,
+        env_kind=runtime.env.kind,
         sim_cfg=sim_cfg,
         env_cfg=env_cfg,
         run_cfg=run_cfg,
-        base_seed=base_seed,
+        base_seed=runtime.seed_base if runtime.seed_base is not None else base_seed,
     )
 
 
@@ -144,58 +147,40 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
     bot_a = str(normalized.run_cfg.get("team_a_bot", "basic"))
     bot_b = str(normalized.run_cfg.get("team_b_bot", "basic"))
 
-    phase_groups: list[tuple[set[int], Callable[[], str]]] = [
-        (
-            {11},
-            lambda: (
-                f"[xushi2] phase={phase_raw} mappo match_type=current "
-                f"learner_team=both base_seed=0x{normalized.base_seed:x}"
-            ),
-        ),
-        (
-            {4, 5, 6, 7, 8, 9, 10},
-            lambda: (
-                f"[xushi2] phase={phase_raw} mappo "
-                f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
-                f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
-                f"base_seed=0x{normalized.base_seed:x}"
-            ),
-        ),
-        (
-            {3},
-            lambda: (
-                f"[xushi2] phase={phase_raw} "
-                f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
-                f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
-                f"base_seed=0x{normalized.base_seed:x}"
-            ),
-        ),
-        (
-            {2},
-            lambda: f"[xushi2] phase={phase_raw} memory_toy base_seed=0x{normalized.base_seed:x}",
-        ),
-    ]
-    if normalized.phase_int == 4 and bool(
-        dict(normalized.env_cfg.get("self_play", {})).get("enabled", False)
-    ):
+    phase_part = f"phase={phase_raw}" if normalized.phase_int is not None else f"runtime={normalized.env_kind}"
+    if normalized.learner_kind == "mappo":
+        match_type = ""
+        if normalized.env_kind == "mappo_match" and (
+            normalized.env_cfg.get("match_type") == "current"
+            or bool(dict(normalized.env_cfg.get("self_play", {})).get("enabled", False))
+            or int(normalized.env_cfg.get("n_agents", 3)) == 6
+        ):
+            match_type = " match_type=current"
         return (
-            f"[xushi2] phase={phase_raw} mappo match_type=current "
-            f"learner_team=both base_seed=0x{normalized.base_seed:x}"
+            f"[xushi2] {phase_part} mappo{match_type} "
+            f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+            f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
+            f"base_seed=0x{normalized.base_seed:x}"
         )
-    for phases, renderer in phase_groups:
-        if normalized.phase_int in phases:
-            return renderer()
+    if normalized.learner_kind == "ppo_recurrent":
+        return (
+            f"[xushi2] {phase_part} {normalized.env_kind} "
+            f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
+            f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
+            f"base_seed=0x{normalized.base_seed:x}"
+        )
+    if normalized.env_kind == "memory_toy":
+        return f"[xushi2] {phase_part} memory_toy base_seed=0x{normalized.base_seed:x}"
     return (
-        f"[xushi2] phase={phase_raw} episodes={episodes} "
+        f"[xushi2] {phase_part} episodes={episodes} "
         f"bots={bot_a} vs {bot_b} base_seed=0x{normalized.base_seed:x}"
     )
 
 
 def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
-    phase_int = normalized.phase_int
     phase_label = full_config.get("phase", "unknown")
 
-    if phase_int == 0:
+    if normalized.learner_kind == "scripted_determinism":
         episodes = int(normalized.run_cfg.get("episodes", 4))
         bot_a = str(normalized.run_cfg.get("team_a_bot", "basic"))
         bot_b = str(normalized.run_cfg.get("team_b_bot", "basic"))
@@ -216,14 +201,14 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
             )
         return rc
 
-    if phase_int in (2, 3):
+    if normalized.learner_kind == "ppo_recurrent":
         from train.ppo_recurrent import train_from_config
 
         result = train_from_config(full_config)
         recurrent = float(result["recurrent"])
-        from train.phases import resolve_phase
+        from train.runtime_specs import resolve_runtime_spec
 
-        if "feedforward" in resolve_phase(full_config)[1].get("training_variants", ()):
+        if "feedforward" in resolve_runtime_spec(full_config).learner.training_variants:
             feedforward = float(result["feedforward"])
             gap = recurrent - feedforward
             print(
@@ -234,11 +219,11 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
             print(f"[{normalized.phase_label}] recurrent_final={recurrent:.3f}")
         return 0
 
-    if phase_int in (4, 5, 6, 7, 8, 9, 10, 11):
-        from train.mappo_eval_checkpoint import train_phase4_from_config
+    if normalized.learner_kind == "mappo":
+        from train.mappo_eval_checkpoint import train_mappo_from_config
 
-        result = train_phase4_from_config(full_config)
-        print(f"[phase{phase_int}] mappo_final={float(result['mappo']):.3f}")
+        result = train_mappo_from_config(full_config)
+        print(f"[{normalized.phase_label}] mappo_final={float(result['mappo']):.3f}")
         return 0
 
     print(f"[xushi2] unsupported phase/config shape: phase={phase_label!r}")

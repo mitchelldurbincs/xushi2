@@ -30,6 +30,13 @@ This document defines import-direction and ownership boundaries for the Python s
 
 `train` should depend on **env interfaces** (public env entrypoints/factories), not phase-private env modules.
 
+Runtime selection is capability-based. Experiment phases remain metadata for
+config organization, W&B tags, journal lineage, and phase-gate decisions, but
+learner and environment behavior should be selected through explicit runtime
+specs such as `learner.kind` and `env.kind`. Legacy phase configs are adapted
+through `train.runtime_specs.resolve_runtime_spec`; new training code should
+consume the runtime spec rather than branching on numeric phase ranges.
+
 ## Import direction rules
 
 Allowed direction:

@@ -11,6 +11,7 @@ import pytest
 
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.reward import RewardCalculator
+from xushi2.reward_components import CumulativeClipper
 
 
 class _FakeSim:
@@ -256,9 +257,9 @@ def test_default_distance_shaping_coef_is_zero_and_no_buffer_allocated():
     rc = RewardCalculator()  # omits distance_shaping_coef entirely
     # With coef=0, the calculator should not allocate the per-team obs
     # buffers (we only pay that cost when the shaping is opted-in).
-    assert rc._obs_buf_a is None
-    assert rc._obs_buf_b is None
-    assert rc._pos_slice is None
+    assert rc._obs.obs_buf_a is None
+    assert rc._obs.obs_buf_b is None
+    assert rc._obs.pos_slice is None
 
 
 def test_distance_shaping_produces_nonzero_reward_on_real_env():
@@ -636,10 +637,6 @@ def test_on_point_shaping_rewards_phase4_objective_contact():
 
     assert total_reward > 0.0
 
-<<<<<<< HEAD
-from xushi2.reward_components import CumulativeClipper
-
-
 class _LegacyScalarRewardCalculator:
     """Frozen pre-refactor scalar reward path for regression parity checks."""
 
@@ -717,7 +714,6 @@ def test_regression_scalar_old_vs_new_on_synthetic_trajectory():
         sim.team_a_kills = a_k
         sim.team_b_kills = b_k
         assert new.step(sim) == pytest.approx(old.step(sim))
-=======
 
 # --- majority-on-point shaping (opt-in curriculum) ---------------------
 
@@ -855,4 +851,3 @@ def test_uncontested_on_point_scalar_path_is_symmetric():
 
     assert a == pytest.approx(-0.6)
     assert b == pytest.approx(0.6)
->>>>>>> main

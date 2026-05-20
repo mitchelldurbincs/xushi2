@@ -8,7 +8,7 @@ import numpy as np
 from train.mappo_eval_gate_io import read_json_artifact, write_json_artifact
 from train.mappo_evaluate import evaluate_mappo
 from train.mappo_model import MappoActorCritic, MappoEvalStats
-from train.phases import resolve_phase
+from train.runtime_specs import resolve_runtime_spec
 from xushi2.mappo_matrix_gate import check_matrix_gate
 
 
@@ -44,17 +44,19 @@ def matrix_native_bot_env_fn(phase: int, ckpt_env_cfg: CheckpointEnvConfig, bot:
     eval_phase = 8 if int(phase) == 9 else int(phase)
     env_cfg = dict(ckpt_env_cfg.values)
     env_cfg.update({"opponent_bot": str(bot), "learner_team": "A"})
-    _p, spec = resolve_phase({"phase": eval_phase, "env": env_cfg})
-    env_fn, _m, _s = spec["env_bundle"]({"phase": eval_phase, "env": env_cfg})
-    return env_fn
+    runtime = resolve_runtime_spec({"phase": eval_phase, "env": env_cfg})
+    if runtime.env_fn is None:
+        raise ValueError("matrix native-bot eval requires an environment runtime")
+    return runtime.env_fn
 
 
 def matrix_snapshot_env_fn(ckpt_env_cfg: CheckpointEnvConfig, snapshot_path: str):
     env_cfg = dict(ckpt_env_cfg.values)
     env_cfg.update({"opponent_bot": "snapshot", "learner_team": "A", "snapshot_paths": [snapshot_path], "snapshot_league": {"latest": [snapshot_path], "weights": {"latest": 1.0}}})
-    _p, spec = resolve_phase({"phase": 9, "env": env_cfg})
-    env_fn, _m, _s = spec["env_bundle"]({"phase": 9, "env": env_cfg})
-    return env_fn
+    runtime = resolve_runtime_spec({"phase": 9, "env": env_cfg})
+    if runtime.env_fn is None:
+        raise ValueError("matrix snapshot eval requires an environment runtime")
+    return runtime.env_fn
 
 
 def mappo_matrix_row(*, learner: str, opponent: str, opponent_type: str, stats: MappoEvalStats) -> dict:
@@ -76,9 +78,10 @@ def matrix_gate_label(value: bool | None) -> str:
 def matrix_current_selfplay_env_fn(ckpt_env_cfg: CheckpointEnvConfig):
     env_cfg = dict(ckpt_env_cfg.values)
     env_cfg["self_play_schedule"] = {"weights": {"current": 1.0, "snapshot": 0.0, "anchor": 0.0}}
-    _p, spec = resolve_phase({"phase": 11, "env": env_cfg})
-    env_fn, _m, _s = spec["env_bundle"]({"phase": 11, "env": env_cfg})
-    return env_fn
+    runtime = resolve_runtime_spec({"phase": 11, "env": env_cfg})
+    if runtime.env_fn is None:
+        raise ValueError("matrix current-selfplay eval requires an environment runtime")
+    return runtime.env_fn
 
 
 def run_mappo_matrix_eval(*, model: MappoActorCritic, phase: int, ckpt_env_cfg: CheckpointEnvConfig, matrix_cfg: MatrixEvalConfig, output_dir: Path, seed: int) -> list[dict]:
