@@ -1,0 +1,3 @@
+repeat=0 episodes=16 elapsed_s=23.659 per_ep_s=1.4787
+repeat=1 episodes=16 elapsed_s=23.223 per_ep_s=1.4514
+{"episodes": 16, "repeat": 2, "timings_s": [23.659057300072163, 23.222569399978966], "mean_s": 23.440813350025564, "min_s": 23.222569399978966}

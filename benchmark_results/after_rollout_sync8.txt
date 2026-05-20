@@ -1,0 +1,28 @@
+repeat=0 vector_env=sync per_iter_s=0.6483 env_sps=1579.6
+repeat=1 vector_env=sync per_iter_s=0.5810 env_sps=1762.5
+repeat=2 vector_env=sync per_iter_s=0.6035 env_sps=1696.8
+{
+  "runs": [
+    {
+      "repeat": 0,
+      "elapsed_s": 5.1860990999266505,
+      "per_iter_s": 0.6482623874908313,
+      "env_sps": 1579.607300623288,
+      "env_steps_per_iter": 1024
+    },
+    {
+      "repeat": 1,
+      "elapsed_s": 4.648005299968645,
+      "per_iter_s": 0.5810006624960806,
+      "env_sps": 1762.4764756733953,
+      "env_steps_per_iter": 1024
+    },
+    {
+      "repeat": 2,
+      "elapsed_s": 4.8280173998791724,
+      "per_iter_s": 0.6035021749848966,
+      "env_sps": 1696.7627333333587,
+      "env_steps_per_iter": 1024
+    }
+  ]
+}
