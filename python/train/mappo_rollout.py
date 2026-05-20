@@ -45,13 +45,11 @@ def collect_rollout(trainer) -> "MappoRollout":
         flat_obs = obs.reshape(cfg.num_envs * cfg.n_agents, cfg.obs_dim)
         flat_h = h.reshape(cfg.num_envs * cfg.n_agents, cfg.gru_hidden)
         with torch.no_grad():
-            prev_rng = torch.get_rng_state()
-            torch.set_rng_state(trainer._sampling_rng_state)
-            try:
-                action, logprob, h_next = trainer.model.sample_action(flat_obs, flat_h)
-                trainer._sampling_rng_state = torch.get_rng_state()
-            finally:
-                torch.set_rng_state(prev_rng)
+            action, logprob, h_next = trainer.model.sample_action(
+                flat_obs,
+                flat_h,
+                generator=trainer.policy_sampling_generator,
+            )
             if cfg.value_per_agent:
                 value = trainer.model.value(
                     critic_obs.reshape(cfg.num_envs * cfg.n_agents, cfg.critic_obs_dim)
