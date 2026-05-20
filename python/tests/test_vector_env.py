@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import gymnasium as gym
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
@@ -25,6 +26,32 @@ def _make_sim_cfg(round_length: int = 1) -> dict:
 
 def _make_env() -> Phase4MappoEnv:
     return Phase4MappoEnv(_make_sim_cfg(), opponent_bot="noop")
+
+
+class _DictActionEnv(gym.Env):
+    def __init__(self) -> None:
+        self.observation_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(3, ACTOR_PHASE1_DIM), dtype=np.float32
+        )
+        self.action_space = gym.spaces.Dict(
+            {"move": gym.spaces.Box(low=-1.0, high=1.0, shape=(3, 2), dtype=np.float32)}
+        )
+
+    def reset(self, *, seed: int | None = None, options=None):
+        super().reset(seed=seed)
+        return np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32), {}
+
+    def step(self, action):
+        return (
+            np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32),
+            np.zeros(3, dtype=np.float32),
+            False,
+            False,
+            {},
+        )
+
+    def build_critic_obs(self, out: np.ndarray) -> None:
+        out.fill(0.0)
 
 
 def test_vector_env_reset_returns_actor_and_critic_batches() -> None:
@@ -121,3 +148,35 @@ def test_async_vector_env_step_validates_action_batch_shape() -> None:
             raise AssertionError("expected action shape validation")
     finally:
         env.close()
+
+
+def test_vector_env_accepts_box_action_space() -> None:
+    env = XushiVectorEnv([_make_env], critic_obs_dim=CRITIC_DIM)
+    try:
+        assert isinstance(env.single_action_space, gym.spaces.Box)
+    finally:
+        env.close()
+
+
+def test_vector_env_rejects_dict_action_space_with_clear_error() -> None:
+    try:
+        XushiVectorEnv([_DictActionEnv], critic_obs_dim=CRITIC_DIM)
+    except TypeError as exc:
+        message = str(exc)
+        assert "gym.spaces.Box" in message
+        assert "Dict" in message
+        assert "serialization/stacking" in message
+    else:
+        raise AssertionError("expected Dict action space rejection")
+
+
+def test_async_vector_env_rejects_dict_action_space_with_clear_error() -> None:
+    try:
+        XushiAsyncVectorEnv([_DictActionEnv], critic_obs_dim=CRITIC_DIM)
+    except TypeError as exc:
+        message = str(exc)
+        assert "gym.spaces.Box" in message
+        assert "Dict" in message
+        assert "serialization/stacking" in message
+    else:
+        raise AssertionError("expected Dict action space rejection")

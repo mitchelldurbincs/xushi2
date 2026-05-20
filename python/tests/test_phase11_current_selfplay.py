@@ -33,6 +33,51 @@ def _env() -> Phase11CurrentSelfplayMappoEnv:
     )
 
 
+
+
+def test_phase11_current_selfplay_forces_team_scalar_reward_contract() -> None:
+    env = Phase11CurrentSelfplayMappoEnv(
+        {
+            "round_length_seconds": 5,
+            "action_repeat": 3,
+            "seed": 123,
+            "fog_of_war_enabled": False,
+            "mechanics": {
+                "revolver_damage_centi_hp": 7500,
+                "revolver_fire_cooldown_ticks": 15,
+                "revolver_hitbox_radius": 0.75,
+                "respawn_ticks": 240,
+            },
+        },
+        reward_cfg={"distance_shaping_coef": 0.01},
+    )
+    try:
+        assert env._reward_cfg["per_agent_rewards"] is False
+    finally:
+        env.close()
+
+
+
+def test_phase11_current_selfplay_rejects_per_agent_reward_override() -> None:
+    try:
+        Phase11CurrentSelfplayMappoEnv(
+            {
+                "round_length_seconds": 5,
+                "action_repeat": 3,
+                "seed": 123,
+                "fog_of_war_enabled": False,
+                "mechanics": {
+                    "revolver_damage_centi_hp": 7500,
+                    "revolver_fire_cooldown_ticks": 15,
+                    "revolver_hitbox_radius": 0.75,
+                    "respawn_ticks": 240,
+                },
+            },
+            reward_cfg={"per_agent_rewards": True},
+        )
+        raise AssertionError("expected ValueError for per_agent_rewards=True")
+    except ValueError as exc:
+        assert "per_agent_rewards" in str(exc)
 def _write_phase8_snapshot(path: Path) -> None:
     with open(
         config_path("phase8_random_map_probe.yaml"),

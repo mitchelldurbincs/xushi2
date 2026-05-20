@@ -41,6 +41,29 @@ def _write_phase8_checkpoint(path: Path) -> None:
     )
 
 
+def _write_phase4_current_selfplay_checkpoint(path: Path) -> None:
+    with open(
+        config_path("phase4/probe/phase4_mappo_current_selfplay_smoke.yaml"),
+        encoding="utf-8",
+    ) as fh:
+        config = yaml.safe_load(fh)
+    cfg = make_mappo_config(config)
+    model = MappoActorCritic(cfg)
+    _phase, spec = resolve_phase(config)
+    _env_fn, env_cfg, _seed = spec["env_bundle"](config)
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "config": {
+                "phase": 4,
+                "env": env_cfg,
+                "mappo": cfg.__dict__,
+            },
+        },
+        path,
+    )
+
+
 def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
     assert _eval_outcome_counts(
         winner="A",
@@ -89,6 +112,40 @@ def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
         assert 0.0 <= row["win_rate"] <= 1.0
         assert 0.0 <= row["draw_rate"] <= 1.0
         assert isinstance(row["mean_reward"], float)
+
+
+def test_eval_mappo_matrix_adapts_phase4_current_selfplay_checkpoint(
+    tmp_path: Path,
+) -> None:
+    checkpoint = tmp_path / "phase4_selfplay.pt"
+    _write_phase4_current_selfplay_checkpoint(checkpoint)
+    output = tmp_path / "matrix.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path("eval_mappo_matrix.py")),
+            "--checkpoint",
+            str(checkpoint),
+            "--anchor-bot",
+            "noop",
+            "--episodes",
+            "1",
+            "--output",
+            str(output),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "opponent=bot:noop" in result.stdout
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    assert len(rows) == 1
+    assert rows[0]["opponent_type"] == "bot"
+    assert rows[0]["opponent"] == "noop"
+    assert rows[0]["episodes"] == 1
+    assert isinstance(rows[0]["mean_score_a"], float)
 
 
 def test_train_config_matrix_eval_writes_post_training_artifact(

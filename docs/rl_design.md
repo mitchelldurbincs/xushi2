@@ -23,6 +23,25 @@ This is the natural lineage from OpenAI Five (recurrent PPO, shared policy with 
 
 Caveats worth knowing: the MAPPO benchmark paper is mostly cooperative, discrete-action, homogeneous-agent environments. Xushi2 is competitive, hybrid-action, heterogeneous. Expect tuning work; do not assume paper hyperparameters transfer.
 
+## 1.1 Deterministic seed flow (single source of truth)
+
+For MAPPO runs, all deterministic randomness fans out from one integer
+`seed_base` in the phase config:
+
+- **Environment stream:** vector env reset/step seeds are derived from
+  `seed_base` (plus env index / episode counters inside `vector_env.py`).
+- **Model init stream:** trainer applies global Python/NumPy/Torch seeds from
+  `seed_base` before `MappoActorCritic` construction.
+- **Policy sampling stream:** trainer owns a dedicated
+  `torch.Generator` (`seed_base + 20_000`) used only for stochastic
+  action sampling during rollout collection.
+- **Evaluation stream:** eval entrypoints use explicit seed offsets
+  (`seed_base + ...`) passed to eval env creation, separate from training.
+
+This split keeps action sampling deterministic without mutating global Torch RNG
+state during rollout collection, and makes seed provenance auditable in one
+place (`seed_base` + fixed offsets).
+
 ## 2. Actor architecture (decentralized)
 
 Each agent has its own hidden state. Per decision step:

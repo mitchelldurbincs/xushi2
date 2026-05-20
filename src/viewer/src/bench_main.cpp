@@ -1,9 +1,7 @@
 #include <raylib.h>
 
-#include <algorithm>
 #include <array>
 #include <chrono>
-#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -23,6 +21,7 @@
 #include "render_debug.hpp"
 #include "replay_loader.hpp"
 #include "viewer_layout.hpp"
+#include "viewer_bench_output.hpp"
 
 namespace {
 
@@ -70,22 +69,6 @@ std::optional<BenchOptions> parse_cli(int argc, char** argv) {
         return std::nullopt;
     }
     return opt;
-}
-
-std::string json_escape(const std::string& s) {
-    std::string out;
-    out.reserve(s.size() + 2);
-    for (const char c : s) {
-        switch (c) {
-            case '"':  out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n";  break;
-            case '\r': out += "\\r";  break;
-            case '\t': out += "\\t";  break;
-            default:   out += c;      break;
-        }
-    }
-    return out;
 }
 
 }  // namespace
@@ -177,14 +160,14 @@ int main(int argc, char** argv) {
                 .playback_speed = 1.0F,
                 .replay_phase = replay->phase,
                 .replay_fog = replay->fog,
-                .replay_fog_mode = replay->fog_mode,
-                .replay_layout_hash = replay->layout_hash,
-                .replay_match_type = replay->match_type,
-                .replay_schedule_summary = replay->schedule_summary,
-                .replay_league_summary = replay->league_summary,
-                .replay_snapshot_group = replay->snapshot_group,
-                .replay_snapshot_name = replay->snapshot_name,
-                .replay_loss_mask = replay->loss_mask,
+                .replay_fog_mode = std::string{replay->fog_mode},
+                .replay_layout_hash = std::string{replay->layout_hash},
+                .replay_match_type = std::string{replay->match_type},
+                .replay_schedule_summary = std::string{replay->schedule_summary},
+                .replay_league_summary = std::string{replay->league_summary},
+                .replay_snapshot_group = std::string{replay->snapshot_group},
+                .replay_snapshot_name = std::string{replay->snapshot_name},
+                .replay_loss_mask = std::string{replay->loss_mask},
                 .replay_target_slot = replay->target_slot,
                 .replay_last_seen = replay->last_seen,
                 .replay_cover_count = replay->cover_markers.size(),
@@ -216,18 +199,11 @@ int main(int argc, char** argv) {
         return 4;
     }
 
-    std::sort(frame_ms.begin(), frame_ms.end());
     const double sum = std::accumulate(frame_ms.begin(), frame_ms.end(), 0.0);
     const double avg = sum / static_cast<double>(frame_ms.size());
-    const auto percentile = [&](double p) {
-        const std::size_t idx = static_cast<std::size_t>(
-            std::clamp(p, 0.0, 1.0) * static_cast<double>(frame_ms.size() - 1));
-        return frame_ms[idx];
-    };
-
-    const double p50 = percentile(0.50);
-    const double p95 = percentile(0.95);
-    const double p99 = percentile(0.99);
+    const double p50 = viewer_bench_output::percentile_ms(frame_ms, 50.0);
+    const double p95 = viewer_bench_output::percentile_ms(frame_ms, 95.0);
+    const double p99 = viewer_bench_output::percentile_ms(frame_ms, 99.0);
     const double fps = 1000.0 / avg;
 
     std::printf("bench_result replay=%s mode=%s warmup=%d frames=%d\n",
@@ -243,36 +219,18 @@ int main(int argc, char** argv) {
                 fps);
 
     if (!options->json_out_path.empty()) {
-        FILE* fp = std::fopen(options->json_out_path.c_str(), "w");
-        if (fp == nullptr) {
-            std::fprintf(stderr,
-                         "failed to open --json-out path: %s\n",
-                         options->json_out_path.c_str());
+        const viewer_bench_output::BenchJsonPayload payload{
+            .replay_name = options->replay_path,
+            .mode = options->mode,
+            .warmup_frames = options->warmup_frames,
+            .measured_frames = options->measured_frames,
+            .frame_ms = frame_ms,
+        };
+        std::string err;
+        if (!viewer_bench_output::write_bench_json(options->json_out_path, payload, &err)) {
+            std::fprintf(stderr, "%s\n", err.c_str());
             return 5;
         }
-        std::fprintf(fp,
-                     "{\n"
-                     "  \"git_commit\": null,\n"
-                     "  \"replay_name\": \"%s\",\n"
-                     "  \"mode\": \"%s\",\n"
-                     "  \"warmup_frames\": %d,\n"
-                     "  \"measured_frames\": %d,\n"
-                     "  \"avg_ms\": %.4f,\n"
-                     "  \"p50_ms\": %.4f,\n"
-                     "  \"p95_ms\": %.4f,\n"
-                     "  \"p99_ms\": %.4f,\n"
-                     "  \"fps\": %.4f\n"
-                     "}\n",
-                     json_escape(options->replay_path).c_str(),
-                     json_escape(options->mode).c_str(),
-                     options->warmup_frames,
-                     options->measured_frames,
-                     avg,
-                     p50,
-                     p95,
-                     p99,
-                     fps);
-        std::fclose(fp);
     }
 
     return 0;

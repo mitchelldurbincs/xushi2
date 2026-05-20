@@ -1,15 +1,11 @@
 #include <raylib.h>
 
-#include <algorithm>
 #include <array>
 #include <chrono>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
 #include <memory>
-#include <numeric>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,6 +20,7 @@
 #include "panel.hpp"
 #include "viewer_layout.hpp"
 #include "replay_loader.hpp"
+#include "viewer_bench_output.hpp"
 
 namespace {
 constexpr int kWindowWidth = viewer_layout::kWindowWidth;
@@ -37,28 +34,6 @@ struct CliArgs { std::optional<std::string> replay_path; std::optional<std::stri
 xushi2::sim::MatchConfig make_viewer_config() { xushi2::sim::MatchConfig c{}; c.seed=42; c.round_length_seconds=30; c.fog_of_war_enabled=false; c.randomize_map=false; c.action_repeat=kActionRepeat; c.mechanics.revolver_damage_centi_hp=7500U; c.mechanics.revolver_fire_cooldown_ticks=15U; c.mechanics.revolver_hitbox_radius=0.75F; c.mechanics.respawn_ticks=240U; return c; }
 
 CliArgs parse_args(int argc, char** argv){ CliArgs args{}; for(int i=1;i<argc;++i){ std::string_view a=argv[i]; if(a=="--replay" && i+1<argc){ args.replay_path=argv[++i]; } else if(a=="--json-out" && i+1<argc){ args.json_out=argv[++i]; args.benchmark=true; } else if(a=="--bench-warmup-frames" && i+1<argc){ args.warmup_frames=std::max(0, std::atoi(argv[++i])); args.benchmark=true; } else if(a=="--bench-measured-frames" && i+1<argc){ args.measured_frames=std::max(1, std::atoi(argv[++i])); args.benchmark=true; } } return args; }
-
-double percentile_ms(std::vector<double> samples, double p){ if(samples.empty()) return 0.0; std::sort(samples.begin(), samples.end()); double idx=(p/100.0)*static_cast<double>(samples.size()-1); auto lo=static_cast<size_t>(std::floor(idx)); auto hi=static_cast<size_t>(std::ceil(idx)); if(lo==hi) return samples[lo]; double w=idx-static_cast<double>(lo); return samples[lo]*(1.0-w)+samples[hi]*w; }
-
-void write_bench_json(const std::string& path, const std::string& replay_name, int warmup, int measured, const std::vector<double>& frame_ms){
-    const double sum=std::accumulate(frame_ms.begin(), frame_ms.end(), 0.0);
-    const double avg=frame_ms.empty()?0.0:sum/static_cast<double>(frame_ms.size());
-    const double fps=avg>0.0?1000.0/avg:0.0;
-    const char* git_sha=std::getenv("GIT_COMMIT");
-    if(git_sha==nullptr) git_sha=std::getenv("GITHUB_SHA");
-    std::ofstream os(path);
-    os << "{\n";
-    if(git_sha!=nullptr){ os << "  \"git_commit\": \"" << git_sha << "\",\n"; } else { os << "  \"git_commit\": null,\n"; }
-    os << "  \"replay_name\": \"" << replay_name << "\",\n";
-    os << "  \"warmup_frames\": " << warmup << ",\n";
-    os << "  \"measured_frames\": " << measured << ",\n";
-    os << "  \"avg_ms\": " << avg << ",\n";
-    os << "  \"p50_ms\": " << percentile_ms(frame_ms,50.0) << ",\n";
-    os << "  \"p95_ms\": " << percentile_ms(frame_ms,95.0) << ",\n";
-    os << "  \"p99_ms\": " << percentile_ms(frame_ms,99.0) << ",\n";
-    os << "  \"fps\": " << fps << "\n";
-    os << "}\n";
-}
 
 template <typename StepOnce, typename ResetPlayback>
 void handle_input(xushi2::sim::Sim& sim,
@@ -108,14 +83,14 @@ PanelViewModel make_panel_model(
         .playback_speed = playback_speed,
         .replay_phase = replay ? replay->phase : 0,
         .replay_fog = replay ? replay->fog : false,
-        .replay_fog_mode = replay ? replay->fog_mode : std::string_view{},
-        .replay_layout_hash = replay ? replay->layout_hash : std::string_view{},
-        .replay_match_type = replay ? replay->match_type : std::string_view{},
-        .replay_schedule_summary = replay ? replay->schedule_summary : std::string_view{},
-        .replay_league_summary = replay ? replay->league_summary : std::string_view{},
-        .replay_snapshot_group = replay ? replay->snapshot_group : std::string_view{},
-        .replay_snapshot_name = replay ? replay->snapshot_name : std::string_view{},
-        .replay_loss_mask = replay ? replay->loss_mask : std::string_view{},
+        .replay_fog_mode = replay ? replay->fog_mode : std::string{},
+        .replay_layout_hash = replay ? replay->layout_hash : std::string{},
+        .replay_match_type = replay ? replay->match_type : std::string{},
+        .replay_schedule_summary = replay ? replay->schedule_summary : std::string{},
+        .replay_league_summary = replay ? replay->league_summary : std::string{},
+        .replay_snapshot_group = replay ? replay->snapshot_group : std::string{},
+        .replay_snapshot_name = replay ? replay->snapshot_name : std::string{},
+        .replay_loss_mask = replay ? replay->loss_mask : std::string{},
         .replay_target_slot = replay ? replay->target_slot : false,
         .replay_last_seen = replay ? replay->last_seen : false,
         .replay_cover_count = replay ? replay->cover_markers.size() : 0U,
@@ -236,7 +211,19 @@ int main(int argc, char** argv) {
     }
     if (cli.benchmark && cli.json_out) {
         const std::string replay_name = cli.replay_path ? *cli.replay_path : std::string("<none>");
-        write_bench_json(*cli.json_out, replay_name, cli.warmup_frames, cli.measured_frames, measured_ms);
+        std::string err;
+        const viewer_bench_output::BenchJsonPayload payload{
+            .replay_name = replay_name,
+            .mode = "render",
+            .warmup_frames = cli.warmup_frames,
+            .measured_frames = cli.measured_frames,
+            .frame_ms = measured_ms,
+        };
+        if (!viewer_bench_output::write_bench_json(*cli.json_out, payload, &err)) {
+            std::fprintf(stderr, "%s\n", err.c_str());
+            CloseWindow();
+            return 2;
+        }
     }
     CloseWindow();
     return 0;

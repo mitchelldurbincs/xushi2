@@ -62,6 +62,70 @@ def test_dump_replay_supports_phase4_mappo_checkpoint(tmp_path: Path) -> None:
     assert len(lines[1].split()) == 1 + 6 * 6
 
 
+def test_dump_replay_supports_phase4_current_selfplay_checkpoint(
+    tmp_path: Path,
+) -> None:
+    with open(
+        config_path("phase4/probe/phase4_mappo_current_selfplay_smoke.yaml"),
+        encoding="utf-8",
+    ) as fh:
+        config = yaml.safe_load(fh)
+
+    cfg = make_mappo_config(config)
+    model = MappoActorCritic(cfg)
+    with torch.no_grad():
+        model.actor_mean_head.bias[0] = torch.atanh(torch.tensor(0.5))
+        model.actor_mean_head.bias[1] = torch.atanh(torch.tensor(-0.25))
+        model.actor_mean_head.bias[2] = torch.atanh(torch.tensor(0.1))
+        model.actor_binary_head.bias.fill_(2.0)
+    _phase, spec = resolve_phase(config)
+    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+
+    checkpoint_path = tmp_path / "phase4_selfplay_mappo.pt"
+    torch.save(
+        {
+            "model_state_dict": model.state_dict(),
+            "config": {
+                "phase": 4,
+                "env": ckpt_env_cfg,
+                "mappo": cfg.__dict__,
+            },
+        },
+        checkpoint_path,
+    )
+
+    replay_path = tmp_path / "phase4_selfplay_policy.replay"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path("dump_replay.py")),
+            "--checkpoint",
+            str(checkpoint_path),
+            "--output",
+            str(replay_path),
+            "--max-decisions",
+            "3",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "[dump_replay] wrote 3 decisions" in result.stdout
+    lines = replay_path.read_text(encoding="ascii").splitlines()
+    assert "phase=4" in lines[0]
+    assert "match_type=current" in lines[0]
+    assert "loss_mask=1,1,1,1,1,1" in lines[0]
+    fields = [float(v) for v in lines[1].split()]
+    assert len(fields) == 1 + 6 * 6
+    slot0 = fields[1:7]
+    slot3 = fields[1 + 3 * 6 : 1 + 4 * 6]
+    assert slot0[0] > 0.0
+    assert slot0[1] < 0.0
+    assert slot3[0] < 0.0
+    assert slot3[1] > 0.0
+
+
 def test_dump_replay_supports_phase5_entity_attention_checkpoint(
     tmp_path: Path,
 ) -> None:

@@ -1,0 +1,86 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: majority_advantage_curriculum
+  status: experimental
+  expected_runtime: short
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: "Rewarding alive-on-point majority advantage gives the current Ranger policy a dense bridge from kill edge to capture pressure without changing real scoring; by update 50 Team A should show nonzero or increased majority-on-point seconds, cap-progress gain, or score."
+  falsification_criteria: "Falsified if by update 50 eval has Team A score 0, no increase in Team A majority-on-point seconds versus early eval, no Team A cap-progress gain, and rollout self_on_point_fraction falls below 0.25."
+  max_updates_if_no_signal: 50
+  lineage: "Derived from phase4_mappo_weak_basic_v2 after draw-basin diagnosis; replaces unconditional on_point_shaping with majority advantage."
+  stop_criteria:
+    - "Stop early if rollout self_on_point_fraction < 0.25."
+    - "Stop early if Team A hit/fire falls below recent weak_basic_v2 baseline."
+    - "Stop at update 50 if Team A score is 0 and majority/cap-progress diagnostics do not improve."
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.0
+    majority_on_point_coef: 0.2
+    majority_on_point_anneal_updates: 50
+    majority_on_point_distribute: on_point
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 16
+  rollout_len: 64
+  num_epochs: 2
+  minibatch_size: 128
+  learning_rate: 3.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 50
+  eval_every: 10
+  eval_episodes: 20
+  checkpoint_every: 10
+  log_every: 5
+  output_dir: runs/phase4_mappo_majority_advantage_smoke
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_variant: walk_and_shoot
+  bc_pretrain_steps: 300
+  bc_batch_size: 384
+  bc_learning_rate: 0.001

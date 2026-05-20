@@ -15,6 +15,50 @@ _FNV64_OFFSET = 0xCBF29CE484222325
 _FNV64_PRIME = 0x100000001B3
 
 
+def _raise_invalid(param: str, value: float | int, reason: str) -> None:
+    raise ValueError(f"Invalid topology config: {param}={value!r} ({reason})")
+
+
+def _validate_topology_config(cfg: dict) -> None:
+    base = dict(DEFAULT_MAP_BOUNDS)
+    base.update(dict(cfg.get("base_bounds", {})))
+    min_x = float(base["min_x"])
+    max_x = float(base["max_x"])
+    min_y = float(base["min_y"])
+    max_y = float(base["max_y"])
+    min_span = float(cfg.get("min_span", 40.0))
+    max_span = float(cfg.get("max_span", 60.0))
+    span_jitter = float(cfg.get("span_jitter", 5.0))
+    cover_jitter = float(cfg.get("cover_jitter", 2.0))
+    cover_radius = float(cfg.get("cover_radius", 1.0))
+    cover_count_per_side = int(cfg.get("cover_count_per_side", 2))
+    wall_jitter = float(cfg.get("wall_jitter", 1.0))
+    wall_half_width = float(cfg.get("wall_half_width", 0.25))
+    wall_length = float(cfg.get("wall_length", 5.0))
+    wall_count_per_side = int(cfg.get("wall_count_per_side", 1))
+
+    if not min_x < max_x:
+        _raise_invalid("base_bounds", base, "requires min_x < max_x")
+    if not min_y < max_y:
+        _raise_invalid("base_bounds", base, "requires min_y < max_y")
+    if min_span > max_span:
+        _raise_invalid("min_span", min_span, f"must be <= max_span ({max_span!r})")
+
+    non_negative = (
+        ("span_jitter", span_jitter),
+        ("cover_jitter", cover_jitter),
+        ("cover_radius", cover_radius),
+        ("cover_count_per_side", cover_count_per_side),
+        ("wall_jitter", wall_jitter),
+        ("wall_half_width", wall_half_width),
+        ("wall_length", wall_length),
+        ("wall_count_per_side", wall_count_per_side),
+    )
+    for param, value in non_negative:
+        if value < 0:
+            _raise_invalid(param, value, "must be non-negative")
+
+
 def _fnv1a64_update(h: int, text: str) -> int:
     for byte in text.encode("ascii"):
         h ^= byte
@@ -30,6 +74,7 @@ def randomized_map_bounds(seed: int, cfg: dict | None = None) -> dict[str, float
     inside those bounds.
     """
     cfg = dict(cfg or {})
+    _validate_topology_config(cfg)
     base = dict(DEFAULT_MAP_BOUNDS)
     base.update(dict(cfg.get("base_bounds", {})))
     jitter = float(cfg.get("span_jitter", 5.0))
@@ -59,6 +104,7 @@ def randomized_cover_markers(seed: int, cfg: dict | None = None) -> list[dict[st
     pillars when passed through ``sim.cover_circles``.
     """
     cfg = dict(cfg or {})
+    _validate_topology_config(cfg)
     bounds = randomized_map_bounds(seed, cfg)
     count_per_side = int(cfg.get("cover_count_per_side", 2))
     jitter = float(cfg.get("cover_jitter", 2.0))
@@ -91,6 +137,7 @@ def randomized_cover_markers(seed: int, cfg: dict | None = None) -> list[dict[st
 def randomized_wall_segments(seed: int, cfg: dict | None = None) -> list[dict[str, float]]:
     """Return deterministic symmetric wall segments for Phase-8 topology probes."""
     cfg = dict(cfg or {})
+    _validate_topology_config(cfg)
     bounds = randomized_map_bounds(seed, cfg)
     count_per_side = int(cfg.get("wall_count_per_side", 1))
     jitter = float(cfg.get("wall_jitter", 1.0))

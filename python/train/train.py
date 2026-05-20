@@ -175,6 +175,13 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
             lambda: f"[xushi2] phase={phase_raw} memory_toy base_seed=0x{normalized.base_seed:x}",
         ),
     ]
+    if normalized.phase_int == 4 and bool(
+        dict(normalized.env_cfg.get("self_play", {})).get("enabled", False)
+    ):
+        return (
+            f"[xushi2] phase={phase_raw} mappo match_type=current "
+            f"learner_team=both base_seed=0x{normalized.base_seed:x}"
+        )
     for phases, renderer in phase_groups:
         if normalized.phase_int in phases:
             return renderer()

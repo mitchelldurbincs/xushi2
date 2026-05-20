@@ -19,6 +19,7 @@ class _FakeSim:
     counters, arbitrary winners) without driving a full sim."""
 
     def __init__(self):
+        self.tick = 0
         self.team_a_score_ticks = 0
         self.team_b_score_ticks = 0
         self.team_a_kills = 0
@@ -26,6 +27,7 @@ class _FakeSim:
         self.kills_by_slot = [0, 0, 0, 0, 0, 0]
         self.deaths_by_slot = [0, 0, 0, 0, 0, 0]
         self.damage_dealt_by_slot = [0, 0, 0, 0, 0, 0]
+        self.on_point_by_slot = [0, 0, 0, 0, 0, 0]
         self.episode_over = False
         self.winner = _cpp.Team.Neutral
 
@@ -633,3 +635,224 @@ def test_on_point_shaping_rewards_phase4_objective_contact():
         env.close()
 
     assert total_reward > 0.0
+
+<<<<<<< HEAD
+from xushi2.reward_components import CumulativeClipper
+
+
+class _LegacyScalarRewardCalculator:
+    """Frozen pre-refactor scalar reward path for regression parity checks."""
+
+    def __init__(self):
+        self._score_per_second = 0.01
+        self._kill_bonus = 0.25
+        self._death_penalty = 0.25
+        self._time_penalty_per_second = 0.05
+        self._prev = _FakeSim()
+        self._clip_a = 0.0
+        self._clip_b = 0.0
+
+    def reset(self, sim):
+        self._prev = _FakeSim()
+        self._prev.team_a_score_ticks = sim.team_a_score_ticks
+        self._prev.team_b_score_ticks = sim.team_b_score_ticks
+        self._prev.team_a_kills = sim.team_a_kills
+        self._prev.team_b_kills = sim.team_b_kills
+        self._clip_a = 0.0
+        self._clip_b = 0.0
+
+    def _apply(self, raw, team):
+        old = self._clip_a if team == "a" else self._clip_b
+        new = min(3.0, max(-3.0, old + raw))
+        if team == "a":
+            self._clip_a = new
+        else:
+            self._clip_b = new
+        return new - old
+
+    def step(self, sim):
+        a_s = (sim.team_a_score_ticks - self._prev.team_a_score_ticks) / float(_cpp.TICK_HZ)
+        b_s = (sim.team_b_score_ticks - self._prev.team_b_score_ticks) / float(_cpp.TICK_HZ)
+        a_k = sim.team_a_kills - self._prev.team_a_kills
+        b_k = sim.team_b_kills - self._prev.team_b_kills
+        raw_a = self._score_per_second * a_s - self._score_per_second * b_s + self._kill_bonus * a_k - self._death_penalty * b_k
+        raw_b = -raw_a
+        tp = -self._time_penalty_per_second / float(_cpp.TICK_HZ)
+        raw_a += tp
+        raw_b += tp
+        ra = self._apply(raw_a, "a")
+        rb = self._apply(raw_b, "b")
+        self._prev.team_a_score_ticks = sim.team_a_score_ticks
+        self._prev.team_b_score_ticks = sim.team_b_score_ticks
+        self._prev.team_a_kills = sim.team_a_kills
+        self._prev.team_b_kills = sim.team_b_kills
+        return ra, rb
+
+
+def test_cumulative_clipper_isolated_behavior():
+    clip = CumulativeClipper(1.0)
+    assert clip.apply_clip(0.7, "a") == pytest.approx(0.7)
+    assert clip.apply_clip(0.7, "a") == pytest.approx(0.3)
+    assert clip.apply_clip(-3.0, "a") == pytest.approx(-2.0)
+    assert clip.cumulative_shaped_a == pytest.approx(-1.0)
+
+
+def test_regression_scalar_old_vs_new_on_synthetic_trajectory():
+    sim = _FakeSim()
+    new = RewardCalculator(time_penalty_per_second=0.05)
+    old = _LegacyScalarRewardCalculator()
+    new.reset(sim)
+    old.reset(sim)
+
+    traj = [
+        (0, 0, 0, 0),
+        (_cpp.TICK_HZ // 2, 0, 1, 0),
+        (_cpp.TICK_HZ, _cpp.TICK_HZ // 3, 1, 1),
+        (_cpp.TICK_HZ, _cpp.TICK_HZ, 2, 1),
+        (_cpp.TICK_HZ * 2, _cpp.TICK_HZ, 2, 3),
+    ]
+    for a_ticks, b_ticks, a_k, b_k in traj:
+        sim.team_a_score_ticks = a_ticks
+        sim.team_b_score_ticks = b_ticks
+        sim.team_a_kills = a_k
+        sim.team_b_kills = b_k
+        assert new.step(sim) == pytest.approx(old.step(sim))
+=======
+
+# --- majority-on-point shaping (opt-in curriculum) ---------------------
+
+
+def test_majority_on_point_rewards_team_a_when_two_vs_one_on_point():
+    rc = RewardCalculator(per_agent_rewards=True, majority_on_point_coef=0.3)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 1, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(0.3)
+    assert b.sum() == pytest.approx(-0.3)
+    np.testing.assert_allclose(a, [0.15, 0.15, 0.0], atol=1.0e-6)
+    np.testing.assert_allclose(b, [-0.1, -0.1, -0.1], atol=1.0e-6)
+    assert rc.majority_on_point_metrics()["majority_on_point_reward_a"] == pytest.approx(0.3)
+
+
+def test_majority_on_point_one_vs_one_is_zero():
+    rc = RewardCalculator(per_agent_rewards=True, majority_on_point_coef=0.3)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 0, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+    metrics = rc.majority_on_point_metrics()
+    assert metrics["majority_on_point_advantage_a"] == pytest.approx(0.0)
+    assert metrics["majority_on_point_advantage_b"] == pytest.approx(0.0)
+
+
+def test_majority_on_point_rewards_team_b_when_one_vs_two_on_point():
+    rc = RewardCalculator(per_agent_rewards=True, majority_on_point_coef=0.3)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 0, 0, 1, 1, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(-0.3)
+    assert b.sum() == pytest.approx(0.3)
+    np.testing.assert_allclose(a, [-0.1, -0.1, -0.1], atol=1.0e-6)
+    np.testing.assert_allclose(b, [0.15, 0.15, 0.0], atol=1.0e-6)
+    assert rc.majority_on_point_metrics()["majority_on_point_reward_b"] == pytest.approx(0.3)
+
+
+def test_majority_on_point_setter_can_disable_term_for_real_reward_eval():
+    rc = RewardCalculator(per_agent_rewards=True, majority_on_point_coef=0.3)
+    sim = _FakeSim()
+    rc.reset(sim)
+    rc.set_majority_on_point_alpha(0.0)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 1, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+    assert rc.majority_on_point_metrics()["majority_on_point_alpha"] == pytest.approx(0.0)
+
+
+# --- uncontested-on-point shaping (opt-in hold/capture pressure) --------
+
+
+def test_uncontested_on_point_rewards_team_a_when_enemy_absent():
+    rc = RewardCalculator(per_agent_rewards=True, uncontested_on_point_coef=0.6)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 0, 0, 0, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(0.6)
+    assert b.sum() == pytest.approx(-0.6)
+    np.testing.assert_allclose(a, [0.6, 0.0, 0.0], atol=1.0e-6)
+    np.testing.assert_allclose(b, [-0.2, -0.2, -0.2], atol=1.0e-6)
+    metrics = rc.uncontested_on_point_metrics()
+    assert metrics["uncontested_on_point_reward_a"] == pytest.approx(0.6)
+    assert metrics["uncontested_on_point_reward_b"] == pytest.approx(0.0)
+
+
+def test_uncontested_on_point_is_zero_while_contested():
+    rc = RewardCalculator(per_agent_rewards=True, uncontested_on_point_coef=0.6)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 0, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+    metrics = rc.uncontested_on_point_metrics()
+    assert metrics["uncontested_on_point_reward_a"] == pytest.approx(0.0)
+    assert metrics["uncontested_on_point_reward_b"] == pytest.approx(0.0)
+
+
+def test_uncontested_on_point_setter_can_disable_term_for_real_reward_eval():
+    rc = RewardCalculator(per_agent_rewards=True, uncontested_on_point_coef=0.6)
+    sim = _FakeSim()
+    rc.reset(sim)
+    rc.set_uncontested_on_point_alpha(0.0)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [1, 0, 0, 0, 0, 0]
+
+    a, b = rc.step(sim)
+
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+    assert rc.uncontested_on_point_metrics()[
+        "uncontested_on_point_alpha"
+    ] == pytest.approx(0.0)
+
+
+def test_uncontested_on_point_negative_coef_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(uncontested_on_point_coef=-0.01)
+
+
+def test_uncontested_on_point_scalar_path_is_symmetric():
+    rc = RewardCalculator(uncontested_on_point_coef=0.6)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.on_point_by_slot = [0, 0, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a == pytest.approx(-0.6)
+    assert b == pytest.approx(0.6)
+>>>>>>> main

@@ -1,13 +1,13 @@
 """Thin Python wrapper over xushi2_cpp.run_scripted_episode.
 
-Bot selection happens in C++. Python's job is just to validate and
+Bot selection happens in C++. Python's job is to validate and
 translate a config dict / YAML into a MatchConfig and call the binding.
 
 Validation rules:
 - semantic fields are explicit (missing required keys raise KeyError)
 - unknown keys raise ValueError to catch typos early
-- only optional top-level sections (`map`, `cover_circles`,
-  `wall_segments`, `action_repeat`, `hero_kinds`) may be omitted
+- only optional top-level sections (`map`, `cover_circles`, `wall_segments`,
+  `action_repeat`, `hero_kinds`, objective timing) may be omitted
 """
 
 from __future__ import annotations
@@ -51,10 +51,51 @@ _REQUIRED_SIM_KEYS = frozenset(
         "mechanics",
     }
 )
-_OPTIONAL_SIM_KEYS = frozenset({"map", "cover_circles", "wall_segments", "action_repeat", "hero_kinds"})
+_OPTIONAL_SIM_KEYS = frozenset(
+    {
+        "map",
+        "cover_circles",
+        "wall_segments",
+        "action_repeat",
+        "hero_kinds",
+        "objective_timing",
+        "objective_unlock_ticks",
+        "objective_unlock_seconds",
+        "objective_capture_ticks",
+        "objective_capture_seconds",
+    }
+)
 _REQUIRED_MAP_KEYS = frozenset({"min_x", "min_y", "max_x", "max_y"})
 _REQUIRED_COVER_KEYS = frozenset({"x", "y", "radius"})
 _REQUIRED_WALL_KEYS = frozenset({"x1", "y1", "x2", "y2", "half_width"})
+
+
+def _seconds_to_ticks(value: float) -> int:
+    ticks = int(round(float(value) * float(_cpp.TICK_HZ)))
+    if ticks <= 0:
+        raise ValueError(f"objective timing seconds must resolve to >0 ticks, got {value!r}")
+    return ticks
+
+
+def _objective_timing_value(sim_cfg: dict, field: str, default_ticks: int) -> int:
+    ticks_key = f"objective_{field}_ticks"
+    seconds_key = f"objective_{field}_seconds"
+    nested = dict(sim_cfg.get("objective_timing", {}))
+    raw_ticks = sim_cfg.get(ticks_key, nested.get(f"{field}_ticks"))
+    raw_seconds = sim_cfg.get(seconds_key, nested.get(f"{field}_seconds"))
+    if raw_ticks is not None and raw_seconds is not None:
+        raise ValueError(
+            f"set only one of sim.{ticks_key} and sim.{seconds_key} "
+            f"(or objective_timing.{field}_*)"
+        )
+    if raw_ticks is not None:
+        ticks = int(raw_ticks)
+        if ticks <= 0:
+            raise ValueError(f"sim.{ticks_key} must be >0, got {ticks}")
+        return ticks
+    if raw_seconds is not None:
+        return _seconds_to_ticks(float(raw_seconds))
+    return int(default_ticks)
 
 
 @dataclass(frozen=True)
@@ -101,6 +142,12 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
     cfg.round_length_seconds = int(sim_cfg["round_length_seconds"])
     cfg.fog_of_war_enabled = bool(sim_cfg["fog_of_war_enabled"])
     cfg.randomize_map = bool(sim_cfg["randomize_map"])
+    cfg.objective_unlock_ticks = _objective_timing_value(
+        sim_cfg, "unlock", int(cfg.objective_unlock_ticks)
+    )
+    cfg.objective_capture_ticks = _objective_timing_value(
+        sim_cfg, "capture", int(cfg.objective_capture_ticks)
+    )
     if "map" in sim_cfg:
         map_cfg = sim_cfg["map"]
         missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
@@ -123,7 +170,9 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
                 )
             unknown_cover = raw.keys() - _REQUIRED_COVER_KEYS
             if unknown_cover:
-                raise ValueError(f"sim.cover_circles entries have unknown key(s): {sorted(unknown_cover)}")
+                raise ValueError(
+                    f"sim.cover_circles entries have unknown key(s): {sorted(unknown_cover)}"
+                )
             cover = _cpp.CoverCircle()
             center = _cpp.Vec2()
             center.x = float(raw["x"])
@@ -142,7 +191,9 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
                 )
             unknown_wall = raw.keys() - _REQUIRED_WALL_KEYS
             if unknown_wall:
-                raise ValueError(f"sim.wall_segments entries have unknown key(s): {sorted(unknown_wall)}")
+                raise ValueError(
+                    f"sim.wall_segments entries have unknown key(s): {sorted(unknown_wall)}"
+                )
             wall = _cpp.WallSegment()
             a = _cpp.Vec2()
             b = _cpp.Vec2()

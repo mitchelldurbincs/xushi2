@@ -23,6 +23,9 @@ from xushi2.obs_manifest import actor_field_slice
 
 _AIM_ACTION_INDEX = 2
 _ENEMY_ALIVE_SLICE = actor_field_slice("enemy_alive")
+_ENEMY_REL_POS_SLICE = actor_field_slice("enemy_relative_position")
+_OWN_AIM_UNIT_SLICE = actor_field_slice("own_aim_unit")
+_AIM_DELTA_LIMIT = float(np.pi / 4.0)
 
 
 @contextmanager
@@ -143,17 +146,18 @@ def _walk_and_shoot_to_objective_targets(obs: torch.Tensor, cfg: MappoConfig) ->
 
     # For flat observations, check enemy alive flag and relative position
     if cfg.obs_encoder not in ("entity_attention", "entity_attention_grid"):
-        # Enemy alive at slice(10, 11), enemy_relative_position at slice(12, 14)
-        enemy_alive = obs[:, 10:11]  # (B, 1)
-        enemy_rel_pos = obs[:, 12:14]  # (B, 2)
+        enemy_alive = obs[:, _ENEMY_ALIVE_SLICE]
+        enemy_rel_pos = obs[:, _ENEMY_REL_POS_SLICE]
+        own_aim_unit = obs[:, _OWN_AIM_UNIT_SLICE]
 
-        # Aim toward enemy: compute angle, set aim_delta roughly in that direction
-        # aim_delta is index 2 in continuous actions
-        # Simple heuristic: if enemy visible, aim roughly toward them; else aim toward cap
+        # Action index 2 is a delta from current aim, not an absolute angle.
         enemy_angle = torch.atan2(enemy_rel_pos[:, 1:2], enemy_rel_pos[:, 0:1])
-        # Clamp to reasonable range for tanh output (-1, 1) ~ (-45°, 45°)
-        aim = torch.clamp(enemy_angle / (3.14159 / 4), -0.9, 0.9)
-        # Only apply aim when enemy is alive
+        current_angle = torch.atan2(own_aim_unit[:, 0:1], own_aim_unit[:, 1:2])
+        aim_delta = torch.atan2(
+            torch.sin(enemy_angle - current_angle),
+            torch.cos(enemy_angle - current_angle),
+        )
+        aim = torch.clamp(aim_delta / _AIM_DELTA_LIMIT, -1.0, 1.0)
         target[:, 2:3] = torch.where(enemy_alive > 0.5, aim, target[:, 2:3])
 
         # Fire (primary_fire = index 3) when enemy is alive
