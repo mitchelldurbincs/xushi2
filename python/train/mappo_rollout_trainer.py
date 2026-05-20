@@ -101,7 +101,8 @@ class MappoTrainer:
             cfg.num_envs, cfg.n_agents, cfg.gru_hidden
         )
         self.rollout_cls = MappoRollout
-        self._sampling_rng_state = torch.get_rng_state()
+        self.policy_sampling_generator = torch.Generator(device=self.device.type)
+        self.policy_sampling_generator.manual_seed(self.seed + 20_000)
         self._update_counter = 0
         self._actor_params: list[torch.nn.Parameter] = []
         self._critic_params: list[torch.nn.Parameter] = []

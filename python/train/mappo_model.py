@@ -535,7 +535,11 @@ class MappoActorCritic(nn.Module):
         return masked
 
     def sample_action(
-        self, obs: torch.Tensor, h: torch.Tensor
+        self,
+        obs: torch.Tensor,
+        h: torch.Tensor,
+        *,
+        generator: torch.Generator | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         mean, log_std, logits, target_logits, h_next = self.policy_outputs(obs, h)
         logits = self.masked_binary_logits(obs, logits)
@@ -545,21 +549,39 @@ class MappoActorCritic(nn.Module):
         if self.cfg.continuous_action_dim > 0:
             std = log_std.exp()
             dist = torch.distributions.Normal(mean, std)
-            u = dist.rsample()
+            noise = torch.randn(
+                mean.shape,
+                dtype=mean.dtype,
+                device=mean.device,
+                generator=generator,
+            )
+            u = mean + std * noise
             cont = torch.tanh(u)
             correction = 2.0 * (_LOG2 - u - torch.nn.functional.softplus(-2.0 * u))
             logprob = logprob + dist.log_prob(u).sum(-1) - correction.sum(-1)
             pieces.append(cont)
         if self.cfg.binary_action_dim > 0:
             binary_dist = torch.distributions.Bernoulli(logits=logits)
-            binary = binary_dist.sample()
+            probs = torch.sigmoid(logits)
+            uniforms = torch.rand(
+                probs.shape,
+                dtype=probs.dtype,
+                device=probs.device,
+                generator=generator,
+            )
+            binary = (uniforms < probs).to(probs.dtype)
             logprob = logprob + binary_dist.log_prob(binary).sum(-1)
             pieces.append(binary)
         if self.cfg.target_action_dim > 0:
             if target_logits is None:
                 raise RuntimeError("target_action_dim requires target logits")
             target_dist = torch.distributions.Categorical(logits=target_logits)
-            target = target_dist.sample()
+            target = torch.multinomial(
+                torch.softmax(target_logits, dim=-1),
+                num_samples=1,
+                replacement=True,
+                generator=generator,
+            ).squeeze(-1)
             logprob = logprob + target_dist.log_prob(target)
             pieces.append(target.to(obs.dtype).unsqueeze(-1))
         return torch.cat(pieces, dim=-1), logprob, h_next
