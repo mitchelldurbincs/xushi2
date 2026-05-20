@@ -5,16 +5,22 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import yaml
 
 from envs.memory_toy import MemoryToyEnv
 from train.models import ActorCritic, build_model
 
 MODES: tuple[str, str, str] = ("normal", "zero_every_tick", "random_every_tick")
 
-NORMAL_MEAN_MIN = -0.15
-ZERO_MEAN_RANGE = (-1.2, -0.8)
-RANDOM_MEAN_RANGE = (-1.5, -0.8)
-NORMAL_ZERO_GAP_MIN = 0.5
+
+@dataclass(frozen=True)
+class MemoryToyGateThresholds:
+    normal_mean_min: float
+    zero_mean_range: tuple[float, float]
+    random_mean_range: tuple[float, float]
+    normal_zero_gap_min: float
+    version: str
+    source_path: str
 
 
 @dataclass(frozen=True)
@@ -31,6 +37,7 @@ class GateAggregateResult:
     gap_normal_minus_zero: float
     passed: bool
     failure_reasons: list[str]
+    thresholds: MemoryToyGateThresholds
 
 
 def load_checkpoint(path: str | Path) -> tuple[ActorCritic, dict]:
@@ -57,6 +64,45 @@ def load_checkpoint(path: str | Path) -> tuple[ActorCritic, dict]:
     model.load_state_dict(state_dict)
     model.eval()
     return model, config
+
+
+def _parse_range(name: str, obj: object) -> tuple[float, float]:
+    if not isinstance(obj, (list, tuple)) or len(obj) != 2:
+        raise ValueError(f"{name} must be a 2-item list/tuple")
+    lo, hi = float(obj[0]), float(obj[1])
+    if lo > hi:
+        raise ValueError(f"{name}[0] must be <= {name}[1]")
+    return lo, hi
+
+
+def load_memory_toy_gate_thresholds(path: str | Path) -> MemoryToyGateThresholds:
+    threshold_path = Path(path)
+    payload = yaml.safe_load(threshold_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("threshold config must be a mapping")
+
+    required = {
+        "version",
+        "normal_mean_min",
+        "zero_mean_range",
+        "random_mean_range",
+        "normal_zero_gap_min",
+    }
+    extras = set(payload.keys()) - required
+    missing = required - set(payload.keys())
+    if missing:
+        raise ValueError(f"threshold config missing required keys: {sorted(missing)}")
+    if extras:
+        raise ValueError(f"threshold config has unexpected keys: {sorted(extras)}")
+
+    return MemoryToyGateThresholds(
+        normal_mean_min=float(payload["normal_mean_min"]),
+        zero_mean_range=_parse_range("zero_mean_range", payload["zero_mean_range"]),
+        random_mean_range=_parse_range("random_mean_range", payload["random_mean_range"]),
+        normal_zero_gap_min=float(payload["normal_zero_gap_min"]),
+        version=str(payload["version"]),
+        source_path=str(threshold_path),
+    )
 
 
 def _apply_hidden_mutation(h: torch.Tensor, mode: str, rng: torch.Generator) -> torch.Tensor:
@@ -123,26 +169,28 @@ def run_ablation(
     )
 
 
-def evaluate_gate_thresholds(results: dict[str, AblationResult]) -> tuple[bool, list[str]]:
+def evaluate_gate_thresholds(
+    results: dict[str, AblationResult], thresholds: MemoryToyGateThresholds
+) -> tuple[bool, list[str]]:
     normal = results["normal"]
     zero = results["zero_every_tick"]
     random_ = results["random_every_tick"]
 
     failures: list[str] = []
-    if not (normal.mean > NORMAL_MEAN_MIN):
-        failures.append(f"normal_mean={normal.mean:.3f} is not > {NORMAL_MEAN_MIN}")
-    if not (ZERO_MEAN_RANGE[0] <= zero.mean <= ZERO_MEAN_RANGE[1]):
+    if not (normal.mean > thresholds.normal_mean_min):
+        failures.append(f"normal_mean={normal.mean:.3f} is not > {thresholds.normal_mean_min}")
+    if not (thresholds.zero_mean_range[0] <= zero.mean <= thresholds.zero_mean_range[1]):
         failures.append(
-            f"zero_every_tick_mean={zero.mean:.3f} outside [{ZERO_MEAN_RANGE[0]}, {ZERO_MEAN_RANGE[1]}]"
+            f"zero_every_tick_mean={zero.mean:.3f} outside [{thresholds.zero_mean_range[0]}, {thresholds.zero_mean_range[1]}]"
         )
-    if not (RANDOM_MEAN_RANGE[0] <= random_.mean <= RANDOM_MEAN_RANGE[1]):
+    if not (thresholds.random_mean_range[0] <= random_.mean <= thresholds.random_mean_range[1]):
         failures.append(
-            f"random_every_tick_mean={random_.mean:.3f} outside [{RANDOM_MEAN_RANGE[0]}, {RANDOM_MEAN_RANGE[1]}]"
+            f"random_every_tick_mean={random_.mean:.3f} outside [{thresholds.random_mean_range[0]}, {thresholds.random_mean_range[1]}]"
         )
 
     gap = normal.mean - zero.mean
-    if not (gap > NORMAL_ZERO_GAP_MIN):
-        failures.append(f"gap normal-zero = {gap:.3f} is not > {NORMAL_ZERO_GAP_MIN}")
+    if not (gap > thresholds.normal_zero_gap_min):
+        failures.append(f"gap normal-zero = {gap:.3f} is not > {thresholds.normal_zero_gap_min}")
 
     return len(failures) == 0, failures
 
@@ -152,6 +200,7 @@ def evaluate_memory_toy_gate(
     config: dict,
     num_episodes: int,
     seed: int,
+    thresholds: MemoryToyGateThresholds,
 ) -> GateAggregateResult:
     per_mode = {
         mode: run_ablation(
@@ -163,13 +212,14 @@ def evaluate_memory_toy_gate(
         )
         for mode in MODES
     }
-    passed, failure_reasons = evaluate_gate_thresholds(per_mode)
+    passed, failure_reasons = evaluate_gate_thresholds(per_mode, thresholds=thresholds)
     gap = per_mode["normal"].mean - per_mode["zero_every_tick"].mean
     return GateAggregateResult(
         per_mode=per_mode,
         gap_normal_minus_zero=gap,
         passed=passed,
         failure_reasons=failure_reasons,
+        thresholds=thresholds,
     )
 
 
