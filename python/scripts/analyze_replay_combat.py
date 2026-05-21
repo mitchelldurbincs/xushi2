@@ -106,6 +106,8 @@ def _config_from_header(header: dict[str, str]) -> _cpp.MatchConfig:
     cfg.fog_of_war_enabled = bool(int(float(header.get("fog", 0))))
     cfg.randomize_map = False
     cfg.action_repeat = int(float(header.get("action_repeat", 3)))
+    cfg.objective_unlock_ticks = int(float(header.get("obj_unlock_ticks", cfg.objective_unlock_ticks)))
+    cfg.objective_capture_ticks = int(float(header.get("obj_capture_ticks", cfg.objective_capture_ticks)))
     cfg.team_size = int(float(header.get("team_size", 3)))
     cfg.map.min_x = float(header.get("map_min_x", cfg.map.min_x))
     cfg.map.min_y = float(header.get("map_min_y", cfg.map.min_y))

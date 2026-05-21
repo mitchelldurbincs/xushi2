@@ -252,6 +252,25 @@ load debug traces with snapshots and interpolate, but exact sim replay
 across native ↔ WASM is not guaranteed unless and until we move to
 fixed-point or cross-platform-exact math. See `determinism_rules.md`.
 
+
+## Text replay header metadata (current implementation)
+
+The viewer/tooling text replay format (`format=xushi2-replay-v1`) stores replay
+metadata as space-delimited `key=value` pairs on line 1. In addition to seed,
+round length, action repeat, and mechanics fields, objective timing now includes:
+
+- `obj_unlock_ticks` — objective unlock delay used during rollout.
+- `obj_capture_ticks` — capture-progress ticks required to claim the point.
+
+These values are consumed by replay loaders to reconstruct `MatchConfig`
+objective timing for playback and analysis.
+
+### Backward compatibility
+
+Older text replays may omit objective timing keys. Loaders must treat missing
+fields as legacy defaults from `MatchConfig` (unlock `15 * tick_hz`, capture
+`8 * tick_hz`) so existing replay artifacts continue to load.
+
 ## Paths / conventions
 
 ```
