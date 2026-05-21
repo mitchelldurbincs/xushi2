@@ -10,11 +10,13 @@ from train.mappo_pretrain_hooks import (
 )
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import build_runtime_context
+from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo_training_hooks import MappoTrainingHooks
 from train.wandb_logger import make_logger
 
 
 def train_mappo_from_config(config: dict) -> dict[str, float]:
+    resolve_runtime_env_factory(config, require_learner="mappo", context="MAPPO train")
     context = build_runtime_context(config)
     phase = context.phase
     phase_label = context.phase_label

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from train.mappo_rollout_trainer import make_mappo_config
-from train.runtime_specs import resolve_runtime_spec
+from train.runtime_adapter import resolve_runtime_env_factory
 from xushi2.snapshot_retention import SnapshotRetention
 
 
@@ -39,16 +39,13 @@ class RuntimeContext:
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
-    runtime = resolve_runtime_spec(config)
-    if runtime.learner.kind != "mappo":
-        raise ValueError(
-            f"MAPPO runtime requires learner.kind='mappo', got {runtime.learner.kind!r}"
-        )
-    if runtime.env_fn is None:
-        raise ValueError("MAPPO runtime requires an environment factory")
+    runtime, env_fn, _seed_base = resolve_runtime_env_factory(
+        config,
+        require_learner="mappo",
+        context="MAPPO runtime",
+    )
     phase = runtime.phase_int
     phase_label = runtime.phase_label
-    env_fn = runtime.env_fn
     ckpt_env_cfg = runtime.ckpt_env_cfg
     seed_base = runtime.seed_base
     cfg = make_mappo_config(config)
