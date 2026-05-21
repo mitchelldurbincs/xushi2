@@ -1,0 +1,18 @@
+phase_gate_defaults:
+  schema_version: 1
+  identity_requirements:
+    require_git_commit: true
+    require_config_path: true
+    require_seeds: true
+    min_unique_seeds: 3
+  artifact_requirements:
+    require_wandb_run_url: true
+    require_replay_artifacts: true
+    min_replay_count: 1
+    viewer_command_template: "xushi2-viewer --replay {replay_path}"
+  blockers:
+    fail_on_crash: true
+    fail_on_nan: true
+    fail_on_missing_metrics: true
+    fail_on_import_error: true
+    fail_on_timeout_before_evidence: true
