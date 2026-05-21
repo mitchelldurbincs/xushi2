@@ -62,6 +62,10 @@ class Phase4CapDuelMappoEnv(gym.Env):
         time_penalty_per_decision: float = 0.0,
         self_play_schedule: dict[str, Any] | None = None,
         snapshot_league: dict[str, Any] | None = None,
+        # v2 realism knobs. None / False / 0.0 preserve legacy v1 behavior.
+        knockback_magnitude: float | None = None,
+        spawn_distance: float | None = None,
+        respawn_at_spawn_position: bool = False,
     ) -> None:
         super().__init__()
         if episode_decisions <= 0:
@@ -76,6 +80,10 @@ class Phase4CapDuelMappoEnv(gym.Env):
             raise ValueError("enemy_recontest_delay must be non-negative")
         if not (0.0 < hit_tolerance <= 1.0):
             raise ValueError("hit_tolerance must be in (0, 1]")
+        if knockback_magnitude is not None and knockback_magnitude < 0.0:
+            raise ValueError("knockback_magnitude must be non-negative")
+        if spawn_distance is not None and not (0.0 <= spawn_distance <= 1.0):
+            raise ValueError("spawn_distance must be in [0, 1]")
 
         self.episode_decisions = int(episode_decisions)
         self.enemy_hp = int(enemy_hp)
@@ -88,6 +96,10 @@ class Phase4CapDuelMappoEnv(gym.Env):
         self.score_per_tick = float(score_per_tick)
         self.off_point_penalty = float(off_point_penalty)
         self.time_penalty_per_decision = float(time_penalty_per_decision)
+        self.spawn_distance = (
+            None if spawn_distance is None else float(spawn_distance)
+        )
+        self.respawn_at_spawn_position = bool(respawn_at_spawn_position)
 
         self._schedule = (
             None
@@ -99,11 +111,15 @@ class Phase4CapDuelMappoEnv(gym.Env):
 
         self._move_speed = max(0.025, self.point_radius * 0.45)
         self._enemy_speed = max(0.01, self.point_radius * 0.20)
-        self._hit_push = (
-            self.point_radius
-            + self._enemy_speed * float(max(1, self.enemy_recontest_delay + 1))
-            + self.point_radius * 0.25
-        )
+        # Legacy formula stays the default; explicit override (incl. 0.0) wins.
+        if knockback_magnitude is None:
+            self._hit_push = (
+                self.point_radius
+                + self._enemy_speed * float(max(1, self.enemy_recontest_delay + 1))
+                + self.point_radius * 0.25
+            )
+        else:
+            self._hit_push = float(knockback_magnitude)
 
         self._rng = np.random.default_rng(0)
         self._tick = 0
@@ -113,6 +129,9 @@ class Phase4CapDuelMappoEnv(gym.Env):
         self._respawn_timer = np.zeros(2, dtype=np.int32)
         self._off_point_decisions = np.zeros(2, dtype=np.int32)
         self._pos = np.zeros((2, 2), dtype=np.float32)
+        # Anchored spawn position per slot, only used when
+        # ``respawn_at_spawn_position`` or ``spawn_distance`` is set.
+        self._spawn_pos = np.zeros((2, 2), dtype=np.float32)
         self._last_move = np.zeros((2, 2), dtype=np.float32)
         self._hits = np.zeros(2, dtype=np.int32)
         self._fires = np.zeros(2, dtype=np.int32)
@@ -170,8 +189,22 @@ class Phase4CapDuelMappoEnv(gym.Env):
         self._misses.fill(0)
         self._kills.fill(0)
         self._score_events.fill(0)
-        self._pos[_ACTIVE_A] = self._sample_near_point(0.85)
-        self._pos[_ACTIVE_B] = self._sample_near_point(0.85)
+        if self.spawn_distance is None:
+            self._pos[_ACTIVE_A] = self._sample_near_point(0.85)
+            self._pos[_ACTIVE_B] = self._sample_near_point(0.85)
+        else:
+            angle_a = float(self._rng.uniform(-np.pi, np.pi))
+            r = self.spawn_distance
+            self._pos[_ACTIVE_A] = np.array(
+                [np.cos(angle_a) * r, np.sin(angle_a) * r], dtype=np.float32
+            )
+            self._pos[_ACTIVE_B] = np.array(
+                [np.cos(angle_a + np.pi) * r, np.sin(angle_a + np.pi) * r],
+                dtype=np.float32,
+            )
+        # Cache the initial spawn so respawn_at_spawn_position can restore it.
+        self._spawn_pos[_ACTIVE_A] = self._pos[_ACTIVE_A]
+        self._spawn_pos[_ACTIVE_B] = self._pos[_ACTIVE_B]
         self._last_move.fill(0.0)
         self._build_actor_obs_all()
         return self._actor_obs_buf.copy(), self._make_info()
@@ -363,7 +396,10 @@ class Phase4CapDuelMappoEnv(gym.Env):
             if self._respawn_timer[idx] <= 0:
                 self._alive[idx] = True
                 self._hp[idx] = self.enemy_hp
-                self._pos[idx] = self._sample_near_point(0.85)
+                if self.respawn_at_spawn_position:
+                    self._pos[idx] = self._spawn_pos[idx].copy()
+                else:
+                    self._pos[idx] = self._sample_near_point(0.85)
                 self._last_move[idx].fill(0.0)
 
     def _update_off_point_counters(self) -> None:
@@ -525,4 +561,18 @@ class Phase4CapDuelMappoEnv(gym.Env):
                 if self._fires[_ACTIVE_A]
                 else 0.0
             ),
+            "cap_duel_self_pos": [
+                float(self._pos[_ACTIVE_A, 0]),
+                float(self._pos[_ACTIVE_A, 1]),
+            ],
+            "cap_duel_enemy_pos": [
+                float(self._pos[_ACTIVE_B, 0]),
+                float(self._pos[_ACTIVE_B, 1]),
+            ],
+            "cap_duel_self_hp": int(self._hp[_ACTIVE_A]),
+            "cap_duel_enemy_hp": int(self._hp[_ACTIVE_B]),
+            "cap_duel_enemy_off_point_decisions": int(
+                self._off_point_decisions[_ACTIVE_B]
+            ),
+            "cap_duel_self_score_ready": bool(self._score_ready(_ACTIVE_A)),
         }

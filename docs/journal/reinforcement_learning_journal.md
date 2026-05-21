@@ -1607,3 +1607,113 @@ still combat conversion against a fire-back opponent.
 **Anchor transfer (Stage 3 only):** not run because the update-50 zero-score escalation rule fired before final checkpoint and matrix eval.
 **Replay artifacts:** none for Stage 3; replay dump was not run because the transfer gate was not reached.
 **Decision:** stopping this cap_duel transfer loop and reporting back. Stage 2 solved the cap_duel objective gate objectively, but the skill did not survive transfer into the full 3v3 reward gradient against `weak_basic_v2`. Recommended next escalation is Strategy 3 focus-fire target conditioning, or a composition rehearsal that uses the cap_duel teacher as the available combat/objective teacher. Both require explicit approval before additional code-level or training-plan changes.
+
+## 2026-05-21 — Phase 4 cap_duel rollout inspection
+
+**Config:** ../experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v1.yaml
+**Checkpoint:** runs/phase4_mappo_cap_duel_selfplay_v1/mappo/ckpt_final.pt
+**Git commit:** `e9d5b5026e51bdefb4d187fd90b9bff5f4b6f202` (plus working-tree
+patches: additive `_make_info` diagnostic keys + focused test in
+`python/envs/phase4_cap_duel_mappo.py` and
+`python/tests/test_phase4_cap_duel_mappo.py`; new
+`python/scripts/inspect_cap_duel_rollout.py`; replay-loader bug fixes in
+`src/viewer/src/replay_loader.cpp` that propagate `fog`, `cover=`, and
+`walls=` into the playback `MatchConfig`).
+**Seed:** base `3519994490`, 10 episodes per mode at seeds 3519994490..3519994499.
+**W&B:** n/a (diagnostic only, no training launched).
+**Output:** runs/phase4_mappo_cap_duel_selfplay_v1/mappo/diagnostics/
+**Gate status:** DIAGNOSTIC
+**Gate reason:** Stage A of `GOAL_INSTRUCTIONS.md` — answer the
+`HUMAN_INSPECTION_REQUIRED` subjective gate from the cap_duel selfplay
+v1 run, which could not be answered from the standard Phase 4 replay
+viewer because cap_duel is a Python-only mini-game whose world the
+canonical C++ Phase 4 sim cannot reconstruct from the action stream
+alone.
+
+**Greedy results:** wins A/B/Draws 9/1/0, mean Team A score 10.70 / 12,
+mean Team B score 1.40. Total score events 107; kill_then_hold 107
+(`kill_then_hold_ratio=1.000`), displace_then_hold 0, accidental 0.
+10 kills, 32 hits, 99 fire decisions. Zero "forbidden" score ticks
+(self on point and enemy alive on point simultaneously).
+**Stochastic results:** wins A/B/Draws 9/1/0, mean Team A score 10.90,
+mean Team B score 1.30. Total score events 109; kill_then_hold 109
+(`kill_then_hold_ratio=1.000`), displace_then_hold 0, accidental 0.
+12 kills, 36 hits, 71 fire decisions.
+**Inspection artifacts:** runs/phase4_mappo_cap_duel_selfplay_v1/mappo/diagnostics/inspect_greedy.json,
+runs/phase4_mappo_cap_duel_selfplay_v1/mappo/diagnostics/inspect_stochastic.json.
+
+**Single-seed anomaly observed:** the very first inspector run on seed
+`3519994490` alone (1 episode) was an outlier self-play loss — Team B
+won, learner died at step 37, 2 hits in 42 decisions, 0 score events.
+That seed-alone picture matches the viewer-observed "spinning, random
+fire, never approaches point." Aggregating 10 episodes shows the
+single seed was unrepresentative; the policy wins 9/10 with deliberate
+kill-then-hold scoring.
+
+**Verdict:** the cap_duel selfplay v1 checkpoint actually learned
+kill-then-hold. 100% of the 216 aggregated score events across greedy
+and stochastic are attributable to enemy-dead-at-score or a kill within
+the `enemy_recontest_delay=12` window. None is accidental
+displacement. The viewer-observed pathology was a combination of the
+canonical Phase 4 sim being the wrong rendering target for cap_duel
+replays (cap_duel agents spawn within `point_radius=0.18` of origin in
+the cap_duel world; the viewer renders them against canonical Phase 4
+spawn positions and the canonical objective location) and the user
+having sampled a near-anomalous seed in inspection.
+
+**Decision:** Stage A complete. Recommend Stage B-1 (composition
+rehearsal with the cap_duel checkpoint as combat teacher) per
+`GOAL_INSTRUCTIONS.md`. Awaiting user approval to launch.
+
+## 2026-05-21 — Phase 4 cap_duel v2 retrain (engineered quirks removed)
+
+**Config:** ../experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v2.yaml
+**Git commit:** `e9d5b5026e51bdefb4d187fd90b9bff5f4b6f202` (plus
+working-tree env changes: additive `knockback_magnitude`,
+`spawn_distance`, `respawn_at_spawn_position` knobs on
+`Phase4CapDuelMappoEnv` with v1-preserving defaults; four focused tests;
+new v2 yaml).
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/l9890sl6
+**Output:** runs/phase4_mappo_cap_duel_selfplay_v2/
+**Gate status:** DIAGNOSTIC (cap_duel duel-gate thresholds pass; no
+formal phase_gate.cli run yet — this entry documents the retrain
+itself; gate invocation is a follow-up).
+
+**Reason:** the prior cap_duel v1 inspection found that the v1 win
+mechanism depended on three engineered quirks not present in the
+canonical Phase 4 3v3 sim: spawn-on-point, shot knockback (~0.693
+units per hit), and respawn-on-point. Sim-side check confirmed
+`apply_damage_buffer` in `src/sim/src/internal/sim_combat.cpp` writes
+HP only, no position. v2 removes these quirks: agents spawn at
+`spawn_distance=0.4` on opposite sides of origin, knockback is 0,
+respawn restores each agent to its initial spawn position. Same
+warm-start (`phase4_mappo_basic_v6_5`), same training knobs as v1.
+
+**Pre-launch checks:** focused pytest suite (61 passed), import-boundary
+check passed, hand-coded "walk to origin + aim + fire" policy wins
+20/20 self-play episodes in 15 decisions each → v2 env is solvable.
+
+**Training:** 250 PPO updates after 500-step BC pretrain. Best eval at
+update 225: mean_reward `+3.979`, `33W/2L/15D`, score `10.30/2.46`,
+kills `1.0/0.4`. Final eval at update 250: `37W/3L/10D`, score
+`10.54/1.40`. Both clear the duel-gate thresholds
+(`cap_duel_score >= 6.0`, `cap_duel_kills >= 5.0` per-eval total
+~50, `cap_duel_wins >= 25`).
+
+**Inspector results (10 episodes per mode):**
+- Greedy: 8W/0L/2D, mean A score 9.30, kill_then_hold 81/93 (87.1%),
+  accidental 12 (one outlier ep where A held the point against a B
+  policy that hovered just outside the point — not a v1-style
+  spawn-on-point exploit).
+- Stochastic: 10W/0L/0D, mean A score 11.90, kill_then_hold 119/119
+  (100%), accidental 0. 15 kills, 47 hits, 218 fires (~21.6% hit rate).
+- Combined: 200/212 = **94.3% kill_then_hold** across both modes.
+
+**Artifacts:** runs/phase4_mappo_cap_duel_selfplay_v2/mappo/diagnostics/inspect_{greedy,stochastic}.json,
+four cap_duel-native HTML viewers under the same dir.
+
+**Decision:** v2 cap_duel is an honest combat teacher under canonical-
+sim-compatible rules. Recommend Stage B-1 (composition rehearsal with
+this v2 ckpt as combat teacher) per the v2 hand-off note. Config-only
+next move; no code changes required.

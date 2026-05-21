@@ -165,7 +165,10 @@ std::optional<Replay> load_replay(const std::string& path) {
     double v = 0.0;
     if (parse_kv_double(header, "seed", v)) rep.config.seed = static_cast<std::uint64_t>(v);
     if (parse_kv_double(header, "phase", v)) rep.phase = static_cast<int>(v);
-    if (parse_kv_double(header, "fog", v)) rep.fog = (v != 0.0);
+    if (parse_kv_double(header, "fog", v)) {
+        rep.fog = (v != 0.0);
+        rep.config.fog_of_war_enabled = rep.fog;
+    }
     if (parse_kv_double(header, "target_slot", v)) rep.target_slot = (v != 0.0);
     if (parse_kv_double(header, "last_seen", v)) rep.last_seen = (v != 0.0);
     if (const auto fog_mode = parse_kv_string(header, "fog_mode")) rep.fog_mode = *fog_mode;
@@ -185,8 +188,26 @@ std::optional<Replay> load_replay(const std::string& path) {
     if (parse_kv_double(header, "map_min_y", v)) rep.config.map.min_y = static_cast<float>(v);
     if (parse_kv_double(header, "map_max_x", v)) rep.config.map.max_x = static_cast<float>(v);
     if (parse_kv_double(header, "map_max_y", v)) rep.config.map.max_y = static_cast<float>(v);
-    if (const auto covers = parse_kv_string(header, "cover")) rep.cover_markers = parse_cover_markers(*covers);
-    if (const auto walls = parse_kv_string(header, "walls")) rep.wall_markers = parse_wall_markers(*walls);
+    if (const auto covers = parse_kv_string(header, "cover")) {
+        rep.cover_markers = parse_cover_markers(*covers);
+        const std::size_t count =
+            std::min<std::size_t>(rep.cover_markers.size(), xushi2::common::kMaxWalls);
+        rep.config.num_cover_circles = static_cast<std::uint32_t>(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            rep.config.cover_circles[i] = xushi2::sim::CoverCircle{
+                rep.cover_markers[i].center, rep.cover_markers[i].radius};
+        }
+    }
+    if (const auto walls = parse_kv_string(header, "walls")) {
+        rep.wall_markers = parse_wall_markers(*walls);
+        const std::size_t count =
+            std::min<std::size_t>(rep.wall_markers.size(), xushi2::common::kMaxWalls);
+        rep.config.num_wall_segments = static_cast<std::uint32_t>(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            rep.config.wall_segments[i] = xushi2::sim::WallSegment{
+                rep.wall_markers[i].a, rep.wall_markers[i].b, rep.wall_markers[i].half_width};
+        }
+    }
     if (parse_kv_double(header, "mech_dmg", v)) rep.config.mechanics.revolver_damage_centi_hp = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "mech_fcd", v)) rep.config.mechanics.revolver_fire_cooldown_ticks = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "mech_hbr", v)) rep.config.mechanics.revolver_hitbox_radius = static_cast<float>(v);

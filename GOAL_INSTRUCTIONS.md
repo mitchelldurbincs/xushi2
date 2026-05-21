@@ -1,258 +1,93 @@
-# Goal: Solve Phase 4 Via Cap-Duel Self-Play, Then Transfer To 3v3
+# Goal: Composition Rehearsal With The v2 Cap-Duel Checkpoint
 
-## Purpose
+## Status Going Into This Goal
 
-Build the missing rung between the two skills Phase 4 has already proven it
-can learn in isolation — cap holding (`phase4_mappo_basic_v6_5`) and 1v1
-combat (`phase4_mappo_combat_1v1_v2` in the May-18 journal) — by adding a
-new Phase 4-compatible mini-game in which both halves of the composition
-exist together: one active learner, one active enemy, both spawn near the
-objective, score ticks require the learner to kill or displace the enemy and
-then remain on point. Then train that env with current-vs-current self-play,
-and finally probe transfer into the full 3v3 environment.
+- The 2026-05-21 cap_duel v1 inspection found 100% kill_then_hold in v1
+  but discovered that v1's score path leaned on three engineered env
+  quirks not present in the canonical Phase 4 3v3 C++ sim (spawn-on-
+  point, shot knockback ~0.693 units per hit, respawn-on-point).
+- Cap_duel v2 (`phase4_mappo_cap_duel_selfplay_v2`) retrained from the
+  same v6.5 warm-start under stricter rules (knockback 0, corner
+  spawns at 0.4, respawn-at-spawn). v2 wins 8/10 greedy + 10/10
+  stochastic with 94.3% combined kill_then_hold and zero v1-style
+  spawn-on-point exploits. Full results in
+  `docs/plans/archive/2026-05-21-cap-duel-v2-result.md` and the
+  2026-05-21 v2 journal entry.
 
-This is Strategy 2 ("Objective-Coupled Combat Micro-Curriculum") from
-`docs/reports/2026-05-18-phase4-strategic-proposal.md`. It is the next
-escalation after the May-21 stop note: composition rehearsal cannot launch
-because the combat teacher checkpoint is missing on this machine, and anchor
-mix v2 hit the canonical-score falsification trip again.
+The combat teacher that the prior plan needed but couldn't have
+(because `combat_1v1_v2` is missing on this machine) is now real.
 
-## Non-Negotiables
+## What This Goal Does
+
+Composition rehearsal with the v2 cap_duel checkpoint as the combat
+teacher, then a 3v3 transfer probe against `weak_basic_v2`. Same gate
+as the original Strategy 1 path; no thresholds relaxed.
+
+## Non-Negotiables (carried over)
 
 - Do not change sim rules, reward formulas, observation layout, action
-  semantics, replay format, deterministic sim, W&B metric schemas, or MAPPO
-  core. The new env may define its own *mini-game reward* (score/kill/hit
-  signals), but it must read sim state through existing Python bindings and
-  must not modify C++.
-- Do not widen actor observation. Cap-duel must preserve the same 3-agent
-  Phase 4 actor obs and 6-dim action shape as `combat_1v1`; inactive
-  learner/enemy slots stay in tensor shape but contribute zero actions.
+  semantics, replay format, deterministic sim, W&B metric schemas, or
+  MAPPO core. Do not modify C++.
 - Do not weaken phase gates. Each stage's `phase_gate:` block is the bar.
-  If a run does not meet it, change the experiment, not the gate.
-- Do not skip the journal entry. Every completed (or skipped) run gets a
-  section in `docs/journal/reinforcement_learning_journal.md` with W&B URL,
-  config path, manifest summary, gate decision artifact, and a one-line
-  decision.
-- Do not launch a new training run while one is in flight. One run at a time.
+- Do not skip the journal entry per run.
+- Do not launch a new training run while one is in flight.
 - Do not commit changes unless explicitly asked.
-- Keep actor/critic separation. No actor-observation path may call
-  hidden-enemy/full-state helpers.
-- Do not modify the C++ simulator, replay file format, or `MatchConfig`
-  schema. The mini-game lives in Python.
+- Out of scope without explicit user approval: new aux losses, new actor
+  heads, Strategy 3 (focus-fire) code changes, retraining `combat_1v1_v2`
+  on this machine.
 
 ## First Reads
 
-Before writing code, read in order:
+1. `docs/plans/archive/2026-05-21-cap-duel-v2-result.md` — what changed
+   in v2 and what the inspection confirmed.
+2. The 2026-05-21 v2 journal entry (the most recent in
+   `docs/journal/reinforcement_learning_journal.md`).
+3. `experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v2_2000.yaml` — the rehearsal config template.
+4. `experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v2.yaml` — copy the `mini_game_config` block verbatim into the rehearsal combat env so the rehearsal samples match the teacher's training distribution.
+5. `python/train/composition_rehearsal.py` and
+   `python/train/mappo_pretrain_hooks.py` — the pretrain path.
+6. `python/train/phase_gate/README.md` — gate CLI shape.
 
-1. `docs/reports/2026-05-18-phase4-strategic-proposal.md` — Strategy 2
-   ("cap-duel") section. Treat it as the design intent, not as a contract.
-2. `python/envs/phase4_combat_1v1_mappo.py` (if present; otherwise search
-   `python/envs/` for the `combat_1v1` registry entry) — the closest
-   template for a Phase 4-compatible single-active-slot mini-game.
-3. `python/envs/__init__.py` — the env registry where the new mini-game is
-   wired in.
-4. `python/train/phases.py` — how `env.mini_game` is routed to env bundles,
-   and what extra fields a mini-game config can carry.
-5. `python/train/mappo.py` and `python/train/mappo_eval_checkpoint.py` —
-   train entrypoint and where mini-game configs flow through PPO and eval.
-6. `python/scripts/eval_mappo_matrix.py` and
-   `python/train/mappo_matrix_eval.py` — anchor-transfer evaluation;
-   relevant for Stage 3 (transfer probe).
-7. `python/train/phase_gate/README.md` — the gate's evidence shape and CLI.
-8. The May-18 journal entries for `combat_1v1_v1`, `combat_1v1_v2`,
-   `combat_1v1_transfer_v1`, `cap_duel_v1 and transfer`, and
-   `composition_rehearsal_v2_2000` (lines ~737-947 of
-   `docs/journal/reinforcement_learning_journal.md`). They are the closest
-   prior art for this strategy.
-9. The May-21 entries (the most recent two journal sections) — what was
-   tried last and why this strategy was chosen.
+## Stage 1 — Composition Rehearsal Cap-Duel v2
 
-If a doc and the current code disagree, stop and surface the disagreement
-rather than picking silently.
+Write `experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_cap_duel_v2.yaml`
+by templating off `phase4_mappo_composition_rehearsal_v2_2000.yaml`.
+Required differences:
 
-## The Three Stages
-
-Stages are sequential. Do not skip Stage 1's tests, do not start Stage 2
-until Stage 1 passes the tests below, and do not start Stage 3 until Stage 2
-has a checkpoint that solves the duel gate.
-
-### Stage 1 — Build the cap_duel mini-game (code)
-
-Create `python/envs/phase4_cap_duel_mappo.py`. Mirror
-`Phase4Combat1v1MappoEnv` for tensor shapes, action routing, and bot-slot
-zeroing. Differences from `combat_1v1`:
-
-- Both the active learner slot and the active enemy slot spawn within
-  `point_radius` of the objective center.
-- Score ticks only when the learner is on point AND the enemy is dead OR
-  the enemy has been displaced off-point for ≥ `enemy_recontest_delay`
-  decisions.
-- Enemy can be either a scripted recontesting bot (Stage 2 self-play uses
-  a current-policy enemy via the existing self-play schedule; the
-  scripted-bot variant is the anchor-mix piece).
-- Episode length: `episode_decisions` (config-driven; default 96).
-
-Config surface (extends the existing `env.mini_game` route):
-
-```yaml
-env:
-  mini_game: cap_duel
-  mini_game_config:
-    episode_decisions: 96
-    enemy_hp: 3
-    point_radius: 0.18
-    score_ticks_to_clear: 12
-    enemy_recontest_delay: 12
-    hit_tolerance: 0.12
-    hit_reward: 1.0
-    kill_bonus: 4.0
-    score_per_tick: 0.1
-    off_point_penalty: 0.0
-    time_penalty_per_decision: 0.0
-```
-
-Wiring:
-
-- Register in `python/envs/__init__.py` next to `combat_1v1`.
-- Add to `python/train/phases.py` mini-game routing if mini-game configs
-  are dispatched there.
-- Add `python/tests/test_phase4_cap_duel_mappo.py` with at least:
-  - tensor-shape parity with `combat_1v1`,
-  - active-slot mask correctness (only one learner slot acts),
-  - score ticks DO NOT advance while the enemy is alive and on point,
-  - score ticks DO advance after kill + the configured on-point delay,
-  - deterministic reset under a fixed seed.
-
-Acceptance for Stage 1:
-
-```powershell
-cd python
-py -3.13 -m pytest tests/test_phase4_cap_duel_mappo.py `
-  tests/test_phase4_combat_1v1_mappo.py tests/test_phase4_mappo_env.py `
-  tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py -q
-py -3.13 -m scripts.check_import_boundaries
-```
-
-All tests pass; import-boundary check passes. Existing `combat_1v1` env
-tests remain green (no regressions in the shared route).
-
-### Stage 2 — Train cap_duel with self-play (config + run)
-
-Write `experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v1.yaml`:
-
-- Warm-start from `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` (the
-  cap teacher) so the policy starts knowing cap approach.
-- `env.mini_game: cap_duel`, with the `mini_game_config:` block above.
-- `env.self_play: { enabled: true }`, schedule weights `current: 0.7,
-  anchor: 0.3, snapshot: 0.0`, `anchor_bot: noop` (scripted recontester is
-  the active enemy slot only when the self-play schedule picks `anchor`).
-  Anchor mixing keeps the policy honest against a non-policy enemy.
-- PPO knobs: `num_envs: 64`, `rollout_len: 128`, `learning_rate: 1.0e-6`,
-  `entropy_coef: 0.02`, `value_normalization: true`, `gamma: 0.997`,
-  `gae_lambda: 0.95`, `lr_schedule: cosine`, `lr_final_ratio: 0.1`.
-- BC pretrain: optional, `bc_pretrain_variant: walk_and_shoot,
-  bc_pretrain_steps: 500` to re-anchor cap movement and seed the fire
-  action.
-- `run.total_updates: 250`, `eval_every: 25`, `checkpoint_every: 25`,
-  `output_dir: runs/phase4_mappo_cap_duel_selfplay_v1`.
-
-Add a `phase_gate:` block that scores Stage 2 on the duel itself, not the
-3v3 game:
-
-```yaml
-phase_gate:
-  phase: phase4_cap_duel_selfplay_v1
-  identity_requirements:
-    min_unique_seeds: 1
-  objective_checks:
-    - id: cap_duel_score
-      metric: eval/mean_score_a
-      source: wandb
-      aggregation: { type: max, window: all }
-      comparator: ">="
-      threshold: 6.0
-      min_samples: 1
-      on_missing: EVIDENCE_INSUFFICIENT
-    - id: cap_duel_kills
-      metric: eval/team_a_kills
-      source: wandb
-      aggregation: { type: max, window: all }
-      comparator: ">="
-      threshold: 5.0
-      min_samples: 1
-      on_missing: EVIDENCE_INSUFFICIENT
-    - id: cap_duel_wins
-      metric: eval/wins
-      source: wandb
-      aggregation: { type: max, window: all }
-      comparator: ">="
-      threshold: 25
-      min_samples: 1
-      on_missing: EVIDENCE_INSUFFICIENT
-  subjective_checks:
-    required: true
-    trigger_if_objective_passed: true
-    approval_rule: all_yes
-    questions:
-      - id: replay_kill_then_hold
-        prompt: "In a greedy cap_duel replay, does the learner kill or
-                 displace the enemy and then visibly remain on point long
-                 enough to convert ticks to score, rather than just
-                 trading fire?"
-```
-
-Launch the run. Capture stderr/stdout to `runs/<output_dir>/launch.log`.
-While the run is in flight, do nothing except check at long intervals for
-completion.
-
-Post-training:
-
-1. Dump one stochastic and one greedy replay of the best checkpoint via
-   `python -m scripts.dump_replay` (the cap_duel env path; if the existing
-   dumper does not support cap_duel, treat that as a Stage 1 follow-up
-   instead of broadening scope).
-2. Build evidence with `python/scripts/build_run_evidence.py`, pointing
-   `--config` at the Stage 2 yaml.
-3. Invoke the gate:
-   `py -3.13 -m train.phase_gate.cli --phase-config <yaml>
-    --run-evidence <evidence.json>
-    --output runs/<output_dir>/gate_decision.json`.
-4. Journal the run per the template at the bottom of this file.
-
-Branching:
-
-- `CLEARED` (objectives passed) or `HUMAN_INSPECTION_REQUIRED` (objectives
-  passed, subjective replay check needed): move to Stage 3 using the best
-  checkpoint as the transfer warm-start.
-- `NOT_CLEARED`: apply ONE config-only change per Decision Rules below and
-  loop Stage 2 once. After two `NOT_CLEARED` Stage-2 iterations, stop and
-  report.
-- `BLOCKED`: fix the crash/NaN/import error and rerun.
-- `EVIDENCE_INSUFFICIENT`: rebuild the missing artifact and re-invoke the
-  gate without re-training.
-
-### Stage 3 — Transfer probe to 3v3 (config + run)
-
-Write `experiments/configs/phase4/probe/phase4_mappo_cap_duel_transfer_v1.yaml`:
-
-- Warm-start from the Stage 2 best checkpoint
-  (`runs/phase4_mappo_cap_duel_selfplay_v1/mappo/ckpt_final.pt`).
-- Full Phase 4 3v3 env: `opponent_bot: weak_basic_v2`, NO mini-game flag,
-  `env.self_play.enabled: false`.
-- PPO knobs: `num_envs: 64`, `rollout_len: 128`, `learning_rate: 1.0e-6`,
-  `entropy_coef: 0.02`. Conservative LR so the duel skill is not
-  immediately unlearned under the wider 3v3 reward.
-- BC pretrain: off (warm-start already carries combat behavior; full-env
-  `walk_and_shoot` BC has previously erased it).
+- Student warm-start stays `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`.
+- Objective teacher stays the same v6.5 checkpoint with
+  `composition_objective_env.opponent_bot: weak_basic_v2`.
+- **Combat teacher swaps to**
+  `composition_combat_teacher_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt`.
+- **`composition_combat_env` swaps to cap_duel v2** by mirroring the
+  v2 yaml's `mini_game_config` block verbatim (point_radius 0.18,
+  knockback_magnitude 0.0, spawn_distance 0.4,
+  respawn_at_spawn_position true, episode_decisions 96, enemy_hp 3,
+  score_ticks_to_clear 12, enemy_recontest_delay 12, hit_tolerance
+  0.12, hit_reward 1.0, kill_bonus 4.0, score_per_tick 0.1,
+  off_point_penalty 0.0, time_penalty_per_decision 0.0).
+- Keep `composition_pretrain_steps: 2000`,
+  `composition_objective_batch_size: 256`,
+  `composition_combat_batch_size: 256`. Do not shrink — the May-18
+  failure modes include "BC composition didn't run long enough to
+  bind both skills."
+- After composition rehearsal: full Phase 4 3v3 PPO with the same
+  conservative knobs the cap_duel transfer used: `num_envs: 64`,
+  `rollout_len: 128`, `learning_rate: 1.0e-6`, `entropy_coef: 0.02`,
+  `gamma: 0.997`, `gae_lambda: 0.95`, `lr_schedule: cosine`,
+  `lr_final_ratio: 0.1`, `value_normalization: true`. No `bc_pretrain_*`
+  (composition rehearsal *is* the pretrain).
+- `env.opponent_bot: weak_basic_v2`, `env.self_play.enabled: false`.
+  No `mini_game` flag on the PPO env (only on the rehearsal combat env).
 - `run.total_updates: 200`, `eval_every: 25`, `checkpoint_every: 25`,
-  `output_dir: runs/phase4_mappo_cap_duel_transfer_v1`.
+  `output_dir: runs/phase4_mappo_composition_rehearsal_cap_duel_v2`.
 
-`phase_gate:` block reuses the canonical Phase 4 anchor-transfer bar — the
-same thresholds applied to `anchor_mix_v2_long`:
+Stage 1 `phase_gate:` block is the canonical Phase 4 anchor-transfer
+bar. Do not weaken any threshold:
 
 ```yaml
 phase_gate:
-  phase: phase4_cap_duel_transfer_v1
+  phase: phase4_composition_rehearsal_cap_duel_v2
   identity_requirements:
     min_unique_seeds: 1
   objective_checks:
@@ -301,97 +136,71 @@ phase_gate:
     trigger_if_objective_passed: true
     approval_rule: all_yes
     questions:
-      - id: replay_transfer_intact
-        prompt: "In a greedy 3v3 replay vs weak_basic_v2, does the kill-and-hold
-                 behavior from cap_duel still happen, or has full-env PPO
+      - id: replay_kill_then_hold_3v3
+        prompt: "In a greedy 3v3 replay vs weak_basic_v2, does the
+                 kill-or-displace-then-hold behavior visible in cap_duel
+                 v2 still happen in the full 3v3, or has full-env PPO
                  erased it?"
 ```
 
-Post-training: matrix eval vs `noop`, `weak_basic_v2`, `basic`; stochastic
-+ greedy replays; evidence; gate; journal. Same shape as Stage 2.
+**Pre-PPO kill-switch.** Before letting the PPO loop run, the
+composition rehearsal path produces a post-BC eval. Watch:
 
-## Decision Rules For Config Changes
+- Team A `hit_fire` on `weak_basic_v2`: should be visibly above `0.04`.
+  If at `~0.0145` like the failed cap_duel transfer v1's update-25
+  eval, composition rehearsal didn't preserve combat and PPO won't
+  rescue it — stop and apply the Stage 1 fallback below.
 
-Apply at most ONE change per iteration so signal is interpretable.
+Post-training: matrix eval vs `noop`/`weak_basic_v2`/`basic`, dump one
+greedy and one stochastic 3v3 replay, build evidence, invoke gate,
+journal.
 
-**Stage 1 (env build) failures:**
+## Decision Rules
 
-- A focused test fails → fix the env code, don't relax the test. If the
-  test reveals a design ambiguity, surface it.
-- An unrelated `combat_1v1` test regresses → revert the change that
-  introduced the regression; the new env must not share mutable state
-  with `combat_1v1`.
-
-**Stage 2 (cap_duel self-play) failures:**
-
-- BC produces zero score and PPO never moves off it → raise
-  `bc_pretrain_steps` (500 → 1000) once, then if still flat, switch
-  warm-start from `phase4_mappo_basic_v6_5` to
-  `phase4_mappo_combat_1v1_v2` if/when that checkpoint exists; otherwise
-  stop and report.
-- Eval score moves but never crosses gate → reduce
-  `time_penalty_per_decision` to 0 if non-zero, or raise `kill_bonus`
-  (4.0 → 6.0). One tweak, then loop.
-- Self-play collapses into mutual stalemate (both score 0 across all
-  evals) → raise `current` weight in the self-play schedule (0.7 → 0.85)
-  so anchor episodes are rarer. One tweak.
-- LR feels too aggressive (oscillating eval score) → halve LR (1.0e-6 →
-  5.0e-7). One tweak.
-
-**Stage 3 (transfer probe) failures:**
-
-- Transfer eval still scores 0 by update 50 → escalate. The cap_duel skill
-  is not surviving the 3v3 reward gradient. Recommend one of: Strategy 3
-  (focus-fire target conditioning, code change), or composition rehearsal
-  with the new cap_duel teacher (config change once that path is unblocked).
-- Transfer scores nonzero against `weak_basic_v2` but loses 50/50 vs
-  `basic` → that is partial progress; CLEARED is reserved for the
-  weak_basic_v2 anchor bar. Document and surface.
-
-**Out of scope without explicit user approval:**
-
-- Modifying C++ sim or `MatchConfig` schema.
-- Modifying replay format.
-- Adding new aux losses or new actor heads.
-- Modifying the canonical Phase 4 reward.
-- Modifying `phase_gate:` thresholds, metric names, or comparators on
-  either stage gate.
+- Post-BC `hit_fire` collapsed below `0.04` before PPO starts →
+  composition rehearsal failed to preserve combat. Raise
+  `composition_pretrain_steps` (2000 → 4000) once and verify the
+  `composition_combat_env.mini_game_config` block matches the cap_duel
+  v2 yaml field-for-field. One tweak, then loop.
+- Post-BC OK but PPO drifts and final `hit_fire` ends below `0.04`
+  with score 0 → reduce LR (`1.0e-6 → 5.0e-7`) once. If that also
+  fails, surface for user decision (a distillation-anchor pass during
+  PPO would attack this directly but is code-change scope).
+- Post-BC OK, PPO holds combat, learner still loses objective race vs
+  `weak_basic_v2` → raise `composition_objective_batch_size`
+  (256 → 512) once.
+- `weak_basic_v2_wins` > 0 but < 5 while score clears 3.0 → partial
+  progress; document and surface, do not relax the gate.
 
 ## Stop Conditions
 
-The loop stops when any of these are true:
-
-- Stage 3 returns `CLEARED`.
-- Stage 3 returns `HUMAN_INSPECTION_REQUIRED`.
-- Two consecutive Stage 2 iterations return `NOT_CLEARED`.
-- Two consecutive Stage 3 iterations return `NOT_CLEARED`.
+- Stage 1 returns `CLEARED` or `HUMAN_INSPECTION_REQUIRED`.
+- Two consecutive Stage 1 `NOT_CLEARED` iterations.
 - Total wall-clock training time exceeds 24 hours.
+- A run returns `BLOCKED` and the cause is not config-fixable in under
+  30 minutes (surface to user).
 - Disk space under `runs/` drops below 10 GB free.
-- A run returns `BLOCKED` and the cause is not config-fixable in under 30
-  minutes (then surface to user).
 
 ## Verification Commands
 
-Stage 1 (env build), before declaring Stage 1 complete:
+Before launching:
 
 ```powershell
 cd python
 py -3.13 -m pytest tests/test_phase4_cap_duel_mappo.py `
   tests/test_phase4_combat_1v1_mappo.py tests/test_phase4_mappo_env.py `
-  tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py -q
+  tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py `
+  tests/test_mappo_composition_rehearsal.py tests/test_mappo_pretrain_hooks.py `
+  tests/test_mappo_team_spirit_ramp.py -q
 py -3.13 -m scripts.check_import_boundaries
 ```
 
-Stage 2 / Stage 3, before launching each training run:
+If `test_mappo_composition_rehearsal.py` does not yet exercise the
+`mini_game: cap_duel` combat env path, add one focused parameterization
+(tensor shape + finite BC loss + verifies v2 knobs are honored) before
+launching. A single focused test counts as bug-fix scope.
 
-```powershell
-cd python
-py -3.13 -m pytest tests/test_phase4_mappo_env.py `
-  tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py `
-  tests/test_mappo_team_spirit_ramp.py -q
-```
-
-After each completed run, before invoking the gate:
+After the completed run, before the gate:
 
 ```powershell
 py -3.13 -m pytest tests/test_phase4_checkpoint_replay_dump.py -q
@@ -399,97 +208,36 @@ py -3.13 -m pytest tests/test_phase4_checkpoint_replay_dump.py -q
 
 ## Completion Criteria
 
-The loop is complete when **either**:
-
-1. A `gate_decision.json` with `status: CLEARED` exists for the Stage 3
-   transfer config, the result is journaled, a phase-result doc is written
-   under `docs/plans/archive/<date>-phase4-result.md`, and the user has
-   been notified. **OR**
-
-2. A stop condition has been hit, every stage and iteration is journaled
-   with its gate decision artifact (or with an explicit explanation of why
-   the gate was not reached), and a short hand-off note explains what
-   was tried, what failed, and which escalation (Strategy 3 focus-fire,
-   composition rehearsal once the combat teacher is rebuilt, or a different
-   code-level change) is recommended next.
-
-## Completion Metadata
-
-When reporting completion, include:
-
-```json
-{
-  "stages": [
-    {
-      "stage": "cap_duel_env_build",
-      "files_added": [],
-      "tests_run": [],
-      "test_status": null,
-      "regressions": []
-    },
-    {
-      "stage": "cap_duel_selfplay",
-      "iterations": [
-        {
-          "config_path": null,
-          "git_commit": null,
-          "seed": null,
-          "wandb_run_url": null,
-          "output_dir": null,
-          "evidence_path": null,
-          "gate_decision_path": null,
-          "status": null,
-          "failing_checks": [],
-          "replay_artifacts": [],
-          "viewer_command": null
-        }
-      ]
-    },
-    {
-      "stage": "cap_duel_transfer",
-      "iterations": []
-    }
-  ],
-  "final_status": null,
-  "stop_reason": null,
-  "next_step_recommendation": null,
-  "residual_risk": []
-}
-```
-
-## Journal Entry Template
-
-```
-## YYYY-MM-DD — Phase 4 <stage> <config purpose> (iteration N)
-
-**Config:** ../experiments/configs/.../<file>.yaml
-**Git commit:** <hash>  **Seed:** <seed_base>
-**W&B:** <url>  **Output:** runs/<output_dir>/
-**Gate status:** CLEARED / NOT_CLEARED / ...
-**Gate reason:** <decision.final_reason>
-**Failing checks (if any):** id=value vs threshold
-**Manifest summary:** best_eval_update_idx, score_a/score_b, kills, wins/losses
-**Anchor transfer (Stage 3 only):** vs noop / weak_basic_v2 / basic — one line each
-**Decision:** continuing with <next config or change> / stopping / awaiting review
-```
+- `gate_decision.json` with `status: CLEARED` or `HUMAN_INSPECTION_REQUIRED`
+  exists for the Stage 1 composition-rehearsal-v2 config, the result
+  is journaled, a phase-result doc is written under
+  `docs/plans/archive/<date>-phase4-composition-cap-duel-v2-result.md`,
+  and the user has been notified, **OR**
+- A stop condition has been hit, every iteration is journaled with its
+  gate decision artifact (or an explicit explanation why it wasn't
+  reached), and a short hand-off note explains what was tried and what
+  to try next.
 
 ## Good `/goal` Prompt
 
 ```text
-Use GOAL_INSTRUCTIONS.md as the active goal. Solve Phase 4 by building the
-cap_duel mini-game env, training it with current-vs-current self-play
-warm-started from phase4_mappo_basic_v6_5, and then warm-starting a 3v3
-transfer probe against weak_basic_v2. For each stage, follow the gate
-loop: build evidence, invoke phase_gate.cli, journal the result, branch
-per Decision Rules. Stage 1 acceptance is focused-pytest pass +
-check_import_boundaries pass without regressing combat_1v1. Stage 2
-clears when the cap_duel-specific gate (eval/mean_score_a >= 6.0,
-eval/team_a_kills >= 5.0, eval/wins >= 25) passes. Stage 3 clears when
-the canonical Phase 4 anchor gate passes (eval/mean_score_a >= 3.0 vs
-weak_basic_v2, eval/wins >= 5, matrix transfer to basic, no losses to
-noop). Do not weaken gate thresholds, do not change game/reward/obs/
-action/replay/MAPPO-core or C++ sim semantics, do not commit, and do
-not exceed two NOT_CLEARED iterations per stage or 24h of total training
-wall time before stopping and reporting. On CLEARED, write a phase-result
-doc under docs/plans/archive/ and return the completion metadata block.
+Use GOAL_INSTRUCTIONS.md as the active goal. Stage 1: composition
+rehearsal with cap_duel v2 as the combat teacher. Student warm-start
+phase4_mappo_basic_v6_5; objective teacher stays
+phase4_mappo_basic_v6_5; combat teacher
+runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt;
+composition_combat_env.mini_game=cap_duel with the v2 mini_game_config
+block mirrored verbatim (knockback_magnitude 0, spawn_distance 0.4,
+respawn_at_spawn_position true). composition_pretrain_steps=2000.
+Then 200 PPO updates in full 3v3 vs weak_basic_v2 at lr=1e-6,
+entropy 0.02, no bc_pretrain. Kill-switch: if post-BC team_a_hit_fire
+on weak_basic_v2 < 0.04, stop and apply the Stage 1 fallback. Gate
+is the canonical Phase 4 anchor-transfer bar (mean_score_a >= 3.0,
+wins >= 5, hit_fire >= 0.04, matrix vs basic >= 1.0, no losses to
+noop). Do not weaken thresholds, do not change game/reward/obs/action/
+replay/MAPPO-core or C++ sim, do not add aux losses or actor heads,
+do not commit. Stop on CLEARED or HUMAN_INSPECTION_REQUIRED, after two
+NOT_CLEARED iterations, or 24h total training wall time. On CLEARED,
+write a phase-result doc under docs/plans/archive/ and return the
+completion metadata block.
 ```
