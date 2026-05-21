@@ -185,6 +185,24 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
     assert rows[0]["opponent_type"] == "bot"
     assert rows[0]["opponent"] == "noop"
     assert rows[0]["episodes"] == 1
+    transfer_json = tmp_path / "phase4_matrix" / "mappo" / "transfer_summary.json"
+    transfer_md = tmp_path / "phase4_matrix" / "mappo" / "transfer_summary.md"
+    transfer_payload = json.loads(transfer_json.read_text(encoding="utf-8"))
+    assert transfer_payload["gate_status"] in {"pass", "evidence_insufficient"}
+    assert len(transfer_payload["rows"]) == 1
+    assert transfer_md.exists()
+
+
+def test_train_config_transfer_gate_can_fail_on_insufficient_evidence(tmp_path: Path) -> None:
+    config = _phase4_smoke_matrix_config(tmp_path, "phase4_matrix_fail")
+    config["run"]["matrix_eval"]["anchor_bots"] = ["basic"]
+    config["run"]["matrix_eval"]["transfer_fail_on_insufficient"] = True
+    try:
+        train_phase4_from_config(config)
+    except RuntimeError as exc:
+        assert "transfer gate evidence insufficient" in str(exc)
+    else:
+        raise AssertionError("expected transfer gate failure")
 
 
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:
