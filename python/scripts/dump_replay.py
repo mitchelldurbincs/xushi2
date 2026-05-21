@@ -43,6 +43,7 @@ from scripts.replay_dump.rollout import (
     dump_phase3,
     load_mappo_checkpoint,
 )
+from train.runtime_adapter import resolve_runtime_env_factory
 
 
 def main() -> int:
@@ -73,6 +74,11 @@ def main() -> int:
     ckpt_config = dict(raw_ckpt.get("config", {}))
     if "mappo" in ckpt_config:
         model, ckpt_config = load_mappo_checkpoint(args.checkpoint)
+        resolve_runtime_env_factory(
+            ckpt_config,
+            require_learner="mappo",
+            context="MAPPO replay dump",
+        )
         n_decisions = dump_mappo(
             model,
             ckpt_config,

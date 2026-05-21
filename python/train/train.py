@@ -121,9 +121,12 @@ def _assert_identical(pass_a: list[EpisodeResult], pass_b: list[EpisodeResult]) 
 
 
 def normalize_entry_config(config: dict) -> NormalizedEntryConfig:
-    from train.runtime_specs import resolve_runtime_spec
+    from train.runtime_adapter import resolve_runtime_env_factory
 
-    runtime = resolve_runtime_spec(config)
+    runtime, _env_fn, _seed_base = resolve_runtime_env_factory(
+        config,
+        context="training entrypoint",
+    )
     env_cfg = dict(config.get("env", {}))
     sim_cfg = dict(config.get("sim", {}))
     if runtime.env.kind in ("memory_toy", "ranger_duel", "mappo_match"):
@@ -209,9 +212,14 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
 
         result = train_from_config(full_config)
         recurrent = float(result["recurrent"])
-        from train.runtime_specs import resolve_runtime_spec
+        from train.runtime_adapter import resolve_runtime_env_factory
 
-        if "feedforward" in resolve_runtime_spec(full_config).learner.training_variants:
+        runtime, _env_fn, _seed_base = resolve_runtime_env_factory(
+            full_config,
+            require_learner="ppo_recurrent",
+            context="recurrent PPO phase",
+        )
+        if "feedforward" in runtime.learner.training_variants:
             feedforward = float(result["feedforward"])
             gap = recurrent - feedforward
             print(

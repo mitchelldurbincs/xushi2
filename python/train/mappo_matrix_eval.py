@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from train.checkpoint_runtime import checkpoint_runtime
+from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo_eval_gate_io import read_json_artifact as read_json_artifact
 from train.mappo_eval_gate_io import write_json_artifact
 from train.mappo_evaluate import evaluate_mappo
@@ -118,10 +119,12 @@ def _checkpoint_runtime_env_fn(
     *,
     error_message: str,
 ):
-    runtime = checkpoint_runtime({"env": env_cfg, "mappo": dict(mappo_cfg or {})}).runtime
-    if runtime.env_fn is None:
-        raise ValueError(error_message)
-    return runtime.env_fn
+    _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
+        {"env": env_cfg, "mappo": dict(mappo_cfg or {})},
+        require_learner="mappo",
+        context=error_message,
+    )
+    return env_fn
 
 
 def matrix_native_bot_env_fn(

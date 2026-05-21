@@ -20,6 +20,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from train.checkpoint_runtime import checkpoint_runtime
+from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
 from train.mappo_evaluate import eval_stats_dict
 from train.mappo_matrix_eval import (
@@ -74,14 +75,12 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
         bot,
         learner_team=learner_team,
     )
-    ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
-    runtime = ckpt_runtime.runtime
-    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
-        raise ValueError(
-            "native bot matrix eval requires a MAPPO runtime, "
-            f"got learner={runtime.learner.kind!r} env={runtime.env.kind!r}"
-        )
-    return runtime.env_fn
+    _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
+        {**ckpt_config, "env": env_cfg},
+        require_learner="mappo",
+        context="native bot matrix eval",
+    )
+    return env_fn
 
 
 def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
@@ -89,14 +88,12 @@ def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
         CheckpointEnvConfig(dict(ckpt_config.get("env", {}))),
         snapshot_path,
     )
-    ckpt_runtime = checkpoint_runtime({**ckpt_config, "env": env_cfg})
-    runtime = ckpt_runtime.runtime
-    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
-        raise ValueError(
-            "snapshot matrix eval requires a MAPPO runtime, "
-            f"got learner={runtime.learner.kind!r} env={runtime.env.kind!r}"
-        )
-    return runtime.env_fn
+    _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
+        {**ckpt_config, "env": env_cfg},
+        require_learner="mappo",
+        context="snapshot matrix eval",
+    )
+    return env_fn
 
 
 def _result_row(

@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.runtime_specs import resolve_runtime_spec
+from train.runtime_adapter import resolve_runtime_env_factory
 from train.train import load_config
 
 
@@ -25,13 +25,11 @@ def main() -> int:
     ppo_cfg = dict(config.get("ppo", {}))
     ppo_cfg["vector_env"] = args.vector_env
     config["ppo"] = ppo_cfg
-    runtime = resolve_runtime_spec(config)
-    if runtime.learner.kind != "mappo" or runtime.env_fn is None:
-        raise ValueError(
-            f"rollout benchmark requires MAPPO runtime, got learner={runtime.learner.kind!r}"
-        )
-    env_fn = runtime.env_fn
-    seed_base = runtime.seed_base
+    runtime, env_fn, seed_base = resolve_runtime_env_factory(
+        config,
+        require_learner="mappo",
+        context="rollout benchmark",
+    )
     cfg = make_mappo_config(config)
 
     out_runs = []
