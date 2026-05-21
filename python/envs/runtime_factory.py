@@ -64,9 +64,18 @@ def make_mappo_match_env(
     map_cfg = dict(map_randomization or {})
     league_cfg = dict(snapshot_league or {})
 
+    if mini_game == "cap_duel":
+        from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
+
+        return Phase4CapDuelMappoEnv(
+            **mini_cfg,
+            self_play_schedule=(self_play_schedule if self_play else None),
+            snapshot_league=(snapshot_league if self_play else None),
+        )
+
     if self_play:
         if mini_game not in (None, ""):
-            raise ValueError("current self-play cannot be combined with mini_game")
+            raise ValueError("current self-play can only be combined with cap_duel mini_game")
         from envs.phase4_selfplay_mappo import Phase4CurrentSelfplayMappoEnv
 
         return Phase4CurrentSelfplayMappoEnv(
@@ -96,10 +105,6 @@ def make_mappo_match_env(
         from envs.phase4_combat_1v1_mappo import Phase4Combat1v1MappoEnv
 
         return Phase4Combat1v1MappoEnv(**mini_cfg)
-    if mini_game == "cap_duel":
-        from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
-
-        return Phase4CapDuelMappoEnv(**mini_cfg)
     if mini_game not in (None, ""):
         raise ValueError(f"unknown mappo mini_game {mini_game!r}")
 

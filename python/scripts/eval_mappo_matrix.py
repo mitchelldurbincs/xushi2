@@ -75,12 +75,7 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
         bot,
         learner_team=learner_team,
     )
-    _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
-        {**ckpt_config, "env": env_cfg},
-        require_learner="mappo",
-        context="native bot matrix eval",
-    )
-    return env_fn
+    return _checkpoint_env_fn(ckpt_config, env_cfg, context="native bot matrix eval")
 
 
 def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
@@ -88,10 +83,20 @@ def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
         CheckpointEnvConfig(dict(ckpt_config.get("env", {}))),
         snapshot_path,
     )
+    return _checkpoint_env_fn(ckpt_config, env_cfg, context="snapshot matrix eval")
+
+
+def _checkpoint_env_fn(ckpt_config: dict, env_cfg: dict, *, context: str):
+    env_cfg = dict(env_cfg)
+    env_cfg.setdefault("kind", "mappo_match")
     _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
-        {**ckpt_config, "env": env_cfg},
+        {
+            "env": env_cfg,
+            "mappo": dict(ckpt_config.get("mappo", {})),
+            "learner": {"kind": "mappo"},
+        },
         require_learner="mappo",
-        context="snapshot matrix eval",
+        context=context,
     )
     return env_fn
 

@@ -1582,3 +1582,28 @@ sweep) is a new diagnostic data point: anchor mixing did teach the policy
 to convert when the opponent does not contest, but the missing piece is
 still combat conversion against a fire-back opponent.
 
+## 2026-05-21 — Phase 4 cap_duel self-play v1 (iteration 1)
+
+**Config:** `../experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v1.yaml`
+**Git commit:** `c562fcf7b571b837b167e6195eecf2297fc8c0f9`  **Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/64zvtdgr  **Output:** `runs/phase4_mappo_cap_duel_selfplay_v1/`
+**Gate status:** HUMAN_INSPECTION_REQUIRED
+**Gate reason:** Objective checks passed; awaiting human subjective review.
+**Failing checks (if any):** none. Passing checks: `cap_duel_score=9.02 >= 6.0`, `cap_duel_kills=56.0 >= 5.0`, `cap_duel_wins=32 >= 25`.
+**Manifest summary:** `best_eval_update_idx=225`, best eval reward `+4.747`, `28W/11L/11D`, score `7.66/3.76`, mean kills `1.02/0.76`. Highest eval score was `9.02` at update `150`; highest eval wins was `32/50` at updates `50` and `175`.
+**Replay artifacts:** `../data/replays/phase4_cap_duel_selfplay_v1_ckpt_final_greedy.replay`, `../data/replays/phase4_cap_duel_selfplay_v1_ckpt_final_stochastic.replay`.
+**Gate artifacts:** `runs/phase4_mappo_cap_duel_selfplay_v1/evidence.json`, `runs/phase4_mappo_cap_duel_selfplay_v1/gate_decision.json`.
+**Decision:** continuing to Stage 3 transfer probe per GOAL_INSTRUCTIONS.md Stage 2 branching. Subjective replay question remains: approve/reject whether the greedy cap_duel replay shows kill/displace-then-hold behavior rather than just trading fire.
+
+## 2026-05-21 - Phase 4 cap_duel transfer v1 (iteration 1)
+
+**Config:** `../experiments/configs/phase4/probe/phase4_mappo_cap_duel_transfer_v1.yaml`
+**Git commit:** `c562fcf7b571b837b167e6195eecf2297fc8c0f9`  **Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/s02dhwwd  **Output:** `runs/phase4_mappo_cap_duel_transfer_v1/`
+**Gate status:** NOT_REACHED
+**Gate reason:** Transfer probe was stopped after the update-50 eval per `GOAL_INSTRUCTIONS.md` Stage 3 Decision Rules: "Transfer eval still scores 0 by update 50 -> escalate." The run was intentionally stopped before final checkpoint, replay dump, matrix eval, evidence build, or phase-gate invocation.
+**Failing checks (if any):** No gate artifact was produced. The update-50 eval would fail the configured transfer gate on `weak_basic_v2_score` (`eval/mean_score_a=0.00 < 3.0`) and `weak_basic_v2_wins` (`eval/wins=0 < 5`). `hit_fire_floor` would also fail at update 50 (`eval/team_a_hit_fire=0.0145 < 0.04`).
+**Manifest summary:** no final manifest. Update 25 eval: `0W/0L/50D`, score `0.00/0.00`, kills `0.0/2.0`, hit_fire `0.0161/0.2111`, majority seconds `0.00/56.00`. Update 50 eval: `0W/0L/50D`, score `0.00/0.00`, kills `0.0/2.0`, hit_fire `0.0145/0.2111`, majority seconds `0.00/56.00`, damage from fire `14.5/211.1`.
+**Anchor transfer (Stage 3 only):** not run because the update-50 zero-score escalation rule fired before final checkpoint and matrix eval.
+**Replay artifacts:** none for Stage 3; replay dump was not run because the transfer gate was not reached.
+**Decision:** stopping this cap_duel transfer loop and reporting back. Stage 2 solved the cap_duel objective gate objectively, but the skill did not survive transfer into the full 3v3 reward gradient against `weak_basic_v2`. Recommended next escalation is Strategy 3 focus-fire target conditioning, or a composition rehearsal that uses the cap_duel teacher as the available combat/objective teacher. Both require explicit approval before additional code-level or training-plan changes.

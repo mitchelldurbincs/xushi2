@@ -168,7 +168,22 @@ def dump_mappo(
                                 "enabled", False
                             )
                         )
-                        if self_play_enabled:
+                        mini_game = ckpt_runtime.env_cfg.get("mini_game")
+                        if self_play_enabled and mini_game == "cap_duel":
+                            if len(policy_slots) != 3:
+                                raise ValueError(
+                                    "cap_duel self-play replay dump requires three policy slots"
+                                )
+                            slots = [
+                                policy_slots[0],
+                                zero_slot,
+                                zero_slot,
+                                policy_slots[1],
+                                zero_slot,
+                                zero_slot,
+                            ]
+                            opponent_actions_raw = None
+                        elif self_play_enabled:
                             if len(policy_slots) != 6:
                                 raise ValueError(
                                     "phase4 self-play replay dump requires six policy slots"

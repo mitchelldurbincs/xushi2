@@ -603,10 +603,16 @@ def resolve_phase(config: dict) -> tuple[int, dict]:
     spec = PHASE_REGISTRY.get(phase)
     if spec is None:
         raise ValueError(f"unsupported phase/config shape: phase={raw_phase!r}")
-    if phase == 4 and bool(
-        dict(config.get("env", {}).get("self_play", {})).get("enabled", False)
+    env_cfg = dict(config.get("env", {}))
+    if (
+        phase == 4
+        and bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
+        and env_cfg.get("mini_game") != "cap_duel"
     ):
         spec = dict(spec)
         spec["label"] = "phase4_selfplay"
         spec["n_agents"] = 6
+    elif phase == 4 and bool(dict(env_cfg.get("self_play", {})).get("enabled", False)):
+        spec = dict(spec)
+        spec["label"] = "phase4_selfplay"
     return phase, spec

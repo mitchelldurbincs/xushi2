@@ -19,8 +19,9 @@ import yaml
 
 
 _WANDB_URL_RE = re.compile(r"(https://wandb\.ai/[A-Za-z0-9\-_/]+/runs/[A-Za-z0-9]+)")
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _CRASH_RE = re.compile(
-    r"Traceback|Error:|error:|FAILED|assert\s|Killed|OOM|RuntimeError|ImportError",
+    r"Traceback|(?:^|\b)(?:Error:|error:)|\bFAILED\b|assert\s|Killed|OOM|RuntimeError|ImportError",
     re.IGNORECASE,
 )
 _NAN_RE = re.compile(r"\bnan\b|NaN", re.IGNORECASE)
@@ -31,7 +32,9 @@ def _scan_launch_log(path: Path) -> tuple[str | None, bool, bool, bool]:
     """Return (wandb_url, crashed, saw_nan, import_error) from launch.log."""
     if not path.exists():
         return None, False, False, False
-    text = path.read_text(encoding="utf-8", errors="replace")
+    raw = path.read_bytes()
+    encoding = "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8"
+    text = _ANSI_RE.sub("", raw.decode(encoding, errors="replace"))
     wandb_match = _WANDB_URL_RE.search(text)
     wandb_url = wandb_match.group(1) if wandb_match else None
     crashed = bool(_CRASH_RE.search(text))
@@ -100,12 +103,26 @@ def _wandb_history_metrics(wandb_url: str | None) -> dict[str, list[float]]:
         return {}
     metrics: dict[str, list[float]] = {}
     for entry in history:
+        numeric_entry: dict[str, float] = {}
         for key, value in entry.items():
             if not isinstance(value, (int, float)):
                 continue
             if not (key.startswith("eval/") or key.startswith("canonical_eval/")):
                 continue
+            numeric_entry[key] = float(value)
             metrics.setdefault(key, []).append(float(value))
+        for prefix in ("eval", "canonical_eval"):
+            mean_kills_a = numeric_entry.get(f"{prefix}/mean_kills_a")
+            mean_kills_b = numeric_entry.get(f"{prefix}/mean_kills_b")
+            episodes = numeric_entry.get(f"{prefix}/episodes")
+            if mean_kills_a is not None and episodes is not None:
+                metrics.setdefault(f"{prefix}/team_a_kills", []).append(
+                    float(mean_kills_a) * float(episodes)
+                )
+            if mean_kills_b is not None and episodes is not None:
+                metrics.setdefault(f"{prefix}/team_b_kills", []).append(
+                    float(mean_kills_b) * float(episodes)
+                )
     return metrics
 
 
@@ -129,7 +146,10 @@ def build_evidence(
 ) -> dict:
     launch_log = run_dir / "launch.log"
     wandb_url, crashed, saw_nan, import_err = _scan_launch_log(launch_log)
-    matrix_files = sorted((run_dir / "mappo").glob("anchor_eval_*.json"))
+    matrix_files = [
+        *sorted((run_dir / "mappo").glob("anchor_eval_*.json")),
+        *sorted((run_dir / "mappo").glob("matrix_eval*.json")),
+    ]
     matrix_metrics = _matrix_metrics_from_anchor_files(matrix_files)
     wandb_metrics = _wandb_history_metrics(wandb_url)
     metrics: dict[str, list[float]] = {**wandb_metrics, **matrix_metrics}

@@ -1,21 +1,28 @@
 phase: 4
 metadata:
   phase: phase4
-  purpose: cap_duel_transfer
+  purpose: cap_duel_transfer_v1
   status: experimental
-  expected_runtime: short
+  expected_runtime: medium
   gate_relevance:
-  - phase4_objective_combat_composition
-  hypothesis: "A checkpoint that solves the cap-duel mini-game may transfer objective-coupled combat timing into full 3v3 weak_basic_v2."
-  falsification_criteria: "Falsified if update-50 eval has 0 Team A score, 0 wins, and on-point contact below 0.25."
-  max_updates_if_no_signal: 50
-  lineage: "Scale-up probe after phase4_mappo_cap_duel_v1 solved cap_duel at update 50 and update 75."
-  provenance: "Strategy 2 from docs/reports/2026-05-18-phase4-strategic-proposal.md."
+    - phase4_anchor_transfer
+    - phase4_objective_combat_composition
+  hypothesis: "A cap_duel self-play checkpoint that clears the duel objective checks may transfer kill-and-hold behavior into full 3v3 weak_basic_v2."
+  falsification_criteria: "Falsified if transfer eval still scores 0 by update 50, or if the configured Phase 4 anchor gate is not cleared after two transfer iterations."
+  lineage: "GOAL_INSTRUCTIONS.md Stage 3 warm-start from phase4_mappo_cap_duel_selfplay_v1."
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_cap_duel
 
 env:
   seed_base: 3519994490
   opponent_bot: weak_basic_v2
   learner_team: A
+  self_play:
+    enabled: false
   reward:
     score_per_second: 1.0
     time_penalty_per_second: 0.05
@@ -67,10 +74,71 @@ ppo:
   team_spirit_ramp_fraction: 0.3
 
 run:
-  total_updates: 50
-  eval_every: 50
+  total_updates: 200
+  eval_every: 25
   eval_episodes: 50
-  checkpoint_every: 50
+  checkpoint_every: 25
   log_every: 5
   output_dir: runs/phase4_mappo_cap_duel_transfer_v1
-  init_from_checkpoint: runs/phase4_mappo_cap_duel_v1/mappo/ckpt_0075.pt
+  init_from_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v1/mappo/ckpt_final.pt
+  bc_pretrain_steps: 0
+  matrix_eval:
+    episodes: 50
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_cap_duel_transfer_v1
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_basic_score
+      metric: matrix/anchor/basic/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_transfer_intact
+        prompt: "In a greedy 3v3 replay vs weak_basic_v2, does the kill-and-hold behavior from cap_duel still happen, or has full-env PPO erased it?"

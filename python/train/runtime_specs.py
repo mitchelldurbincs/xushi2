@@ -212,7 +212,9 @@ def _explicit_mappo_match_spec(
     map_randomization = dict(env_cfg.get("map_randomization", {}))
     snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
     self_play = bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
-    n_agents = int(env_cfg.get("n_agents", 6 if self_play else env_cfg.get("team_size", 3)))
+    mini_game = env_cfg.get("mini_game")
+    default_agents = 3 if mini_game == "cap_duel" else 6 if self_play else env_cfg.get("team_size", 3)
+    n_agents = int(env_cfg.get("n_agents", default_agents))
     shapes = _mappo_shapes(actor_obs=actor_obs, target_slot=target_slot, n_agents=n_agents)
     ckpt_env_cfg = {
         **base_cfg,
