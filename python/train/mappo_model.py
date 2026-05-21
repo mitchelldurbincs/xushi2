@@ -138,6 +138,24 @@ class MappoEvalStats:
     mean_cap_progress_gain_ticks: float = 0.0
     mean_cap_progress_loss_ticks: float = 0.0
     mean_first_team_a_alive_edge_to_score_seconds: float = -1.0
+    majority_to_uncontested_within_n_fraction_a: float = 0.0
+    majority_to_uncontested_within_n_fraction_b: float = 0.0
+    contested_majority_windows_per_episode_a: float = 0.0
+    contested_majority_windows_per_episode_b: float = 0.0
+    contested_majority_window_mean_seconds_a: float = 0.0
+    contested_majority_window_mean_seconds_b: float = 0.0
+    contested_majority_window_p50_seconds_a: float = 0.0
+    contested_majority_window_p50_seconds_b: float = 0.0
+    contested_majority_window_p90_seconds_a: float = 0.0
+    contested_majority_window_p90_seconds_b: float = 0.0
+    on_point_nearest_enemy_distance_mean_a: float = 0.0
+    on_point_nearest_enemy_distance_mean_b: float = 0.0
+    on_point_enemy_los_fraction_a: float = 0.0
+    on_point_enemy_los_fraction_b: float = 0.0
+    contested_majority_hit_fire_a: float = 0.0
+    contested_majority_hit_fire_b: float = 0.0
+    contested_majority_damage_per_fire_a: float = 0.0
+    contested_majority_damage_per_fire_b: float = 0.0
     objective_unlock_seconds: float = 0.0
     objective_capture_seconds: float = 0.0
 
