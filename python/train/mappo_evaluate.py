@@ -29,6 +29,9 @@ def _empty_combat_totals() -> dict[str, Any]:
         "aim_error_sum": 0.0,
         "aim_error_count": 0,
         "target_counts": {},
+        "contested_majority_fire_commands": 0,
+        "contested_majority_damage_hits": 0,
+        "contested_majority_damage_centi_hp": 0,
     }
 
 
@@ -39,6 +42,11 @@ def _merge_combat_metrics(dst: dict[str, Any], src: dict[str, Any]) -> None:
     dst["damage_centi_hp"] += int(src.get("damage_centi_hp", 0))
     dst["aim_error_sum"] += float(src.get("aim_error_sum", 0.0))
     dst["aim_error_count"] += int(src.get("aim_error_count", 0))
+    dst["contested_majority_fire_commands"] += int(src.get("contested_majority_fire_commands", 0))
+    dst["contested_majority_damage_hits"] += int(src.get("contested_majority_damage_hits", 0))
+    dst["contested_majority_damage_centi_hp"] += int(
+        src.get("contested_majority_damage_centi_hp", 0)
+    )
     counts = dst["target_counts"]
     for raw_target, raw_count in dict(src.get("target_counts", {})).items():
         target = int(raw_target)
@@ -85,12 +93,28 @@ _OBJECTIVE_METRIC_KEYS = (
     "alive_edge_no_score_seconds_b",
     "cap_progress_gain_ticks",
     "cap_progress_loss_ticks",
+    "contested_majority_flag_a",
+    "contested_majority_flag_b",
+    "on_point_nearest_enemy_distance_sum_a",
+    "on_point_nearest_enemy_distance_count_a",
+    "on_point_enemy_los_count_a",
+    "on_point_total_count_a",
+    "on_point_nearest_enemy_distance_sum_b",
+    "on_point_nearest_enemy_distance_count_b",
+    "on_point_enemy_los_count_b",
+    "on_point_total_count_b",
 )
 
 
 def _empty_objective_totals() -> dict[str, float]:
     out = {key: 0.0 for key in _OBJECTIVE_METRIC_KEYS}
     out["first_team_a_alive_edge_to_score_seconds"] = -1.0
+    out["majority_to_uncontested_within_n_num_a"] = 0.0
+    out["majority_to_uncontested_within_n_den_a"] = 0.0
+    out["majority_to_uncontested_within_n_num_b"] = 0.0
+    out["majority_to_uncontested_within_n_den_b"] = 0.0
+    out["contested_majority_windows_a"] = 0.0
+    out["contested_majority_windows_b"] = 0.0
     return out
 
 
@@ -177,6 +201,13 @@ def evaluate_mappo(
         )
         ep_rewards = np.zeros(num_envs, dtype=np.float32)
         ep_objective_totals = [_empty_objective_totals() for _ in range(num_envs)]
+        window_n_ticks = int(5 * 16)
+        contested_windows = {
+            "A": [[] for _ in range(num_envs)],
+            "B": [[] for _ in range(num_envs)],
+        }
+        majority_run_ticks = {"A": [0] * num_envs, "B": [0] * num_envs}
+        post_majority_ticks = {"A": [-1] * num_envs, "B": [-1] * num_envs}
 
         while len(rewards) < episodes:
             flat_obs = obs.reshape(num_envs * cfg.n_agents, cfg.obs_dim)
@@ -253,6 +284,37 @@ def evaluate_mappo(
                 objective_metrics = info_i.get("objective_metrics")
                 if isinstance(objective_metrics, dict):
                     _merge_objective_metrics(ep_objective_totals[env_i], objective_metrics)
+                    for team in ("A", "B"):
+                        flag = float(objective_metrics.get(f"contested_majority_flag_{team.lower()}", 0.0))
+                        if flag > 0.5:
+                            majority_run_ticks[team][env_i] += 1
+                        else:
+                            if majority_run_ticks[team][env_i] > 0:
+                                secs = float(majority_run_ticks[team][env_i]) / 16.0
+                                contested_windows[team][env_i].append(secs)
+                                ep_objective_totals[env_i][f"contested_majority_windows_{team.lower()}"] += 1.0
+                                post_majority_ticks[team][env_i] = 0
+                                majority_run_ticks[team][env_i] = 0
+                            elif post_majority_ticks[team][env_i] >= 0:
+                                post_majority_ticks[team][env_i] += 1
+                                uncontested = float(
+                                    objective_metrics.get(
+                                        f"uncontested_on_point_seconds_{team.lower()}", 0.0
+                                    )
+                                ) > 0.0
+                                if uncontested:
+                                    ep_objective_totals[env_i][
+                                        f"majority_to_uncontested_within_n_num_{team.lower()}"
+                                    ] += 1.0
+                                    ep_objective_totals[env_i][
+                                        f"majority_to_uncontested_within_n_den_{team.lower()}"
+                                    ] += 1.0
+                                    post_majority_ticks[team][env_i] = -1
+                                elif post_majority_ticks[team][env_i] > window_n_ticks:
+                                    ep_objective_totals[env_i][
+                                        f"majority_to_uncontested_within_n_den_{team.lower()}"
+                                    ] += 1.0
+                                    post_majority_ticks[team][env_i] = -1
 
             ep_rewards += reward_np.mean(axis=1)
             h = h_next.view(num_envs, cfg.n_agents, cfg.gru_hidden)
@@ -280,6 +342,11 @@ def evaluate_mappo(
                 team_a_kills.append(int(final_info.get("team_a_kills", 0)))
                 team_b_kills.append(int(final_info.get("team_b_kills", 0)))
                 completed_objective_totals.append(dict(ep_objective_totals[i]))
+                for team in ("A", "B"):
+                    if majority_run_ticks[team][i] > 0:
+                        contested_windows[team][i].append(float(majority_run_ticks[team][i]) / 16.0)
+                        ep_objective_totals[i][f"contested_majority_windows_{team.lower()}"] += 1.0
+                        majority_run_ticks[team][i] = 0
                 ep_objective_totals[i] = _empty_objective_totals()
                 rewards.append(float(ep_rewards[i]))
                 ep_rewards[i] = 0.0
@@ -307,6 +374,14 @@ def evaluate_mappo(
         for row in completed_objective_totals
         if float(row.get("first_team_a_alive_edge_to_score_seconds", -1.0)) >= 0.0
     ]
+    all_windows_a = [w for env_w in contested_windows["A"] for w in env_w]
+    all_windows_b = [w for env_w in contested_windows["B"] for w in env_w]
+    cm_a_fire = float(combat_totals["A"].get("contested_majority_fire_commands", 0))
+    cm_b_fire = float(combat_totals["B"].get("contested_majority_fire_commands", 0))
+    cm_a_hits = float(combat_totals["A"].get("contested_majority_damage_hits", 0))
+    cm_b_hits = float(combat_totals["B"].get("contested_majority_damage_hits", 0))
+    cm_a_dmg = float(combat_totals["A"].get("contested_majority_damage_centi_hp", 0))
+    cm_b_dmg = float(combat_totals["B"].get("contested_majority_damage_centi_hp", 0))
     return MappoEvalStats(
         mean_reward=float(np.mean(rewards)) if rewards else 0.0,
         episodes=len(rewards),
@@ -359,6 +434,42 @@ def evaluate_mappo(
         mean_first_team_a_alive_edge_to_score_seconds=(
             float(np.mean(edge_to_score_values)) if edge_to_score_values else -1.0
         ),
+        majority_to_uncontested_within_n_fraction_a=(
+            _objective_mean("majority_to_uncontested_within_n_num_a")
+            / max(1e-9, _objective_mean("majority_to_uncontested_within_n_den_a"))
+        ),
+        majority_to_uncontested_within_n_fraction_b=(
+            _objective_mean("majority_to_uncontested_within_n_num_b")
+            / max(1e-9, _objective_mean("majority_to_uncontested_within_n_den_b"))
+        ),
+        contested_majority_windows_per_episode_a=_objective_mean("contested_majority_windows_a"),
+        contested_majority_windows_per_episode_b=_objective_mean("contested_majority_windows_b"),
+        contested_majority_window_mean_seconds_a=float(np.mean(all_windows_a)) if all_windows_a else 0.0,
+        contested_majority_window_mean_seconds_b=float(np.mean(all_windows_b)) if all_windows_b else 0.0,
+        contested_majority_window_p50_seconds_a=float(np.percentile(all_windows_a, 50.0)) if all_windows_a else 0.0,
+        contested_majority_window_p50_seconds_b=float(np.percentile(all_windows_b, 50.0)) if all_windows_b else 0.0,
+        contested_majority_window_p90_seconds_a=float(np.percentile(all_windows_a, 90.0)) if all_windows_a else 0.0,
+        contested_majority_window_p90_seconds_b=float(np.percentile(all_windows_b, 90.0)) if all_windows_b else 0.0,
+        on_point_nearest_enemy_distance_mean_a=(
+            _objective_mean("on_point_nearest_enemy_distance_sum_a")
+            / max(1e-9, _objective_mean("on_point_nearest_enemy_distance_count_a"))
+        ),
+        on_point_nearest_enemy_distance_mean_b=(
+            _objective_mean("on_point_nearest_enemy_distance_sum_b")
+            / max(1e-9, _objective_mean("on_point_nearest_enemy_distance_count_b"))
+        ),
+        on_point_enemy_los_fraction_a=(
+            _objective_mean("on_point_enemy_los_count_a")
+            / max(1e-9, _objective_mean("on_point_total_count_a"))
+        ),
+        on_point_enemy_los_fraction_b=(
+            _objective_mean("on_point_enemy_los_count_b")
+            / max(1e-9, _objective_mean("on_point_total_count_b"))
+        ),
+        contested_majority_hit_fire_a=(cm_a_hits / cm_a_fire) if cm_a_fire > 0 else 0.0,
+        contested_majority_hit_fire_b=(cm_b_hits / cm_b_fire) if cm_b_fire > 0 else 0.0,
+        contested_majority_damage_per_fire_a=(cm_a_dmg / cm_a_fire) if cm_a_fire > 0 else 0.0,
+        contested_majority_damage_per_fire_b=(cm_b_dmg / cm_b_fire) if cm_b_fire > 0 else 0.0,
         objective_unlock_seconds=float(eval_unlock_seconds),
         objective_capture_seconds=float(eval_capture_seconds),
     )
@@ -418,6 +529,52 @@ def eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
         "mean_cap_progress_loss_ticks": float(stats.mean_cap_progress_loss_ticks),
         "mean_first_team_a_alive_edge_to_score_seconds": float(
             stats.mean_first_team_a_alive_edge_to_score_seconds
+        ),
+        "majority_to_uncontested_within_n_fraction_a": float(
+            stats.majority_to_uncontested_within_n_fraction_a
+        ),
+        "majority_to_uncontested_within_n_fraction_b": float(
+            stats.majority_to_uncontested_within_n_fraction_b
+        ),
+        "contested_majority_windows_per_episode_a": float(
+            stats.contested_majority_windows_per_episode_a
+        ),
+        "contested_majority_windows_per_episode_b": float(
+            stats.contested_majority_windows_per_episode_b
+        ),
+        "contested_majority_window_mean_seconds_a": float(
+            stats.contested_majority_window_mean_seconds_a
+        ),
+        "contested_majority_window_mean_seconds_b": float(
+            stats.contested_majority_window_mean_seconds_b
+        ),
+        "contested_majority_window_p50_seconds_a": float(
+            stats.contested_majority_window_p50_seconds_a
+        ),
+        "contested_majority_window_p50_seconds_b": float(
+            stats.contested_majority_window_p50_seconds_b
+        ),
+        "contested_majority_window_p90_seconds_a": float(
+            stats.contested_majority_window_p90_seconds_a
+        ),
+        "contested_majority_window_p90_seconds_b": float(
+            stats.contested_majority_window_p90_seconds_b
+        ),
+        "on_point_nearest_enemy_distance_mean_a": float(
+            stats.on_point_nearest_enemy_distance_mean_a
+        ),
+        "on_point_nearest_enemy_distance_mean_b": float(
+            stats.on_point_nearest_enemy_distance_mean_b
+        ),
+        "on_point_enemy_los_fraction_a": float(stats.on_point_enemy_los_fraction_a),
+        "on_point_enemy_los_fraction_b": float(stats.on_point_enemy_los_fraction_b),
+        "contested_majority_hit_fire_a": float(stats.contested_majority_hit_fire_a),
+        "contested_majority_hit_fire_b": float(stats.contested_majority_hit_fire_b),
+        "contested_majority_damage_per_fire_a": float(
+            stats.contested_majority_damage_per_fire_a
+        ),
+        "contested_majority_damage_per_fire_b": float(
+            stats.contested_majority_damage_per_fire_b
         ),
         "objective_unlock_seconds": float(stats.objective_unlock_seconds),
         "objective_capture_seconds": float(stats.objective_capture_seconds),

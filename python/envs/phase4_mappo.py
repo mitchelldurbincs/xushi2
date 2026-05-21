@@ -382,6 +382,9 @@ class Phase4MappoEnv(gym.Env):
 
         on_a = int(after["alive_on_point_a"])
         on_b = int(after["alive_on_point_b"])
+        contested_majority_a = on_a > on_b and on_b > 0
+        contested_majority_b = on_b > on_a and on_a > 0
+        engagement = self._on_point_engagement_metrics()
         return {
             "uncontested_on_point_seconds_a": seconds if on_a > 0 and on_b == 0 else 0.0,
             "uncontested_on_point_seconds_b": seconds if on_b > 0 and on_a == 0 else 0.0,
@@ -398,7 +401,64 @@ class Phase4MappoEnv(gym.Env):
             "team_a_score_delta_ticks": float(max(0, score_a_delta)),
             "team_b_score_delta_ticks": float(max(0, score_b_delta)),
             "first_team_a_alive_edge_to_score_seconds": first_a_edge_to_score_seconds,
+            "alive_on_point_a": float(on_a),
+            "alive_on_point_b": float(on_b),
+            "contested_majority_flag_a": 1.0 if contested_majority_a else 0.0,
+            "contested_majority_flag_b": 1.0 if contested_majority_b else 0.0,
+            "on_point_nearest_enemy_distance_sum_a": float(
+                engagement["A"]["distance_sum"]
+            ),
+            "on_point_nearest_enemy_distance_count_a": float(
+                engagement["A"]["distance_count"]
+            ),
+            "on_point_enemy_los_count_a": float(engagement["A"]["los_count"]),
+            "on_point_total_count_a": float(engagement["A"]["on_point_count"]),
+            "on_point_nearest_enemy_distance_sum_b": float(
+                engagement["B"]["distance_sum"]
+            ),
+            "on_point_nearest_enemy_distance_count_b": float(
+                engagement["B"]["distance_count"]
+            ),
+            "on_point_enemy_los_count_b": float(engagement["B"]["los_count"]),
+            "on_point_total_count_b": float(engagement["B"]["on_point_count"]),
         }
+
+    def _on_point_engagement_metrics(self) -> dict[str, dict[str, float]]:
+        assert self._sim is not None
+        critic = np.zeros(CRITIC_DIM, dtype=np.float32)
+        _cpp.build_critic_obs(self._sim, _cpp.Team.A, critic)
+        out = {
+            "A": {"distance_sum": 0.0, "distance_count": 0.0, "los_count": 0.0, "on_point_count": 0.0},
+            "B": {"distance_sum": 0.0, "distance_count": 0.0, "los_count": 0.0, "on_point_count": 0.0},
+        }
+        on_point_slice = actor_field_slice("self_on_point")
+        hp_slice = actor_field_slice("own_hp")
+        for slot in range(_AGENTS_PER_MATCH):
+            _cpp.build_actor_obs(self._sim, slot, self._objective_actor_obs_buf[slot])
+            obs = self._objective_actor_obs_buf[slot]
+            alive = float(obs[hp_slice][0]) > 0.0
+            on_point = float(obs[on_point_slice][0]) > 0.5
+            if not alive or not on_point:
+                continue
+            team = self._team_for_slot(slot)
+            out[team]["on_point_count"] += 1.0
+            own_pos = self._slot_position(critic, slot)
+            visible = list(_cpp.observable_enemy_slots(self._sim, slot))
+            nearest: float | None = None
+            for enemy in self._enemy_slots_for(slot):
+                if not self._slot_alive(critic, enemy):
+                    continue
+                enemy_pos = self._slot_position(critic, enemy)
+                dist = float(np.linalg.norm(enemy_pos - own_pos))
+                if nearest is None or dist < nearest:
+                    nearest = dist
+                if visible[enemy]:
+                    out[team]["los_count"] += 1.0
+                    break
+            if nearest is not None:
+                out[team]["distance_sum"] += nearest
+                out[team]["distance_count"] += 1.0
+        return out
 
     def _make_info(self) -> dict[str, Any]:
         s = self._sim
@@ -500,6 +560,9 @@ class Phase4MappoEnv(gym.Env):
             "aim_error_sum": 0.0,
             "aim_error_count": 0,
             "target_counts": {},
+            "contested_majority_fire_commands": 0,
+            "contested_majority_damage_hits": 0,
+            "contested_majority_damage_centi_hp": 0,
         }
 
     def _combat_metrics_before_step(self, actions: list[_cpp.Action]) -> dict[str, Any]:
@@ -510,12 +573,23 @@ class Phase4MappoEnv(gym.Env):
             "A": self._empty_team_combat_metrics(),
             "B": self._empty_team_combat_metrics(),
         }
+        objective_before = self._objective_snapshot()
+        contested_majority_team: str | None = None
+        on_a = int(objective_before["alive_on_point_a"])
+        on_b = int(objective_before["alive_on_point_b"])
+        if on_a > 0 and on_b > 0:
+            if on_a > on_b:
+                contested_majority_team = "A"
+            elif on_b > on_a:
+                contested_majority_team = "B"
         for slot, action in enumerate(actions):
             if not action.primary_fire:
                 continue
             team = self._team_for_slot(slot)
             team_metrics = metrics[team]
             team_metrics["fire_commands"] += 1
+            if contested_majority_team == team:
+                team_metrics["contested_majority_fire_commands"] += 1
             target_slot, aim_error = self._nearest_visible_target(critic, slot)
             if target_slot is not None:
                 team_metrics["visible_fire_commands"] += 1
@@ -529,6 +603,15 @@ class Phase4MappoEnv(gym.Env):
     def _attach_damage_metrics(
         self, combat_metrics: dict[str, Any], damage_delta: np.ndarray
     ) -> None:
+        objective_before = self._objective_snapshot()
+        contested_majority_team: str | None = None
+        on_a = int(objective_before["alive_on_point_a"])
+        on_b = int(objective_before["alive_on_point_b"])
+        if on_a > 0 and on_b > 0:
+            if on_a > on_b:
+                contested_majority_team = "A"
+            elif on_b > on_a:
+                contested_majority_team = "B"
         for team in ("A", "B"):
             team_metrics = combat_metrics[team]
             for slot in self._team_slots(team):
@@ -537,3 +620,6 @@ class Phase4MappoEnv(gym.Env):
                     continue
                 team_metrics["damage_hits"] += 1
                 team_metrics["damage_centi_hp"] += delta
+                if contested_majority_team == team:
+                    team_metrics["contested_majority_damage_hits"] += 1
+                    team_metrics["contested_majority_damage_centi_hp"] += delta
