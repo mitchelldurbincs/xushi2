@@ -60,6 +60,8 @@ ignore = ["N806", "N812"]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
+    "contract_fast: fast contract checks for runtime specs, config compatibility, and import boundaries",
+    "smoke_behavior: smoke behavior checks that execute short training/eval/replay flows",
     "slow: integration smoke tests that run short training or evaluation loops",
     "bc_probe: slower cross-phase behavioral-cloning probe smoke tests",
 ]

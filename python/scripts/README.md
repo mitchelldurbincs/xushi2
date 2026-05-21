@@ -25,6 +25,21 @@ For Phase 4 training/eval configuration context, see
 | `python/scripts/check_viewer_bench.py` | Compare a viewer-benchmark result JSON against the baseline within the 15% tolerance band. Used by `make bench-viewer`. |
 | `python/scripts/diag_phase3_plumbing.py` | Phase-3 plumbing probe: drives `XushiEnv` with hand-written actions vs a noop opponent and prints objective-state-machine diagnostics. |
 
+
+## Canonical pytest gates
+
+Use these two commands as the default pre-experiment checks from `python/`:
+
+```bash
+# Fast local contract gate: runtime specs/config compatibility/import boundaries.
+pytest -m contract_fast
+
+# Smoke behavior gate: replay dump + phase smoke + BC probe hooks.
+pytest -m smoke_behavior
+```
+
+Directory convention: place fast contract tests under `python/tests/contracts/` and smoke behavior tests under `python/tests/smoke/`.
+
 ## Golden workflow (Phase 4)
 
 Train checkpoint → matrix eval/gate → replay dump for viewer:

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from _paths import config_path
+from tests._paths import config_path
 
 from train.mappo import (
     MappoTrainer,
@@ -12,7 +12,7 @@ from train.mappo import (
 )
 from train.phases import resolve_phase
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.smoke_behavior]
 
 
 def test_phase4_mappo_smoke_train_runs_one_update(tmp_path: Path) -> None:

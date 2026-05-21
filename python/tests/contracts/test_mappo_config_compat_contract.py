@@ -1,7 +1,7 @@
 import pytest
 import torch
 import yaml
-from _paths import config_path
+from tests._paths import config_path
 
 from train.mappo import make_mappo_config
 from train.mappo_bc_pretrain import _walk_to_objective_targets
@@ -18,6 +18,8 @@ from xushi2.grid_obs import (
     GRID_SIZE,
     MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
 )
+
+pytestmark = pytest.mark.contract_fast
 
 PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
 
