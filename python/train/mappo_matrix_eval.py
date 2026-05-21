@@ -119,8 +119,14 @@ def _checkpoint_runtime_env_fn(
     *,
     error_message: str,
 ):
+    env_cfg = dict(env_cfg)
+    env_cfg.setdefault("kind", "mappo_match")
     _runtime, env_fn, _seed_base = resolve_runtime_env_factory(
-        {"env": env_cfg, "mappo": dict(mappo_cfg or {})},
+        {
+            "env": env_cfg,
+            "mappo": dict(mappo_cfg or {}),
+            "learner": {"kind": "mappo"},
+        },
         require_learner="mappo",
         context=error_message,
     )

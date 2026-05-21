@@ -1,0 +1,154 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: current_selfplay_anchor_mix_v2_long
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_current_selfplay_learning_signal
+    - phase4_anchor_transfer
+    - phase4_objective_conversion
+  hypothesis: "Anchor-mixed self-play with (a) the v6.5 cap teacher as the warm-start, (b) an aggressive 5s/2s -> 15s/8s objective-timing curriculum, (c) a stable (non-annealed) majority-on-point shaping floor, and (d) explicit on-point shaping should preserve sustained point contact while anchor episodes force the policy onto the scripted-bot distribution used by the Phase 4 gate."
+  falsification_criteria: "Falsified if key checkpoints cannot score against noop or lose all weak_basic_v2 anchor evals after 300 updates, OR if canonical self-play score stays below 6.0 (which the curriculum_long_v2 run already cleared) by update 200."
+  lineage: "v2 of phase4_mappo_current_selfplay_anchor_mix_long. v1 was falsified (300 updates -> 0W/50L vs weak_basic_v2 and basic anchors, draws vs noop with zero Team A score). Changes from v1: warm-start from v6.5 cap teacher instead of curriculum_long_v2 ckpt_0200 (which had zero anchor transfer); aggressive 5s/2s objective timing curriculum (matching the only self-play run that produced canonical score); majority_on_point_coef raised from 0.05 to 0.15 with anneal disabled to keep a floor (curriculum_long_v2 regressed once shaping annealed); on_point_shaping_coef re-added at 0.05; LR halved from 2.0e-6 back to 1.0e-6; distance_shaping dropped since v6.5 already carries cap pathing."
+  followup: "Multi-bot anchor mixing (weak_basic_v2 + basic + noop) requires a code change to xushi2.self_play_schedule.SelfPlaySchedule (currently single-valued anchor_bot). Deferred. Run this v2 against weak_basic_v2 only, then matrix-eval transfer to basic and noop as a separate artifact."
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_current_selfplay
+
+env:
+  seed_base: 3519994490
+  self_play:
+    enabled: true
+  self_play_schedule:
+    weights:
+      current: 0.4
+      snapshot: 0.0
+      anchor: 0.6
+    anchor_bot: weak_basic_v2
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 5.0
+    initial_capture_seconds: 2.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 300
+    eval_canonical_every: 25
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    on_point_shaping_coef: 0.05
+    majority_on_point_coef: 0.15
+    majority_on_point_anneal_updates: 0
+    majority_on_point_distribute: on_point
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 5.0
+    objective_capture_seconds: 2.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 32
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  value_per_agent: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+
+run:
+  total_updates: 300
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_current_selfplay_anchor_mix_v2_long
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+
+phase_gate:
+  phase: phase4_current_selfplay_anchor_mix_v2_long
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: selfplay_canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 6.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_weak_basic_v2_score
+      metric: matrix/anchor/weak_basic_v2/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_weak_basic_v2_any_win
+      metric: matrix/anchor/weak_basic_v2/wins
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: aim_error_ceiling
+      metric: canonical_eval/team_a_aim_error_rad
+      source: wandb
+      aggregation: { type: min, window: all }
+      comparator: "<="
+      threshold: 1.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_anchor_transfer
+        prompt: "In a greedy replay against weak_basic_v2, does Team A produce coordinated kills AND hold the point long enough to convert to score, rather than only contesting?"
+      - id: replay_no_shaping_exploits
+        prompt: "Does the score come from real capture conversion rather than from majority-on-point shaping artifacts that disappear when shaping is removed?"

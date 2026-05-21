@@ -104,3 +104,59 @@ run:
       aim_error_coef: 0.05
   bc_pretrain_variant: walk_and_shoot
   bc_pretrain_steps: 0
+
+phase_gate:
+  phase: phase4_composition_rehearsal_v2_2000
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: aim_error_ceiling
+      metric: eval/team_a_aim_error_rad
+      source: wandb
+      aggregation: { type: min, window: all }
+      comparator: "<="
+      threshold: 1.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_composition_preserved
+        prompt: "Does the best-checkpoint replay show BOTH objective movement (reaches/holds cap) AND combat (kills), rather than only one skill surviving?"
+      - id: replay_purposeful_targeting
+        prompt: "Does target selection look coordinated rather than spray fire, and is point holding consistent enough to convert to score?"
+

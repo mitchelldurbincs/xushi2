@@ -1493,3 +1493,92 @@ still converted uncontested objective time. The next experiment should change
 the learning target more directly: add explicit hold/capture pressure or staged
 capture drills, and evaluate against anchors before spending another long run
 on current-vs-current self-play.
+
+## 2026-05-21 — Phase 4 composition rehearsal v2_2000 (iteration 1, skipped)
+
+**Config:** `../experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v2_2000.yaml`
+**Git commit:** `cbf296be5f4d6e9b7f998a11e3f48f032238b869`  **Seed:** `1779134702`
+**W&B:** not launched  **Output:** not created
+**Gate status:** SKIPPED (prerequisite checkpoint missing)
+**Gate reason:** Combat teacher checkpoint
+`runs/phase4_mappo_combat_1v1_v2/mappo/ckpt_final.pt` is not present on this
+machine. The May-18 journal documents this checkpoint being produced at
+`13.16/12` mean kills, but the artifact is not in `python/runs/` (or anywhere
+under the working tree). The composition rehearsal config cannot launch
+without it, and Decision Rules list new teacher checkpoints as "out of scope
+without explicit user approval."
+**Failing checks (if any):** n/a (run not launched)
+**Manifest summary:** n/a
+**Anchor transfer:** n/a
+**Decision:** falling back to anchor mix v2 (Run 2) per the goal's documented
+fallback path; surfacing the missing combat teacher to the user at the end of
+the iteration.
+
+## 2026-05-21 — Phase 4 current self-play anchor mix v2 long (iteration 2)
+
+**Config:** `../experiments/configs/phase4/probe/phase4_mappo_current_selfplay_anchor_mix_v2_long.yaml`
+**Git commit:** `cbf296be5f4d6e9b7f998a11e3f48f032238b869` (plus working-tree
+patch to `python/train/mappo_matrix_eval.py` that fixes a
+`require_learner='mappo'` runtime resolution regression — the embedded matrix
+eval was passing a config without phase/learner routing, so
+`resolve_runtime_env_factory` fell through to legacy phase 2 = `ppo_recurrent`
+and raised. Patch injects `learner: {kind: mappo}` and defaults
+`env.kind=mappo_match`; verified by `tests/test_mappo_matrix_eval.py`
+embedded-path cases passing, by `check_import_boundaries`, and by a smoke
+matrix-eval CLI invocation against `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`).
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/zd27z2qv
+**Output:** `runs/phase4_mappo_current_selfplay_anchor_mix_v2_long/`
+**Gate status:** NOT_CLEARED
+**Gate reason:** Objective checks did not meet configured thresholds.
+**Failing checks:**
+- `selfplay_canonical_score` (`canonical_eval/mean_score_a`): max `0.740` < `6.0`
+- `anchor_vs_weak_basic_v2_score` (`matrix/anchor/weak_basic_v2/mean_score_a`):
+  max `0.000` < `3.0`
+- `anchor_vs_weak_basic_v2_any_win` (`matrix/anchor/weak_basic_v2/wins`):
+  max `0` < `5`
+- `aim_error_ceiling` (`canonical_eval/team_a_aim_error_rad`): min `2.491` > `1.5`
+- Passing: `anchor_vs_noop_no_loss` (`matrix/anchor/noop/loss_rate`)
+  = `0.000` <= `0.5`.
+
+**Manifest summary:** `best_eval_update_idx=275`, best-eval stats
+`0W/28L/22D`, score `0.00/13.33`, kills `0.0/0.0`. `ckpt_final.pt` aliases
+`ckpt_best_eval.pt`. Highest canonical Team A score observed in any
+eval across the run was `0.74` at update `125`; final canonical eval at
+update `300` was `0.00/16.07`. Self-play eval converted slightly more
+(score `0.41` at update `50`, `2.76` at update `175`) but canonical never
+exceeded `0.74`.
+
+**Anchor transfer (matrix eval, 50 episodes each, ckpts 125/200/final):**
+- vs `noop`: **50/50 wins, Team A score `3.00`** for all three checkpoints
+  (`loss_rate=0.00`). First anchor-mix run to actually beat `noop` rather
+  than draw; the policy can score when the opponent does not contest.
+- vs `weak_basic_v2`: **50/50 losses, Team A score `0.00`, Team B score
+  ~`46.5`** for all three checkpoints. Same pattern as the v1
+  anchor-mix run.
+- vs `basic`: **50/50 losses, Team A score `0.00`, Team B score ~`48.9`**
+  for all three checkpoints. Slightly stronger Team B convergence than
+  `weak_basic_v2`, consistent with the harder bot.
+
+**Replay artifacts:**
+- `data/replays/phase4_current_selfplay_anchor_mix_v2_long_ckpt_final_stochastic.replay`
+- `data/replays/phase4_current_selfplay_anchor_mix_v2_long_ckpt_final_greedy.replay`
+
+**Decision:** stopping the loop. Two of the documented Phase 4 probe paths
+are now exhausted: Run 1 (composition rehearsal v2_2000) cannot launch on
+this machine because the combat teacher checkpoint is missing, and Run 2
+(anchor mix v2 long) hit the same falsification trip as the
+`curriculum_long_v2` run — canonical Team A score does not reach `6.0` by
+update `200`, and matrix transfer to `weak_basic_v2`/`basic` is `0/50`
+wins with `0.00` Team A score. Per Decision Rules ("another knob tweak
+is unlikely to help") and the Stop Conditions ("If both Run 1 and Run 2
+fail, stop the loop and report back"), recommend the user either:
+(a) recreate the missing combat teacher checkpoint and re-attempt the
+composition rehearsal path; (b) escalate to Strategy 2 (cap-duel) or
+Strategy 3 (focus-fire) from the May-18 proposal, both of which require
+code changes that are listed as out of scope without explicit user
+approval. The noop-only positive transfer (`3.00` Team A score, full
+sweep) is a new diagnostic data point: anchor mixing did teach the policy
+to convert when the opponent does not contest, but the missing piece is
+still combat conversion against a fire-back opponent.
+
