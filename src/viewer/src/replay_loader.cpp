@@ -178,6 +178,8 @@ std::optional<Replay> load_replay(const std::string& path) {
     if (const auto loss_mask = parse_kv_string(header, "loss_mask")) rep.loss_mask = *loss_mask;
     if (parse_kv_double(header, "round_seconds", v)) rep.config.round_length_seconds = static_cast<int>(v);
     if (parse_kv_double(header, "action_repeat", v)) rep.config.action_repeat = static_cast<std::uint32_t>(v);
+    if (parse_kv_double(header, "obj_unlock_ticks", v)) rep.config.objective_unlock_ticks = static_cast<std::uint32_t>(v);
+    if (parse_kv_double(header, "obj_capture_ticks", v)) rep.config.objective_capture_ticks = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "team_size", v)) rep.config.team_size = static_cast<std::uint32_t>(v);
     if (parse_kv_double(header, "map_min_x", v)) rep.config.map.min_x = static_cast<float>(v);
     if (parse_kv_double(header, "map_min_y", v)) rep.config.map.min_y = static_cast<float>(v);

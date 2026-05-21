@@ -31,6 +31,8 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
         "seed": int(seed),
         "round_seconds": int(sim_cfg.get("round_length_seconds", 30)),
         "action_repeat": int(sim_cfg.get("action_repeat", 3)),
+        "obj_unlock_ticks": int(sim_cfg.get("objective_unlock_ticks", 15 * 30)),
+        "obj_capture_ticks": int(sim_cfg.get("objective_capture_ticks", 8 * 30)),
         "mech_dmg": int(mech.get("revolver_damage_centi_hp", 7500)),
         "mech_fcd": int(mech.get("revolver_fire_cooldown_ticks", 15)),
         "mech_hbr": float(mech.get("revolver_hitbox_radius", 0.75)),

@@ -99,7 +99,7 @@ def _assert_header_contains(lines: Sequence[str], expected: Sequence[str]) -> No
             "phase4/probe/phase4_mappo_objective_probe.yaml",
             4,
             "phase4_mappo.pt",
-            ("phase=4", "team_size=3"),
+            ("phase=4", "team_size=3", "obj_unlock_ticks=", "obj_capture_ticks="),
             _SIX_SLOT_REPLAY_FIELDS,
         ),
         (
