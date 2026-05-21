@@ -2,11 +2,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-from _paths import config_path
+from tests._paths import config_path
 
 from train.mappo import train_phase4_from_config
 
-pytestmark = [pytest.mark.slow, pytest.mark.bc_probe]
+pytestmark = [pytest.mark.slow, pytest.mark.smoke_behavior, pytest.mark.bc_probe]
 
 
 @pytest.mark.parametrize(

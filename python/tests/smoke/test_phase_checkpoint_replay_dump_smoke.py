@@ -8,10 +8,12 @@ from pathlib import Path
 import pytest
 import torch
 import yaml
-from _paths import config_path, script_path
+from tests._paths import config_path, script_path
 
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
+
+pytestmark = pytest.mark.smoke_behavior
 
 _MAX_DECISIONS = 3
 _SIX_SLOT_REPLAY_FIELDS = 1 + 6 * 6

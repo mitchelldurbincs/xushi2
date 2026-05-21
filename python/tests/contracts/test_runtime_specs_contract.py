@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 import copy
 
 import yaml
@@ -10,6 +12,8 @@ from train.mappo import make_mappo_config
 from train.mappo_runtime_context import build_runtime_context
 from train.runtime_specs import resolve_runtime_spec
 from train.train import normalize_entry_config
+
+pytestmark = pytest.mark.contract_fast
 
 
 def _phase4_smoke_config() -> dict:
