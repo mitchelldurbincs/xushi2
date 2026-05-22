@@ -1,0 +1,187 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: cap_duel_distill_anchor_v1
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+    - phase4_anchor_transfer
+    - phase4_objective_combat_composition
+  hypothesis: >
+    Full Phase 4 PPO against weak_basic_v2 can retain the honest cap_duel v2
+    kill-then-hold skill if a small PPO-time distillation anchor continuously
+    preserves the cap_duel teacher's aim/fire behavior.
+  falsification_criteria: >
+    Falsified if the distillation anchor is active but Team A hit/fire stays
+    below 0.04 with zero score by update 50, or if the unchanged Phase 4
+    anchor-transfer gate is not cleared after a completed run.
+  lineage: >
+    Follow-up to 2026-05-21 composition rehearsal with cap_duel v2, where both
+    2000-step and 4000-step BC-only rehearsal attempts failed before PPO.
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_cap_duel_distill
+
+env:
+  seed_base: 1779134702
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 1779134702
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+
+run:
+  total_updates: 200
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_cap_duel_distill_anchor_v1
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  bc_pretrain_steps: 0
+  composition_pretrain: false
+  cap_duel_distill:
+    enabled: true
+    teacher_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt
+    env:
+      mini_game: cap_duel
+      mini_game_config:
+        episode_decisions: 96
+        enemy_hp: 3
+        point_radius: 0.18
+        score_ticks_to_clear: 12
+        enemy_recontest_delay: 12
+        hit_tolerance: 0.12
+        hit_reward: 1.0
+        kill_bonus: 4.0
+        score_per_tick: 0.1
+        off_point_penalty: 0.0
+        time_penalty_per_decision: 0.0
+        knockback_magnitude: 0.0
+        spawn_distance: 0.4
+        respawn_at_spawn_position: true
+    batch_size: 256
+    every_updates: 1
+    coef: 0.05
+    aim_coef: 1.0
+    fire_coef: 1.0
+    move_coef: 0.0
+  cap_duel_distill_early_stop:
+    enabled: true
+    update: 50
+    min_team_a_hit_fire: 0.04
+    max_mean_score_a: 0.0
+  matrix_eval:
+    episodes: 50
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_cap_duel_distill_anchor_v1
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_basic_score
+      metric: matrix/anchor/basic/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_kill_then_hold_3v3
+        prompt: >
+          In a greedy 3v3 replay vs weak_basic_v2, does Team A create a
+          combat advantage, kill or displace enemies, and hold the point long
+          enough to convert score without obvious reward hacking?

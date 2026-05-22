@@ -31,3 +31,7 @@ Keep this list intentionally small and update it whenever canonical planning doc
 - [2026-05-08-phase4-cap-training-escalation.md](active/2026-05-08-phase4-cap-training-escalation.md)
 - [2026-05-08-phase4-cap-training-escalation-design.md](active/2026-05-08-phase4-cap-training-escalation-design.md)
 - [2026-05-08-team-spirit-per-agent-rewards.md](active/2026-05-08-team-spirit-per-agent-rewards.md)
+- [2026-05-22-phase4-full-env-teacher-rehearsal-design.md](active/2026-05-22-phase4-full-env-teacher-rehearsal-design.md)
+- [2026-05-22-phase4-actor-information-decision.md](active/2026-05-22-phase4-actor-information-decision.md)
+- [2026-05-22-phase4-multi-enemy-training-failure-audit.md](active/2026-05-22-phase4-multi-enemy-training-failure-audit.md)
+- [2026-05-22-phase4-multi-enemy-supervised-bridge-failure-audit.md](active/2026-05-22-phase4-multi-enemy-supervised-bridge-failure-audit.md)

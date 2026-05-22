@@ -45,6 +45,7 @@ def _make_phase4_env(
     self_play: bool = False,
     self_play_schedule: dict | None = None,
     snapshot_league: dict | None = None,
+    actor_obs: str = "flat",
 ):
     from envs.runtime_factory import make_mappo_match_env
 
@@ -53,7 +54,7 @@ def _make_phase4_env(
         opponent_bot=opponent_bot,
         learner_team=learner_team,
         reward_cfg=reward_cfg,
-        actor_obs="flat",
+        actor_obs=actor_obs,
         mini_game=mini_game,
         mini_game_cfg=mini_game_cfg,
         self_play=self_play,
@@ -276,7 +277,10 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
     self_play = bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
     self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
     snapshot_league = dict(env_cfg.get("snapshot_league", {}))
+    actor_obs = str(env_cfg.get("actor_obs", "flat"))
     ckpt_env_cfg = dict(base_cfg)
+    if actor_obs != "flat":
+        ckpt_env_cfg["actor_obs"] = actor_obs
     if self_play:
         ckpt_env_cfg["self_play"] = {"enabled": True}
         ckpt_env_cfg["match_type"] = "current"
@@ -299,6 +303,7 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
             self_play,
             self_play_schedule if "self_play_schedule" in env_cfg else None,
             snapshot_league if "snapshot_league" in env_cfg else None,
+            actor_obs,
         ),
         ckpt_env_cfg,
         _resolve_seed_base(env_cfg, base_cfg["sim"]),
@@ -615,4 +620,8 @@ def resolve_phase(config: dict) -> tuple[int, dict]:
     elif phase == 4 and bool(dict(env_cfg.get("self_play", {})).get("enabled", False)):
         spec = dict(spec)
         spec["label"] = "phase4_selfplay"
+    elif phase == 4 and str(env_cfg.get("actor_obs", "flat")) == "multi_enemy_entity_grid":
+        spec = dict(spec)
+        spec["label"] = "phase4_multi_enemy_actor_obs"
+        spec["obs_dim"] = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
     return phase, spec

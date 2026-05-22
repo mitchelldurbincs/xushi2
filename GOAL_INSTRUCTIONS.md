@@ -1,93 +1,217 @@
-# Goal: Composition Rehearsal With The v2 Cap-Duel Checkpoint
+# Goal: PPO-Time Cap-Duel v2 Distillation Anchor For Phase 4
 
 ## Status Going Into This Goal
 
-- The 2026-05-21 cap_duel v1 inspection found 100% kill_then_hold in v1
-  but discovered that v1's score path leaned on three engineered env
-  quirks not present in the canonical Phase 4 3v3 C++ sim (spawn-on-
-  point, shot knockback ~0.693 units per hit, respawn-on-point).
-- Cap_duel v2 (`phase4_mappo_cap_duel_selfplay_v2`) retrained from the
-  same v6.5 warm-start under stricter rules (knockback 0, corner
-  spawns at 0.4, respawn-at-spawn). v2 wins 8/10 greedy + 10/10
-  stochastic with 94.3% combined kill_then_hold and zero v1-style
-  spawn-on-point exploits. Full results in
-  `docs/plans/archive/2026-05-21-cap-duel-v2-result.md` and the
-  2026-05-21 v2 journal entry.
+Phase 4 is still the active focus. We finally got a real combat/objective
+teacher, but the first transfer attempt failed in a useful way.
 
-The combat teacher that the prior plan needed but couldn't have
-(because `combat_1v1_v2` is missing on this machine) is now real.
+Known facts:
+
+- `phase4_mappo_cap_duel_selfplay_v2` is an honest cap-duel teacher.
+  It removed the v1 engineered quirks (spawn-on-point, shot knockback,
+  respawn-on-point), trained from `phase4_mappo_basic_v6_5`, and still
+  produced strong kill-then-hold behavior.
+- The result is documented in
+  `docs/plans/archive/2026-05-21-cap-duel-v2-result.md` and the
+  2026-05-21 journal entry.
+- The completed composition-rehearsal attempt is documented in
+  `docs/plans/archive/2026-05-21-phase4-composition-cap-duel-v2-result.md`
+  and the latest entries of `docs/journal/reinforcement_learning_journal.md`.
+- Composition rehearsal with cap_duel v2 failed before PPO:
+  - 2000-step run:
+    `full_hit_fire=0.0047 < 0.0400`
+  - 4000-step fallback:
+    `full_hit_fire=0.0116 < 0.0400`
+  - Both also failed objective/contact and combat-kill retention.
+- Matrix eval after both skipped-PPO runs still produced `0.00` Team A
+  score against `weak_basic_v2` and `basic`.
+
+Conclusion: do **not** spend another config-only run on more composition
+rehearsal length. The failure mode is not "needs a few more BC steps"; the
+cap_duel skill is not staying bound to the full 3v3 distribution.
 
 ## What This Goal Does
 
-Composition rehearsal with the v2 cap_duel checkpoint as the combat
-teacher, then a 3v3 transfer probe against `weak_basic_v2`. Same gate
-as the original Strategy 1 path; no thresholds relaxed.
+Add a PPO-time distillation anchor so full Phase 4 PPO can keep learning
+against `weak_basic_v2` while a small auxiliary loss continuously preserves
+the cap_duel v2 teacher's aim/fire behavior on combat samples.
 
-## Non-Negotiables (carried over)
+This is intentionally code-scope. The previous goal made clear that a
+one-shot pretrain is too fragile. The next most direct attempt is to keep the
+teacher attached during PPO instead of hoping BC survives the full-env
+gradient.
 
+## Recommended Order
+
+1. Add diagnostics that explain the post-BC failure more clearly.
+2. Add the PPO-time cap_duel distillation anchor.
+3. Run a short smoke/probe to prove the anchor is active and metrics are
+   logged.
+4. Run the Stage 1 transfer config against `weak_basic_v2`.
+5. If this still fails, stop and recommend Strategy 3 focus-fire target
+   conditioning rather than another rehearsal-length tweak.
+
+## Non-Negotiables
+
+- Do not change C++.
 - Do not change sim rules, reward formulas, observation layout, action
-  semantics, replay format, deterministic sim, W&B metric schemas, or
-  MAPPO core. Do not modify C++.
-- Do not weaken phase gates. Each stage's `phase_gate:` block is the bar.
-- Do not skip the journal entry per run.
+  semantics, replay format, determinism behavior, W&B existing metric names,
+  or the phase-gate thresholds.
+- Do not weaken any `phase_gate:` block.
 - Do not launch a new training run while one is in flight.
 - Do not commit changes unless explicitly asked.
-- Out of scope without explicit user approval: new aux losses, new actor
-  heads, Strategy 3 (focus-fire) code changes, retraining `combat_1v1_v2`
-  on this machine.
+- Do not retrain `combat_1v1_v2`.
+- Do not add a new actor head unless the user explicitly approves Strategy 3.
+- Do not hide failed diagnostics. A bad metric result is done, not blocked.
+
+Allowed scope for this goal:
+
+- Python trainer/eval code.
+- Python tests.
+- New probe config(s) under `experiments/configs/phase4/probe/`.
+- New diagnostics/scripts if they are narrow and support this experiment.
+- New W&B metrics under a new prefix such as `distill/*` or
+  `cap_duel_anchor/*`.
 
 ## First Reads
 
-1. `docs/plans/archive/2026-05-21-cap-duel-v2-result.md` — what changed
-   in v2 and what the inspection confirmed.
-2. The 2026-05-21 v2 journal entry (the most recent in
-   `docs/journal/reinforcement_learning_journal.md`).
-3. `experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_v2_2000.yaml` — the rehearsal config template.
-4. `experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v2.yaml` — copy the `mini_game_config` block verbatim into the rehearsal combat env so the rehearsal samples match the teacher's training distribution.
-5. `python/train/composition_rehearsal.py` and
-   `python/train/mappo_pretrain_hooks.py` — the pretrain path.
-6. `python/train/phase_gate/README.md` — gate CLI shape.
+1. `docs/journal/reinforcement_learning_journal.md` — read the latest entries.
+2. `docs/plans/archive/2026-05-21-cap-duel-v2-result.md`.
+3. `docs/plans/archive/2026-05-21-phase4-composition-cap-duel-v2-result.md`.
+4. `experiments/configs/phase4/probe/phase4_mappo_cap_duel_selfplay_v2.yaml`.
+5. `experiments/configs/phase4/probe/phase4_mappo_cap_duel_transfer_v1.yaml`.
+6. `experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_cap_duel_v2_4000.yaml`.
+7. `python/train/composition_rehearsal.py`.
+8. `python/train/mappo_pretrain_hooks.py`.
+9. `python/train/mappo_rollout_trainer.py` and the PPO loss/update path it uses.
+10. `python/train/phase_gate/README.md`.
 
-## Stage 1 — Composition Rehearsal Cap-Duel v2
+If the docs and code disagree, ask before changing load-bearing behavior.
 
-Write `experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_cap_duel_v2.yaml`
-by templating off `phase4_mappo_composition_rehearsal_v2_2000.yaml`.
-Required differences:
+## Stage A — Diagnostic First
 
-- Student warm-start stays `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`.
-- Objective teacher stays the same v6.5 checkpoint with
-  `composition_objective_env.opponent_bot: weak_basic_v2`.
-- **Combat teacher swaps to**
-  `composition_combat_teacher_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt`.
-- **`composition_combat_env` swaps to cap_duel v2** by mirroring the
-  v2 yaml's `mini_game_config` block verbatim (point_radius 0.18,
-  knockback_magnitude 0.0, spawn_distance 0.4,
-  respawn_at_spawn_position true, episode_decisions 96, enemy_hp 3,
-  score_ticks_to_clear 12, enemy_recontest_delay 12, hit_tolerance
-  0.12, hit_reward 1.0, kill_bonus 4.0, score_per_tick 0.1,
-  off_point_penalty 0.0, time_penalty_per_decision 0.0).
-- Keep `composition_pretrain_steps: 2000`,
-  `composition_objective_batch_size: 256`,
-  `composition_combat_batch_size: 256`. Do not shrink — the May-18
-  failure modes include "BC composition didn't run long enough to
-  bind both skills."
-- After composition rehearsal: full Phase 4 3v3 PPO with the same
-  conservative knobs the cap_duel transfer used: `num_envs: 64`,
-  `rollout_len: 128`, `learning_rate: 1.0e-6`, `entropy_coef: 0.02`,
-  `gamma: 0.997`, `gae_lambda: 0.95`, `lr_schedule: cosine`,
-  `lr_final_ratio: 0.1`, `value_normalization: true`. No `bc_pretrain_*`
-  (composition rehearsal *is* the pretrain).
-- `env.opponent_bot: weak_basic_v2`, `env.self_play.enabled: false`.
-  No `mini_game` flag on the PPO env (only on the rehearsal combat env).
-- `run.total_updates: 200`, `eval_every: 25`, `checkpoint_every: 25`,
-  `output_dir: runs/phase4_mappo_composition_rehearsal_cap_duel_v2`.
+Before adding the anchor, add or extend a focused diagnostic that can evaluate
+a checkpoint/policy on:
 
-Stage 1 `phase_gate:` block is the canonical Phase 4 anchor-transfer
-bar. Do not weaken any threshold:
+- objective-only/full weak_basic_v2 behavior,
+- cap_duel v2 behavior,
+- teacher/student agreement on the action heads that matter:
+  - movement rows if relevant,
+  - aim row,
+  - primary_fire binary head.
+
+Minimum useful output:
+
+- objective on-point,
+- objective losses,
+- cap_duel kills,
+- full-env Team A hit/fire,
+- full-env aim error,
+- aim MSE vs cap_duel teacher,
+- fire BCE or fire agreement vs cap_duel teacher,
+- mean teacher fire probability and mean student fire probability.
+
+This can be a script, a helper plus tests, or both. Keep it narrow.
+
+## Stage B — PPO-Time Cap-Duel Distillation Anchor
+
+Implement an optional PPO-time auxiliary loss controlled entirely by config.
+
+Suggested config shape:
+
+```yaml
+run:
+  cap_duel_distill:
+    enabled: true
+    teacher_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt
+    env:
+      mini_game: cap_duel
+      mini_game_config:
+        episode_decisions: 96
+        enemy_hp: 3
+        point_radius: 0.18
+        score_ticks_to_clear: 12
+        enemy_recontest_delay: 12
+        hit_tolerance: 0.12
+        hit_reward: 1.0
+        kill_bonus: 4.0
+        score_per_tick: 0.1
+        off_point_penalty: 0.0
+        time_penalty_per_decision: 0.0
+        knockback_magnitude: 0.0
+        spawn_distance: 0.4
+        respawn_at_spawn_position: true
+    batch_size: 256
+    every_updates: 1
+    coef: 0.05
+    aim_coef: 1.0
+    fire_coef: 1.0
+```
+
+Implementation requirements:
+
+- The feature must be off by default.
+- Teacher checkpoint must be frozen.
+- The cap_duel v2 mini-game config must be mirrored field-for-field from
+  `phase4_mappo_cap_duel_selfplay_v2.yaml`.
+- The anchor should train only the relevant actor behavior:
+  - aim delta,
+  - primary fire,
+  - optionally movement if diagnostics show it helps.
+- Do not alter PPO advantage calculation, rewards, env stepping, or action
+  semantics.
+- Log separate metrics, for example:
+  - `distill/loss`
+  - `distill/aim_loss`
+  - `distill/fire_loss`
+  - `distill/student_fire_prob`
+  - `distill/teacher_fire_prob`
+  - `distill/updates`
+- Add NaN/finite checks for the distillation loss.
+- Make the code path deterministic under the run seed.
+
+## Stage C — Probe Config
+
+Create a new config, suggested name:
+
+```text
+experiments/configs/phase4/probe/phase4_mappo_cap_duel_distill_anchor_v1.yaml
+```
+
+Base it on the conservative full-env transfer settings:
+
+- `env.opponent_bot: weak_basic_v2`
+- `env.self_play.enabled: false`
+- student warm-start:
+  `runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`
+- teacher:
+  `runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt`
+- `num_envs: 64`
+- `rollout_len: 128`
+- `learning_rate: 1.0e-6`
+- `entropy_coef: 0.02`
+- `gamma: 0.997`
+- `gae_lambda: 0.95`
+- `lr_schedule: cosine`
+- `lr_final_ratio: 0.1`
+- `value_normalization: true`
+- `total_updates: 200`
+- `eval_every: 25`
+- `checkpoint_every: 25`
+- no `bc_pretrain_*`
+- no `composition_pretrain`
+
+Include matrix eval vs:
+
+- `noop`
+- `weak_basic_v2`
+- `basic`
+
+Use the same Phase 4 anchor-transfer gate:
 
 ```yaml
 phase_gate:
-  phase: phase4_composition_rehearsal_cap_duel_v2
+  phase: phase4_cap_duel_distill_anchor_v1
   identity_requirements:
     min_unique_seeds: 1
   objective_checks:
@@ -137,107 +261,146 @@ phase_gate:
     approval_rule: all_yes
     questions:
       - id: replay_kill_then_hold_3v3
-        prompt: "In a greedy 3v3 replay vs weak_basic_v2, does the
-                 kill-or-displace-then-hold behavior visible in cap_duel
-                 v2 still happen in the full 3v3, or has full-env PPO
-                 erased it?"
+        prompt: >
+          In a greedy 3v3 replay vs weak_basic_v2, does Team A create a
+          combat advantage, kill or displace enemies, and hold the point
+          long enough to convert score without obvious reward hacking?
 ```
 
-**Pre-PPO kill-switch.** Before letting the PPO loop run, the
-composition rehearsal path produces a post-BC eval. Watch:
+## Stage D — Run And Gate
 
-- Team A `hit_fire` on `weak_basic_v2`: should be visibly above `0.04`.
-  If at `~0.0145` like the failed cap_duel transfer v1's update-25
-  eval, composition rehearsal didn't preserve combat and PPO won't
-  rescue it — stop and apply the Stage 1 fallback below.
+Before launch:
 
-Post-training: matrix eval vs `noop`/`weak_basic_v2`/`basic`, dump one
-greedy and one stochastic 3v3 replay, build evidence, invoke gate,
-journal.
+- Check no training run is in flight.
+- Check disk space under `runs/` is above 10 GB.
+- Run focused tests plus import boundary checks.
+
+Launch from `python/`:
+
+```powershell
+py -3.13 -m train.train --config ../experiments/configs/phase4/probe/phase4_mappo_cap_duel_distill_anchor_v1.yaml
+```
+
+After training:
+
+1. Run matrix eval if the config did not already produce it.
+2. Dump one greedy and one stochastic full-3v3 replay.
+3. Build evidence.
+4. Invoke the phase gate.
+5. Journal the run.
+6. Write a result doc under
+   `docs/plans/archive/<date>-phase4-cap-duel-distill-anchor-result.md`.
 
 ## Decision Rules
 
-- Post-BC `hit_fire` collapsed below `0.04` before PPO starts →
-  composition rehearsal failed to preserve combat. Raise
-  `composition_pretrain_steps` (2000 → 4000) once and verify the
-  `composition_combat_env.mini_game_config` block matches the cap_duel
-  v2 yaml field-for-field. One tweak, then loop.
-- Post-BC OK but PPO drifts and final `hit_fire` ends below `0.04`
-  with score 0 → reduce LR (`1.0e-6 → 5.0e-7`) once. If that also
-  fails, surface for user decision (a distillation-anchor pass during
-  PPO would attack this directly but is code-change scope).
-- Post-BC OK, PPO holds combat, learner still loses objective race vs
-  `weak_basic_v2` → raise `composition_objective_batch_size`
-  (256 → 512) once.
-- `weak_basic_v2_wins` > 0 but < 5 while score clears 3.0 → partial
-  progress; document and surface, do not relax the gate.
+- Distillation loss is NaN or non-finite -> stop, fix the implementation,
+  rerun tests. This is blocked until code is fixed.
+- Distillation metrics show the anchor is inactive
+  (`distill/updates=0`, missing fire/aim losses, or teacher not loaded) ->
+  fix before launching a long run.
+- Eval `team_a_hit_fire` never reaches `0.04` by update 50 and score remains
+  `0.00` -> stop early and report. The anchor did not solve the same failure
+  mode.
+- Hit/fire clears `0.04` but score remains `0.00` through update 100 ->
+  finish the run once, then report whether the bottleneck is objective
+  conversion rather than combat preservation.
+- Score clears `3.0` but wins remain below `5` -> document partial progress;
+  do not relax the gate.
+- If this distillation-anchor run fails cleanly, recommend Strategy 3
+  focus-fire target conditioning as the next code-scope goal.
 
 ## Stop Conditions
 
-- Stage 1 returns `CLEARED` or `HUMAN_INSPECTION_REQUIRED`.
-- Two consecutive Stage 1 `NOT_CLEARED` iterations.
-- Total wall-clock training time exceeds 24 hours.
-- A run returns `BLOCKED` and the cause is not config-fixable in under
-  30 minutes (surface to user).
+- Gate returns `CLEARED`.
+- Gate returns `HUMAN_INSPECTION_REQUIRED`.
+- The run reaches a documented early-stop decision rule.
+- One full distillation-anchor run completes and returns `NOT_CLEARED`.
+- A run returns `BLOCKED` and the cause is not fixable in under 30 minutes.
+- Total training wall-clock time exceeds 24 hours.
 - Disk space under `runs/` drops below 10 GB free.
 
 ## Verification Commands
 
-Before launching:
+Before launch, run at least:
 
 ```powershell
 cd python
 py -3.13 -m pytest tests/test_phase4_cap_duel_mappo.py `
-  tests/test_phase4_combat_1v1_mappo.py tests/test_phase4_mappo_env.py `
-  tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py `
+  tests/test_phase4_mappo_env.py tests/test_mappo_matrix_eval.py `
   tests/test_mappo_composition_rehearsal.py tests/test_mappo_pretrain_hooks.py `
   tests/test_mappo_team_spirit_ramp.py -q
 py -3.13 -m scripts.check_import_boundaries
 ```
 
-If `test_mappo_composition_rehearsal.py` does not yet exercise the
-`mini_game: cap_duel` combat env path, add one focused parameterization
-(tensor shape + finite BC loss + verifies v2 knobs are honored) before
-launching. A single focused test counts as bug-fix scope.
+Add focused tests for the new anchor. Minimum expectations:
 
-After the completed run, before the gate:
+- Config defaults keep the feature disabled.
+- Enabled config loads the frozen teacher.
+- One anchor update produces finite `loss`, `aim_loss`, and `fire_loss`.
+- Teacher parameters receive no gradients.
+- PPO loss path includes the auxiliary only when enabled.
+- The cap_duel v2 mini-game block is honored.
+
+After training, run the current replay-dump smoke suite. In this checkout the
+old path `tests/test_phase4_checkpoint_replay_dump.py` is stale; use:
 
 ```powershell
-py -3.13 -m pytest tests/test_phase4_checkpoint_replay_dump.py -q
+py -3.13 -m pytest tests/smoke/test_phase_checkpoint_replay_dump_smoke.py -q
 ```
+
+If the file layout changes, use the current test that covers Phase 4 MAPPO
+checkpoint replay dumping and cite the exact command.
 
 ## Completion Criteria
 
-- `gate_decision.json` with `status: CLEARED` or `HUMAN_INSPECTION_REQUIRED`
-  exists for the Stage 1 composition-rehearsal-v2 config, the result
-  is journaled, a phase-result doc is written under
-  `docs/plans/archive/<date>-phase4-composition-cap-duel-v2-result.md`,
-  and the user has been notified, **OR**
-- A stop condition has been hit, every iteration is journaled with its
-  gate decision artifact (or an explicit explanation why it wasn't
-  reached), and a short hand-off note explains what was tried and what
-  to try next.
+The goal is complete when one of these is true:
+
+1. `gate_decision.json` exists with `status: CLEARED` or
+   `HUMAN_INSPECTION_REQUIRED`, the run is journaled, a result doc exists,
+   and replay artifacts are listed.
+2. The configured early-stop rule fires, the run is journaled, a result doc
+   explains the failed metric and next recommended code-scope move, and no
+   required artifact is silently missing.
+3. One full distillation-anchor run completes with `NOT_CLEARED`, the result
+   is journaled, a result doc is written, and the next recommendation is
+   explicit.
+
+Use completion metadata in this shape:
+
+```json
+{
+  "changed_files": [],
+  "verification": [],
+  "commit": null,
+  "config_path": null,
+  "seeds": [],
+  "wandb_run_url": null,
+  "replay_artifacts": [],
+  "viewer_command": null,
+  "tests_run": [],
+  "behavior_changes": [],
+  "reward_changes": [],
+  "config_changes": [],
+  "blocked_reason": null,
+  "residual_risk": []
+}
+```
 
 ## Good `/goal` Prompt
 
 ```text
-Use GOAL_INSTRUCTIONS.md as the active goal. Stage 1: composition
-rehearsal with cap_duel v2 as the combat teacher. Student warm-start
-phase4_mappo_basic_v6_5; objective teacher stays
-phase4_mappo_basic_v6_5; combat teacher
-runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt;
-composition_combat_env.mini_game=cap_duel with the v2 mini_game_config
-block mirrored verbatim (knockback_magnitude 0, spawn_distance 0.4,
-respawn_at_spawn_position true). composition_pretrain_steps=2000.
-Then 200 PPO updates in full 3v3 vs weak_basic_v2 at lr=1e-6,
-entropy 0.02, no bc_pretrain. Kill-switch: if post-BC team_a_hit_fire
-on weak_basic_v2 < 0.04, stop and apply the Stage 1 fallback. Gate
-is the canonical Phase 4 anchor-transfer bar (mean_score_a >= 3.0,
-wins >= 5, hit_fire >= 0.04, matrix vs basic >= 1.0, no losses to
-noop). Do not weaken thresholds, do not change game/reward/obs/action/
-replay/MAPPO-core or C++ sim, do not add aux losses or actor heads,
-do not commit. Stop on CLEARED or HUMAN_INSPECTION_REQUIRED, after two
-NOT_CLEARED iterations, or 24h total training wall time. On CLEARED,
-write a phase-result doc under docs/plans/archive/ and return the
-completion metadata block.
+Use GOAL_INSTRUCTIONS.md as the active goal. We already proved cap_duel v2 is
+an honest kill-then-hold teacher, but composition rehearsal with 2000 and 4000
+steps failed before PPO (`full_hit_fire` stayed below 0.04). Do not try more
+config-only rehearsal length. Implement a PPO-time cap_duel v2 distillation
+anchor, off by default and controlled by config, that freezes
+runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt and adds a small
+aim/fire auxiliary loss during full Phase 4 PPO against weak_basic_v2. Do not
+change C++, sim rules, rewards, obs/action semantics, replay format,
+determinism, existing W&B metric names, or gate thresholds. Add focused tests,
+create phase4_mappo_cap_duel_distill_anchor_v1.yaml, run the focused suite and
+import-boundary check, then run the probe. Stop on CLEARED,
+HUMAN_INSPECTION_REQUIRED, early stop if hit_fire remains below 0.04 with zero
+score by update 50, or one completed NOT_CLEARED run. Journal every run and
+write a result doc under docs/plans/archive/.
 ```

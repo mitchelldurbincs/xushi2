@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import gymnasium as gym
+    from train.cap_duel_distill import CapDuelDistillAnchor, CapDuelDistillBatch
 
 from train.device import resolve_device
 from train.mappo_advantage import compute_gae
@@ -104,6 +105,8 @@ class MappoTrainer:
         self.policy_sampling_generator = torch.Generator(device=self.device.type)
         self.policy_sampling_generator.manual_seed(self.seed + 20_000)
         self._update_counter = 0
+        self._active_update_idx = 0
+        self.cap_duel_distill_anchor: CapDuelDistillAnchor | None = None
         self._actor_params: list[torch.nn.Parameter] = []
         self._critic_params: list[torch.nn.Parameter] = []
         self._trunk_params: list[torch.nn.Parameter] = []
@@ -134,6 +137,14 @@ class MappoTrainer:
 
     def set_learning_rate(self, lr: float) -> None:
         set_optimizer_learning_rate(self.optimizer, lr)
+
+    def set_update_index(self, update_idx: int) -> None:
+        self._active_update_idx = int(update_idx)
+
+    def set_cap_duel_distill_anchor(
+        self, anchor: CapDuelDistillAnchor | None
+    ) -> None:
+        self.cap_duel_distill_anchor = anchor
 
     def set_team_spirit(self, value: float) -> None:
         """Push team_spirit value to every wrapped env via the vector wrapper.
@@ -200,9 +211,26 @@ class MappoTrainer:
         else:
             ret_mean, ret_std = 0.0, 1.0
 
+        distill_batch: CapDuelDistillBatch | None = None
+        if (
+            self.cap_duel_distill_anchor is not None
+            and self.cap_duel_distill_anchor.should_run(self._active_update_idx)
+        ):
+            distill_batch = self.cap_duel_distill_anchor.collect_batch(
+                update_idx=self._active_update_idx,
+                device=self.device,
+            )
+
         losses = []
         for _epoch in range(cfg.num_epochs):
-            losses.append(self._update_full_rollout(rollout, ret_mean, ret_std))
+            losses.append(
+                self._update_full_rollout(
+                    rollout,
+                    ret_mean,
+                    ret_std,
+                    distill_batch=distill_batch,
+                )
+            )
         self._update_counter = next_update_sampling_state(
             self.seed, self._update_counter
         ).update_counter
@@ -363,7 +391,12 @@ class MappoTrainer:
         return bonus, move_mean, aim_mean, binary_mean, other_mean
 
     def _update_full_rollout(
-        self, rollout: MappoRollout, return_mean: float, return_std: float
+        self,
+        rollout: MappoRollout,
+        return_mean: float,
+        return_std: float,
+        *,
+        distill_batch: CapDuelDistillBatch | None = None,
     ) -> dict[str, float]:
         cfg = self.cfg
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
@@ -536,6 +569,14 @@ class MappoTrainer:
             + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
             + cfg.target_selection_aux_coef * target_aux_loss
         )
+        distill_metric_tensors: dict[str, torch.Tensor] = {}
+        if distill_batch is not None:
+            if self.cap_duel_distill_anchor is None:
+                raise RuntimeError("distill_batch provided without configured anchor")
+            distill_scaled_loss, distill_metric_tensors = (
+                self.cap_duel_distill_anchor.loss_for_model(self.model, distill_batch)
+            )
+            total_loss = total_loss + distill_scaled_loss
 
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -550,7 +591,7 @@ class MappoTrainer:
             clip_fraction = _masked_mean(
                 ((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_agent
             )
-        return {
+        metrics = {
             "policy_loss": float(policy_loss.item()),
             "value_loss": float(value_loss.item()),
             "entropy": float(entropy_mean.item()),
@@ -586,6 +627,9 @@ class MappoTrainer:
             "trunk_grad_norm": trunk_grad_norm,
             "lr": self.current_learning_rate,
         }
+        for key, value in distill_metric_tensors.items():
+            metrics[f"distill/{key}"] = float(value.item())
+        return metrics
 
 
 def make_mappo_config(config: dict) -> MappoConfig:

@@ -243,3 +243,21 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
                 _paint(grids[row], 2, rel, 0.5)
 
     return out.reshape(*obs.shape[:-1], MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+
+
+def zero_masked_enemy_tokens(obs: np.ndarray) -> np.ndarray:
+    """Zero masked enemy token payloads while preserving token masks.
+
+    Phase-7 diagnostics keep kind/team markers on masked enemy slots. The
+    Phase-4 information ablation needs a stricter actor-visible surface:
+    currently hidden enemies must contribute no token values at all.
+    """
+    out = np.asarray(obs, dtype=np.float32).copy()
+    flat = out.reshape(-1, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+    token_width = MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM
+    tokens = flat[:, :token_width].reshape(-1, MULTI_ENEMY_TOKEN_COUNT, ENTITY_TOKEN_DIM)
+    mask = flat[:, token_width : token_width + MULTI_ENEMY_TOKEN_COUNT]
+    for token_idx in range(_FIRST_ENEMY_TOKEN, _OBJECTIVE_TOKEN):
+        hidden = mask[:, token_idx] <= 0.5
+        tokens[hidden, token_idx, :] = 0.0
+    return flat.reshape(out.shape)

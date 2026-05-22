@@ -1717,3 +1717,803 @@ four cap_duel-native HTML viewers under the same dir.
 sim-compatible rules. Recommend Stage B-1 (composition rehearsal with
 this v2 ckpt as combat teacher) per the v2 hand-off note. Config-only
 next move; no code changes required.
+
+## 2026-05-21 — Phase 4 composition rehearsal cap_duel v2 (iteration 1)
+
+**Config:** ../experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_cap_duel_v2.yaml
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` (plus working-tree
+config/test additions for the cap_duel v2 composition-rehearsal config and a
+focused rehearsal-env test).
+**Seed:** `1779134702`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/ao4hy6fa
+**Output:** python/runs/phase4_mappo_composition_rehearsal_cap_duel_v2/
+**Gate status:** NOT_REACHED (pre-PPO composition kill-switch)
+**Gate reason:** the post-composition full 3v3 hit/fire check collapsed below
+the required `0.04` floor before PPO could start. The phase gate was not
+invoked because the documented pre-PPO kill-switch fired.
+
+**Pre-launch verification:** `py -3.13 -m pytest
+tests/test_phase4_cap_duel_mappo.py tests/test_phase4_combat_1v1_mappo.py
+tests/test_phase4_mappo_env.py tests/test_phase4_current_selfplay.py
+tests/test_mappo_matrix_eval.py tests/test_mappo_composition_rehearsal.py
+tests/test_mappo_pretrain_hooks.py tests/test_mappo_team_spirit_ramp.py -q`
+passed (`87 passed`). `py -3.13 -m scripts.check_import_boundaries` passed.
+The new focused composition-rehearsal test verifies that the rehearsal combat
+env constructs `mini_game: cap_duel`, honors the v2 knobs, produces the
+expected actor tensor shape, and runs a finite one-step BC loss.
+
+**Composition pretrain:** ran all 2000 steps. Final logged loss `0.0782`
+(`move_loss=0.0000`, `aim_loss=0.0003`, `fire_loss=0.0779`).
+
+**Post-BC diagnostics:** `composition_gate passed=False`; objective on-point
+`0.131 < 0.250`, objective losses `50 > 0`, combat kills `4.26 < 12.00`,
+full-env Team A hit/fire `0.0047 < 0.0400`, full-env aim error
+`1.387 < 1.550`.
+
+**Anchor transfer artifact:** matrix eval still ran after PPO was skipped.
+`python/runs/phase4_mappo_composition_rehearsal_cap_duel_v2/mappo/matrix_eval.json`
+shows draw-only vs `noop` (`0.00/0.00` score), `50/50` losses vs
+`weak_basic_v2` with Team A score `0.00`, and `50/50` losses vs `basic` with
+Team A score `0.00`.
+
+**Replay artifacts:** none. PPO was skipped before producing a useful full-3v3
+checkpoint for the Stage 1 subjective replay question.
+
+**Decision:** apply the single documented Stage 1 fallback:
+`composition_pretrain_steps: 2000 -> 4000`. The cap_duel v2
+`mini_game_config` block was verified field-for-field against
+`phase4_mappo_cap_duel_selfplay_v2.yaml` before launching the fallback.
+
+## 2026-05-21 — Phase 4 composition rehearsal cap_duel v2 4000-step fallback (iteration 2)
+
+**Config:** ../experiments/configs/phase4/probe/phase4_mappo_composition_rehearsal_cap_duel_v2_4000.yaml
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` (plus working-tree
+config/test/doc additions for this goal).
+**Seed:** `1779134702`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/ssmkgzua
+**Output:** python/runs/phase4_mappo_composition_rehearsal_cap_duel_v2_4000/
+**Gate status:** NOT_REACHED (pre-PPO composition kill-switch)
+**Gate reason:** the single allowed 4000-step fallback still failed the
+post-composition full 3v3 hit/fire floor, so PPO was skipped and the Phase 4
+anchor-transfer phase gate was not invoked.
+
+**Pre-launch verification:** after adding the fallback config,
+`py -3.13 -m pytest tests/test_phase4_cap_duel_mappo.py
+tests/test_phase4_combat_1v1_mappo.py tests/test_phase4_mappo_env.py
+tests/test_phase4_current_selfplay.py tests/test_mappo_matrix_eval.py
+tests/test_mappo_composition_rehearsal.py tests/test_mappo_pretrain_hooks.py
+tests/test_mappo_team_spirit_ramp.py -q` passed (`88 passed`).
+`py -3.13 -m scripts.check_import_boundaries` passed. The configured
+`tests/test_phase4_checkpoint_replay_dump.py` path is not present in this
+checkout; the current equivalent smoke suite
+`py -3.13 -m pytest tests/smoke/test_phase_checkpoint_replay_dump_smoke.py -q`
+passed (`11 passed`).
+
+**Composition pretrain:** ran all 4000 steps. Final logged loss `0.0550`
+(`move_loss=0.0000`, `aim_loss=0.0002`, `fire_loss=0.0548`).
+
+**Post-BC diagnostics:** `composition_gate passed=False`; objective on-point
+`0.203 < 0.250`, objective losses `50 > 0`, combat kills `3.04 < 12.00`,
+full-env Team A hit/fire `0.0116 < 0.0400`, full-env aim error
+`1.555 > 1.550`.
+
+**Anchor transfer artifact:** matrix eval ran after PPO was skipped.
+`python/runs/phase4_mappo_composition_rehearsal_cap_duel_v2_4000/mappo/matrix_eval.json`
+shows draw-only vs `noop` (`0.00/0.00` score, Team A kills `1.0`), `50/50`
+losses vs `weak_basic_v2` with Team A score `0.00`, and `50/50` losses vs
+`basic` with Team A score `0.00`.
+
+**Replay artifacts:** none. The run stopped before PPO and before a meaningful
+full-3v3 checkpoint for the subjective replay question.
+
+**Decision:** stop the Stage 1 loop. Both the required 2000-step composition
+rehearsal and its single allowed 4000-step fallback failed before PPO because
+combat did not survive into the full 3v3 post-BC eval. The cap_duel v2 teacher
+is honest in isolation, but this composition-rehearsal path did not bind the
+teacher's kill-then-hold behavior into the full weak_basic_v2 distribution.
+Recommended next move is user decision on a code-scope escalation such as a
+distillation anchor during PPO or Strategy 3 focus-fire target conditioning;
+another config-only rehearsal-length tweak is outside the documented rules.
+
+## 2026-05-21 — Phase 4 PPO-time cap_duel v2 distillation anchor
+
+**Config:** ../experiments/configs/phase4/probe/phase4_mappo_cap_duel_distill_anchor_v1.yaml
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` (plus working-tree
+trainer/test/config additions for the PPO-time cap_duel distillation anchor).
+**Seed:** `1779134702`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/c8yyqsdd
+**Output:** python/runs/phase4_mappo_cap_duel_distill_anchor_v1/
+**Gate status:** NOT_CLEARED
+**Gate reason:** objective checks failed. `weak_basic_v2_score=0.0 < 3.0`,
+`weak_basic_v2_wins=0 < 5`, `hit_fire_floor=0.0168918919 < 0.04`, and
+`anchor_vs_basic_score=0.0 < 1.0`. The noop no-loss check passed.
+
+**Implementation:** added a PPO-time cap_duel distillation anchor that loads the
+frozen cap_duel v2 teacher, rolls a cap_duel batch every PPO update, and adds
+aim/fire imitation loss to the learner update under new `distill/*` W&B metrics.
+No C++, sim rules, reward functions, observation/action spaces, replay format,
+existing metric schema, or gate thresholds were changed.
+
+**Pre-launch verification:** `py -3.13 -m pytest
+tests/test_phase4_cap_duel_mappo.py tests/test_phase4_mappo_env.py
+tests/test_mappo_matrix_eval.py tests/test_mappo_composition_rehearsal.py
+tests/test_mappo_pretrain_hooks.py tests/test_mappo_team_spirit_ramp.py
+tests/test_cap_duel_distill.py -q` passed (`81 passed`). `py -3.13 -m
+scripts.check_import_boundaries` passed. `git diff --check` passed.
+
+**Training:** warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt`, teacher
+`runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt`. The distillation
+anchor was active with finite metrics throughout the run. Final W&B summary
+reported `distill/loss=1.2836`, `distill/aim_loss=0.57077`,
+`distill/fire_loss=0.71284`, `distill/scaled_loss=0.06418`,
+`distill/active_samples=256`, `distill/teacher_fire_prob=0.80877`,
+`distill/student_fire_prob=0.48559`, and `distill/fire_agreement=0.19141`.
+
+**Early stop:** the configured update-50 kill rule fired:
+`team_a_hit_fire=0.0168918919 < 0.04` and `mean_score_a=0.0 <= 0.0`.
+Update-25 eval was also below target (`team_a_hit_fire=0.0165`, score
+`0.00/23.33`, `0W/50L/0D`), so the anchor did not produce an early full-3v3
+combat transfer signal.
+
+**Matrix transfer artifact:** `python/runs/phase4_mappo_cap_duel_distill_anchor_v1/mappo/matrix_eval.json`
+shows draw-only vs `noop` (`0.00/0.00`, `0W/0L/50D`), `50/50` losses vs
+`weak_basic_v2` (`0.00/23.33`), and `50/50` losses vs `basic` (`0.00/37.00`,
+Team B kills `30.0`).
+
+**Artifacts:** evidence and decision files are under
+`python/runs/phase4_mappo_cap_duel_distill_anchor_v1/`:
+`evidence.json`, `gate_decision.json`, `launch.log`, plus
+`mappo/early_stop_decision.json`, `mappo/checkpoint_manifest.json`, and
+`mappo/transfer_summary.{json,md}`. Replay dumps:
+`data/replays/phase4_cap_duel_distill_anchor_v1_ckpt_final_greedy.replay` and
+`data/replays/phase4_cap_duel_distill_anchor_v1_ckpt_final_stochastic.replay`.
+Viewer command:
+`xushi2-viewer --replay data/replays/phase4_cap_duel_distill_anchor_v1_ckpt_final_greedy.replay`.
+
+**Post-run verification:** `py -3.13 -m pytest
+tests/smoke/test_phase_checkpoint_replay_dump_smoke.py -q` passed
+(`11 passed`). `phase_gate.cli` wrote `gate_decision.json` with status
+`NOT_CLEARED`.
+
+**Decision:** stop this PPO-time cap_duel distillation-anchor path. It proved
+the teacher hook can run and log cleanly during PPO, but it did not raise
+full-3v3 hit/fire above the `0.04` floor or produce any Team A scoring. Per the
+goal instructions, the recommended next move is Strategy 3: explicit focus-fire
+target conditioning, with user approval before adding any new actor-head or
+action-space-facing machinery.
+
+## 2026-05-22 — Phase 4 cap_duel v2 focus-fire transfer probe
+
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_cap_duel_v2_focus_fire_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/j90y7l1i
+**Output:** `python/runs/phase4_mappo_cap_duel_v2_focus_fire_v1/`
+**Gate status:** `NOT_CLEARED`
+
+**Reason:** a 2026-05-22 audit reconciled the latest "Strategy 3" recommendation
+with existing focus-fire work. `phase4_mappo_focus_fire_v1` already implemented
+the shared low-HP target-conditioning machinery and fixed measured target
+concentration, but did not score. `phase4_mappo_cap_duel_focus_fire_v1` used the
+older cap-duel v1 checkpoint, so it did not directly test the honest cap-duel v2
+teacher. This run tested the one remaining config-only combination: cap-duel v2
+checkpoint plus existing focus-fire machinery, with no new actor head or
+action-space-facing target field.
+
+**Training:** warm-started from
+`runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt` into full 3v3
+against `weak_basic_v2`, with `target_conditioned_combat: true`,
+`target_selection_aux_mode: team_focus_low_hp`, and total `100` updates. A
+subagent-launched first attempt crashed at update 30 due to a closed console
+print (`OSError: [Errno 22] Invalid argument`) and produced no eval; it is not
+gate evidence. The clean relaunch is W&B `j90y7l1i`.
+
+**Result:** update 50 already matched the falsification rule: `0W/50L/0D`,
+score `0.00/35.73`, Team A hit/fire `0.0000`, recent training `onpt=0.000`.
+The run continued to update 100 and remained negative: `0W/50L/0D`, score
+`0.00/35.93`, Team A hit/fire `0.0017`, same-target fraction `0.817`, focus
+entropy `0.350`.
+
+**Matrix transfer:** `python/runs/phase4_mappo_cap_duel_v2_focus_fire_v1/mappo/matrix_eval.json`
+shows draw-only vs `noop` (`0.00/0.00`), `50/50` losses vs `weak_basic_v2`
+(`0.00/35.73`), and `50/50` losses vs `basic` (`0.00/37.00`, Team B kills
+`30.0`).
+
+**Artifacts:** `evidence.json`, `gate_decision.json`, `checkpoint_manifest.json`,
+`transfer_summary.{json,md}`, and two replay dumps:
+`data/replays/phase4_cap_duel_v2_focus_fire_v1_ckpt_final_greedy.replay` and
+`data/replays/phase4_cap_duel_v2_focus_fire_v1_ckpt_final_stochastic.replay`.
+Viewer command:
+`xushi2-viewer --replay data/replays/phase4_cap_duel_v2_focus_fire_v1_ckpt_final_greedy.replay`.
+
+**Verification:** focused pytest suite passed (`43 passed`),
+`scripts.check_import_boundaries` passed, replay dump smoke passed (`11 passed`),
+and `phase_gate.cli` wrote `NOT_CLEARED`.
+
+**Decision:** stop this config-only focus-fire path. The honest cap-duel v2
+teacher plus existing focus-fire machinery did not recover full-3v3 combat,
+scoring, or objective conversion. Recommended next move is a new active design
+plan for a different structural intervention; do not retry plain focus-fire,
+cap-duel v1 focus-fire, cap-duel v2 focus-fire config-only variants,
+composition-rehearsal length variants, or distillation coefficient-only
+variants.
+
+## 2026-05-22 — Phase 4 full-env teacher rehearsal implementation
+
+**Status:** implementation ready; probe not yet launched in this entry.
+
+**Reason:** after cap-duel v2 composition, PPO-time distillation, and cap-duel
+v2 focus-fire all failed to bind combat into full weak_basic_v2 3v3, a new
+active design plan was added:
+`docs/plans/active/2026-05-22-phase4-full-env-teacher-rehearsal-design.md`.
+The mechanism is an opt-in pre-PPO rehearsal stage that trains movement,
+aim/fire, and optional target-selection labels in the actual full Phase 4
+environment using only actor-visible observations.
+
+**Implementation:** added `python/train/full_env_rehearsal.py`, wired
+`maybe_run_full_env_rehearsal(...)` into the pretrain chain before
+composition/BC, and added the first probe config:
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v1.yaml`.
+The new gate writes `full_env_rehearsal_gate.json` before PPO. If the gate
+returns `NOT_REACHED`, PPO must not launch.
+
+**Scope:** no C++, sim rules, reward formulas, observation/action schemas,
+replay format, existing W&B metric schema, or phase-gate thresholds changed.
+The scripted rehearsal label function accepts only actor observations and
+`MappoConfig`; it does not accept env/sim/critic/info state.
+
+**Verification:** `py -3.13 -m pytest tests/test_full_env_rehearsal.py
+tests/test_mappo_pretrain_hooks.py -q` passed (`9 passed`).
+`py -3.13 -m pytest tests/test_mappo_pretrain_hooks.py
+tests/test_mappo_focus_fire.py tests/test_mappo_aux_aim.py
+tests/test_phase7_partial_obs.py -q` passed (`31 passed`). Broader focused
+suite with Phase 4 env and matrix eval passed (`70 passed`).
+`py -3.13 -m scripts.check_import_boundaries` passed.
+
+**Next:** launch
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v1.yaml`
+once with W&B enabled. Treat pre-PPO gate failure as `NOT_REACHED`, not
+blocked.
+
+## 2026-05-22 — Phase 4 full-env teacher rehearsal probe
+
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/xi4zc1cu
+**Output:** `python/runs/phase4_mappo_full_env_rehearsal_v1/`
+**Pre-PPO gate status:** `NOT_REACHED`
+
+**Training:** warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` and ran the new
+full-env scripted rehearsal stage for 2000 supervised steps. The rehearsal
+objective converged mechanically: step 1 loss `2.1260` (`move=0.1225`,
+`aim=0.1533`, `fire=1.3187`, `target=1.0630`) to step 2000 loss `0.0012`
+(`move=0.0007`, `aim=0.0002`, `fire=0.0003`, `target=0.0001`).
+
+**Gate result:** the pre-PPO full-env gate failed with Team A hit/fire
+`0.0005556 < 0.04`, objective on-point `0.015 < 0.25`, `50/50` losses,
+`0` wins, and score `0.00/37.00`. Gate artifact:
+`python/runs/phase4_mappo_full_env_rehearsal_v1/mappo/full_env_rehearsal_gate.json`.
+Because the gate returned `NOT_REACHED`, PPO was intentionally skipped and no
+post-PPO phase-gate decision was produced.
+
+**Artifacts:** checkpoint manifest under
+`python/runs/phase4_mappo_full_env_rehearsal_v1/mappo/`, plus replay dumps:
+`data/replays/phase4_full_env_rehearsal_v1_ckpt_final_greedy.replay` and
+`data/replays/phase4_full_env_rehearsal_v1_ckpt_final_stochastic.replay`.
+Viewer command:
+`xushi2-viewer --replay data/replays/phase4_full_env_rehearsal_v1_ckpt_final_greedy.replay`.
+Result doc:
+`docs/plans/archive/2026-05-22-phase4-full-env-rehearsal-result.md`.
+
+**Verification:** implementation/focused suites passed (`9 passed`,
+`31 passed`, `70 passed`), import boundary check passed, and replay dump smoke
+passed (`11 passed`).
+
+**Decision:** stop this full-env scripted rehearsal v1 path before PPO. The
+teacher labels are learnable by supervised loss, but they do not produce enough
+full-env hit/fire or objective pressure to justify PPO. Next work should audit
+replay/label quality and design a bounded v2; do not rerun v1, extend length
+only, weaken the gate, or force PPO after the failed pre-PPO gate.
+
+## 2026-05-22 — Phase 4 full-env teacher rehearsal v2
+
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v2.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/mbqehspr
+**Output:** `python/runs/phase4_mappo_full_env_rehearsal_v2/`
+**Pre-PPO gate status:** `NOT_REACHED`
+
+**Audit/fix:** the v1 replay analyzer showed Team A firing continuously at
+visible enemies but with very large mean nearest-visible aim error (`2.5406`
+rad greedy). The bug was in the scripted rehearsal teacher: actor aim vectors
+are `(sin theta, cos theta)`, but the target angle used `atan2(y, x)`. V2 fixes
+the teacher to use `atan2(x, y)` for the target vector and adds a regression
+test for the convention.
+
+**Training:** warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` and ran the corrected
+full-env rehearsal stage for 2000 supervised steps. The objective again
+converged: step 1 loss `2.2337` (`move=0.1387`, `aim=0.2181`,
+`fire=1.3455`, `target=1.0629`) to step 2000 loss `0.0012`
+(`move=0.0007`, `aim=0.0003`, `fire=0.0002`, `target=0.0001`).
+
+**Gate result:** the pre-PPO full-env gate still failed with Team A hit/fire
+`0.0 < 0.04`, objective on-point `0.01 < 0.25`, `50/50` losses, `0` wins,
+and score `0.00/37.00`. Gate artifact:
+`python/runs/phase4_mappo_full_env_rehearsal_v2/mappo/full_env_rehearsal_gate.json`.
+Because the gate returned `NOT_REACHED`, PPO was intentionally skipped.
+
+**Replay diagnostics:** v2 reduced Team A mean nearest-visible aim error to
+`0.6073` rad greedy and `0.6376` rad stochastic, but both replays still had
+`0` Team A damage and `0` kills while firing nearly every decision. This
+confirms the aim convention bug was real, but not sufficient to make scripted
+full-env rehearsal viable.
+
+**Artifacts:** checkpoint manifest under
+`python/runs/phase4_mappo_full_env_rehearsal_v2/mappo/`, plus replay dumps:
+`data/replays/phase4_full_env_rehearsal_v2_ckpt_final_greedy.replay` and
+`data/replays/phase4_full_env_rehearsal_v2_ckpt_final_stochastic.replay`.
+Viewer command:
+`xushi2-viewer --replay data/replays/phase4_full_env_rehearsal_v2_ckpt_final_greedy.replay`.
+Result doc:
+`docs/plans/archive/2026-05-22-phase4-full-env-rehearsal-v2-result.md`.
+
+**Verification:** full-env/pretrain tests passed (`10 passed`), broader
+focused suite passed (`71 passed`), import boundary check passed, replay dump
+smoke passed (`11 passed`), and replay combat analyzer completed for both v2
+replays.
+
+**Decision:** stop the corrected full-env scripted rehearsal v2 path before
+PPO. Do not extend v2 length or force PPO. The next design needs a
+higher-fidelity full-env teacher that accounts for shooting geometry and
+objective timing, or a separate scripted-action diagnostic proving that the
+teacher can hit and hold in the same full-env distribution before training a
+neural policy against its labels.
+
+## 2026-05-22 — Phase 4 direct full-env teacher diagnostic
+
+**Status:** offline diagnostic complete; not Phase 4 gate evidence.
+**Config source:**
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v2.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** none; this was not a training run.
+
+**Reason:** v2 fixed the aim convention and improved neural replay aim error,
+but still failed the pre-PPO gate. The next question was whether the teacher
+itself can create useful full-env behavior before using it as supervised data.
+
+**Implementation:** added `python/scripts/diagnose_full_env_teacher.py` and
+`python/tests/test_full_env_teacher_diagnostic.py`. The script can run the
+actor-observation-only rehearsal teacher or a C++ scripted bot teacher directly
+through `Phase4MappoEnv`, writing JSON summaries without PPO.
+
+**Actor-observation teacher diagnostic:** `actor_obs_scripted` vs
+`weak_basic_v2`, 50 episodes, produced `0` wins, `0` losses, `50` draws,
+score `0.00/0.00`, Team A hit/fire `0.0`, visible-fire rate `1.0`, and
+objective_on_point `0.0`. Artifact:
+`python/runs/phase4_mappo_full_env_rehearsal_v2/scripted_teacher_diagnostic.json`.
+The same teacher against `noop` won `10/10` with score `37.0/0.0` and
+objective_on_point `0.9333`, so basic objective movement works when
+uncontested.
+
+**Full-state teacher bound:** `cpp_basic` vs `weak_basic_v2`, 10 episodes,
+produced `10` wins, score `12.70/0.00`, Team A hit/fire `0.0917`, visible-fire
+rate `1.0`, and objective_on_point `0.8667`. Artifact:
+`python/runs/phase4_mappo_full_env_rehearsal_v2/cpp_basic_teacher_diagnostic.json`.
+
+**Interpretation:** the actor-observation-only v2 teacher is not viable as a
+training target. It can walk to point, but cannot create contested damage or
+majority pressure. The full-state `cpp_basic` contrast proves the full Phase 4
+wrapper can support hit/hold behavior, but it uses information not present in
+the current flat actor observation. Phase 4 flat actor obs still exposes only a
+counterpart enemy through `visible_enemy_1v1`; `cpp_basic` can choose the
+nearest visible enemy across all enemy slots.
+
+**Verification:** diagnostic/full-env tests passed (`9 passed`), broader
+focused suite passed (`74 passed`), and import boundary check passed.
+
+**Decision:** do not rerun or extend actor-observation full-env rehearsal v1/v2.
+Next work should be a bounded v3 design around a higher-fidelity teacher with a
+preflight diagnostic: either privileged training-time imitation from
+`cpp_basic` with explicit no-inference-leak tests, or an approved move to an
+existing wider multi-enemy actor observation path. Do not change sim rules,
+reward formulas, replay format, action semantics, or phase-gate thresholds.
+
+## 2026-05-22 — Phase 4 full-env rehearsal v3 cpp_basic preflight
+
+**Status:** implementation ready; W&B training not yet launched.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v3_cpp_basic.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+
+**Implementation:** extended `python/train/full_env_rehearsal.py` with an
+opt-in `teacher: cpp_basic` path. This collects C++ scripted `basic` actions
+from the current Phase 4 env state as privileged training-time labels for
+movement, aim, and fire. The actor inference path remains unchanged and still
+consumes actor observations only. The v3 config disables target-selection
+conditioning to avoid mixing the prior focus-fire head with full-state
+movement/aim/fire labels.
+
+**Preflight diagnostic:** ran
+`py -3.13 -m scripts.diagnose_full_env_teacher --config ../experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v3_cpp_basic.yaml --episodes 10 --seed 3519994490 --teacher cpp_basic --output runs/phase4_mappo_full_env_rehearsal_v3_cpp_basic/cpp_basic_teacher_diagnostic.json`.
+Result: `10W/0L/0D`, score `12.70/0.00`, Team A hit/fire `0.0917`,
+objective_on_point `0.8667`.
+
+**Verification:** `py -3.13 -m pytest tests/test_full_env_rehearsal.py
+tests/test_full_env_teacher_diagnostic.py tests/test_mappo_pretrain_hooks.py -q`
+passed (`16 passed`). Broader focused suite with focus/fire/leak-adjacent,
+Phase 4 env, and matrix eval tests passed (`76 passed`). Import boundary check
+passed. Config smoke confirmed `obs_dim=31`, `action_dim=6`, and
+`target_selection_dim=0`.
+
+**Decision:** ready for one bounded v3 experiment run with W&B enabled. The run
+must respect the existing pre-PPO `full_env_rehearsal_gate.json`: if it returns
+`NOT_REACHED`, stop and do not force PPO. If it passes and PPO starts, run only
+the configured 100 updates and then require normal Phase 4 gate/matrix/replay
+evidence. Do not treat the privileged teacher diagnostic itself as gate
+evidence.
+
+## 2026-05-22 — Phase 4 full-env rehearsal v3 cpp_basic run
+
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_full_env_rehearsal_v3_cpp_basic.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/3kfkr7r2
+**Output:** `python/runs/phase4_mappo_full_env_rehearsal_v3_cpp_basic/`
+**Pre-PPO gate status:** `NOT_REACHED`
+
+**Training:** warm-started from
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` and ran 2000 supervised
+full-env rehearsal steps using `teacher: cpp_basic`. The supervised objective
+converged from step 1 loss `0.9507` (`move=0.1399`, `aim=0.0953`,
+`fire=0.7156`) to step 2000 loss `0.0264` (`move=0.0050`, `aim=0.0211`,
+`fire=0.0002`).
+
+**Gate result:** the pre-PPO gate failed with Team A hit/fire
+`0.0061111111 < 0.04`, objective_on_point `0.0166666667 < 0.25`, `50/50`
+losses, `0` wins, and score `0.00/37.00`. Gate artifact:
+`python/runs/phase4_mappo_full_env_rehearsal_v3_cpp_basic/mappo/full_env_rehearsal_gate.json`.
+Because the gate returned `NOT_REACHED`, PPO was intentionally skipped.
+
+**Matrix eval:** `ckpt_final.pt` drew `50/50` vs `noop` with score
+`0.00/0.00`, lost `50/50` vs `weak_basic_v2` with score `0.00/37.00`, and
+lost `50/50` vs `basic` with score `0.00/37.00`.
+
+**Replay diagnostics:** replay dumps were written to
+`data/replays/phase4_full_env_rehearsal_v3_cpp_basic_ckpt_final_greedy.replay`
+and
+`data/replays/phase4_full_env_rehearsal_v3_cpp_basic_ckpt_final_stochastic.replay`.
+Greedy analysis produced Team A hit/fire `0.0061111111`, `11000` centi-HP
+damage, `0` kills, and score `0.00/37.00`. Stochastic analysis produced Team A
+hit/fire `0.0116731518`, `21000` centi-HP damage, `1` kill, and score
+`0.00/35.10`.
+
+**Verification:** focused v3 tests passed (`16 passed`), broader focused suite
+passed (`76 passed`), import boundary check passed, direct `cpp_basic` teacher
+diagnostic passed (`10W/0L/0D`), and replay dump smoke passed (`11 passed`).
+
+**Decision:** stop this v3 privileged full-env rehearsal path before PPO. Do
+not retry by only increasing rehearsal length, weakening the gate, or forcing
+PPO. The direct `cpp_basic` teacher succeeds, but the unchanged flat actor
+observation/policy does not retain enough contested hit/fire or objective
+pressure after imitation. Next work should make an explicit actor
+information/capacity decision or prove offline that a different no-observation
+teacher is representable by the current flat actor input.
+
+## 2026-05-22 — Phase 4 actor information audit
+
+**Status:** audit complete; implementation requires explicit user approval.
+**Audit doc:**
+`docs/plans/active/2026-05-22-phase4-actor-information-decision.md`
+
+The observation audit reconciled the v1/v2/v3 rehearsal failures with the
+direct teacher diagnostic. Phase 4 actor obs is still the 31-float Phase-1
+layout, and in 3v3 `src/sim/src/actor_obs.cpp` fills the enemy block only via
+`obs_utils::visible_enemy_1v1`. That helper maps each actor to its counterpart
+enemy slot. Direct `cpp_basic` succeeds by choosing among all visible enemies;
+the current actor input cannot faithfully represent those target switches.
+
+Decision: do not launch another teacher/rehearsal variant without a direct
+diagnostic that wins or scores in full `weak_basic_v2`. The recommended next
+step is user approval for one bounded opt-in multi-enemy actor-observation
+ablation, with strict hidden-enemy leak tests, shape tests, and import-boundary
+checks. No reward, sim-rule, action, replay, phase-gate, or existing W&B schema
+changes are authorized by this audit.
+
+## 2026-05-22 — Phase 4 multi-enemy actor observation preflight
+
+**Status:** implementation and preflight complete; W&B training not launched.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** none; local diagnostic only.
+
+Implemented an opt-in Phase 4 actor-observation ablation via
+`env.actor_obs: multi_enemy_entity_grid`. The default Phase 4 flat actor path is
+unchanged. The new wrapper delegates sim, rewards, action semantics, critic obs,
+and episode info to `Phase4MappoEnv`, and only transforms actor observations
+into current visible enemy tokens. It uses native C++ line-of-sight visibility
+and zeroes masked enemy token payloads; it does not use Phase 7 last-seen stale
+enemy markers.
+
+The direct widened-observation teacher diagnostic passed against
+`weak_basic_v2`: `10W/0L/0D`, score `9.20/0.00`, Team A hit/fire `0.09`,
+visible-fire rate `1.0`, and objective_on_point `0.875`. Artifact:
+`python/runs/phase4_mappo_multi_enemy_actor_obs_v1/multi_enemy_visible_teacher_diagnostic.json`.
+
+Verification passed: new ablation/diagnostic tests (`11 passed`), import
+boundary PASS, Phase 5/6/7 observation suite (`12 passed`), Phase 4
+env/pretrain/focus suite (`38 passed`), and C++ actor leak/actor obs/critic
+obs/obs dims binaries (`5`, `12`, `8`, and `3` tests passed).
+
+Decision: ready for one separate bounded W&B training assignment using the new
+config. Do not treat the direct diagnostic as phase-gate evidence, and do not
+retry no-observation teacher variants before this ablation is tested with a
+trained policy.
+
+## 2026-05-22 — Phase 4 multi-enemy actor observation training attempt
+
+**Status:** `BLOCKED`; run crashed before usable metrics.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/bw9jsxte
+
+The assigned worker passed preflight (`scripts.check_import_boundaries` and
+the multi-enemy actor-observation/direct-diagnostic tests, `11 passed`) and
+launched the W&B-enabled training command from `python/`. W&B authenticated and
+created the run.
+
+Training failed before eval or PPO metrics. The configured warm start
+`runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt` is a flat-actor checkpoint,
+while this ablation uses the `entity_attention_grid` actor topology. Strict
+`load_state_dict` failed with missing `actor_entity_encoder`,
+`actor_grid_encoder`, and `actor_fusion` keys and unexpected `actor_embed`
+keys.
+
+Artifacts verified:
+`python/wandb/run-20260522_135640-bw9jsxte/files/wandb-metadata.json` and
+`python/wandb/run-20260522_135640-bw9jsxte/files/output.log`. No checkpoint
+manifest, gate artifact, matrix eval, replay artifact, or training metrics
+were produced by this run.
+
+**Decision:** do not retry the same config unchanged. Next work is a bounded
+implementation/preflight fix for an explicit opt-in warm-start migration across
+the actor observation topology change. This should preserve strict default
+warm-start behavior and must not change rewards, sim rules, action semantics,
+replay format, phase-gate thresholds, or existing W&B metric schema.
+
+## 2026-05-22 — Phase 4 multi-enemy actor observation warm-start fix
+
+**Status:** implementation and preflight complete; W&B training not launched.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+
+Added explicit `run.warm_start_migration: compatible_exact` support. Default
+warm-start remains strict. The opt-in migration loads only same-name,
+same-shape tensors, reports missing model keys, unexpected checkpoint keys, and
+same-name shape mismatches, and leaves incompatible flat actor encoder keys
+unloaded.
+
+The probe config now opts into this migration. A non-training smoke loaded the
+flat Phase 4 checkpoint into the `entity_attention_grid` model without error:
+`actor_obs=multi_enemy_entity_grid`, `obs_dim=3167`, `action_dim=6`,
+`target_selection_dim=0`, `warm_start_migration=compatible_exact`, with 17
+compatible tensors loaded and `actor_embed.*` skipped as unexpected.
+
+Verification passed: import boundary PASS, multi-enemy actor-observation and
+diagnostic tests `11 passed`, warm-start hook tests `8 passed`.
+
+**Decision:** ready for one separate bounded W&B training assignment using the
+same config. This implementation smoke is not phase-gate evidence.
+
+## 2026-05-22 — Phase 4 multi-enemy actor observation training run
+
+**Status:** `NOT_CLEARED`.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** https://wandb.ai/mitchelldurbinuky-aspect/xushi2/runs/ud4c09jw
+**Output:** `python/runs/phase4_mappo_multi_enemy_actor_obs_v1/`
+
+The bounded W&B run completed 100/100 updates with
+`actor_obs=multi_enemy_entity_grid` and
+`warm_start_migration=compatible_exact`. Preflight passed: import boundary
+PASS, multi-enemy actor-observation and diagnostic tests `11 passed`, and
+warm-start hook tests `8 passed`.
+
+Best eval at update 50 and final eval at update 100 were both negative:
+`0W/50L/0D`, score `0.00/37.00`, mean reward `-11.0`, and Team A hit/fire
+`0.0`. Final objective focus fraction was `0.0`.
+
+Matrix eval:
+
+- vs `noop`: `0W/0L/50D`, score `0.00/0.00`
+- vs `weak_basic_v2`: `0W/50L/0D`, score `0.00/37.00`
+- vs `basic`: `0W/50L/0D`, score `0.00/37.00`
+
+Transfer summary gate status was `evidence_insufficient`. Artifacts:
+`python/runs/phase4_mappo_multi_enemy_actor_obs_v1/mappo/checkpoint_manifest.json`,
+`python/runs/phase4_mappo_multi_enemy_actor_obs_v1/mappo/matrix_eval.json`,
+`python/runs/phase4_mappo_multi_enemy_actor_obs_v1/mappo/transfer_summary.json`,
+and replays
+`data/replays/phase4_multi_enemy_actor_obs_v1_ckpt_final_greedy.replay` and
+`data/replays/phase4_multi_enemy_actor_obs_v1_ckpt_final_stochastic.replay`.
+
+Replay analyzer found the greedy policy issued no Team A fire commands and did
+no damage. The stochastic replay fired continuously but produced only `1000`
+centi-HP Team A damage over five detected episodes, Team A hit/fire
+`0.0002281022`, and Team B score `37.0`.
+
+**Decision:** objective checks did not pass, so no human replay inspection is
+required for clearance. Do not retry this same config unchanged. The direct
+multi-enemy-visible scripted teacher succeeds, but the neural PPO run did not
+learn objective pressure, firing, or scoring from the widened actor observation
+alone.
+
+## 2026-05-22 — Phase 4 multi-enemy training failure audit
+
+**Status:** audit/design complete; implementation requires explicit user
+approval.
+**Audit doc:**
+`docs/plans/active/2026-05-22-phase4-multi-enemy-training-failure-audit.md`
+
+The audit reconciled the positive direct teacher diagnostic with the failed
+PPO run. The widened actor observation is sufficient for scripted direct action
+selection: `multi_enemy_visible` beat `weak_basic_v2` `10W/0L/0D`, score
+`9.20/0.00`, Team A hit/fire `0.09`. The neural run did not inherit a useful
+mapping because the compatible warm-start intentionally skipped the old flat
+actor encoder; the new `actor_entity_encoder`, `actor_grid_encoder`, and
+`actor_fusion` began effectively random. With sparse contested PPO at
+`1.0e-6` for 100 updates, the policy stayed high-entropy and greedy Team A
+never fired.
+
+Decision: do not retry
+`phase4_mappo_multi_enemy_actor_obs_v1.yaml` unchanged and do not run a longer
+or coefficient-only PPO variant as the next step. The proposed next step is one
+bounded opt-in supervised bridge using existing `multi_enemy_visible` teacher
+labels before PPO, with a pre-PPO neural-policy gate that must show nonzero
+Team A firing, useful hit/fire, objective pressure, and nonzero score before
+any PPO updates. This is a new supervised training path and requires explicit
+user approval before implementation.
+
+## 2026-05-22 — Phase 4 multi-enemy supervised bridge
+
+**Status:** `NOT_REACHED`; stop before PPO.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_supervised_bridge_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** none; this was a local implementation/preflight and direct gate
+assignment.
+**Output:** `python/runs/phase4_mappo_multi_enemy_supervised_bridge_v1/`
+
+Implemented an opt-in `run.multi_enemy_supervised_bridge` path for
+`actor_obs: multi_enemy_entity_grid`, using the existing
+`multi_enemy_visible` teacher labels for movement, aim, and fire before PPO.
+The bridge is off by default, requires the entity-grid actor observation, and
+does not add action-space target fields. No reward, sim-rule, action,
+replay-format, phase-gate-threshold, or existing W&B schema changes were made.
+
+The no-W&B direct gate ran 2000 supervised steps. Labels converged to loss
+`0.0005422` (`move=0.0000411`, `aim=0.0003568`, `fire=0.0001443`), but the
+pre-PPO neural policy gate failed:
+
+- Team A visible fire rate `1.0 >= 0.01`
+- Team A hit/fire `0.0088888889 < 0.04`
+- objective_on_point `0.0116666667 < 0.25`
+- mean score A `0.0 < 1.0`
+- losses `50 > 49`
+- wins `0`, mean score B `31.9666666667`
+
+Artifacts:
+`python/runs/phase4_mappo_multi_enemy_supervised_bridge_v1/multi_enemy_supervised_bridge_summary.json`,
+`python/runs/phase4_mappo_multi_enemy_supervised_bridge_v1/mappo/multi_enemy_supervised_bridge_gate.json`,
+and
+`python/runs/phase4_mappo_multi_enemy_supervised_bridge_v1/mappo/ckpt_multi_enemy_supervised_bridge.pt`.
+
+Verification passed: import boundary PASS, bridge/full-env/pretrain focused
+tests `29 passed`, and assignment-required focused suite `22 passed`.
+
+**Decision:** do not launch PPO or W&B training from this result. Do not retry
+the same supervised bridge config unchanged, do not increase bridge length as
+the next move, and do not force PPO past the failed pre-PPO gate. The next
+move should be an offline failure audit/design decision.
+
+## 2026-05-22 — Phase 4 multi-enemy supervised bridge failure audit
+
+**Status:** audit/design complete; next implementation requires explicit user
+approval.
+**Audit doc:**
+`docs/plans/active/2026-05-22-phase4-multi-enemy-supervised-bridge-failure-audit.md`
+
+The audit reconciled the positive direct `multi_enemy_visible` teacher, the
+failed widened-observation PPO run, and the failed one-shot supervised bridge.
+The actor-visible information surface is sufficient for scripted direct action
+selection: the direct teacher beat `weak_basic_v2` `10W/0L/0D`, score
+`9.20/0.00`, Team A hit/fire `0.09`, and objective_on_point `0.875`. The
+plain PPO run failed because the new actor front end began effectively random
+after compatible warm start. The supervised bridge fixed the "no firing"
+failure mode on its training distribution, but the closed-loop gate still lost
+`50/50`, scored `0.0`, produced Team A hit/fire `0.0088888889`, and produced
+objective_on_point `0.0116666667`.
+
+Decision: treat the one-shot bridge as expert-state behavior cloning that
+failed under policy-state distribution shift. Do not launch PPO from
+`phase4_mappo_multi_enemy_supervised_bridge_v1.yaml`, do not retry the same
+bridge unchanged, do not increase bridge length as the next move, and do not
+force PPO past the failed gate. The proposed next step is one bounded opt-in
+closed-loop supervised bridge using policy-induced states and the existing
+`multi_enemy_visible` teacher labels. It must report movement/aim/fire
+agreement diagnostics on policy-induced states and pass the same pre-PPO
+neural-policy gate before any PPO or W&B run. This is a new supervised training
+path and requires explicit user approval before implementation.
+
+## 2026-05-22 — Phase 4 multi-enemy closed-loop supervised bridge
+
+**Status:** `NOT_REACHED`; stop before PPO.
+**Config:**
+`experiments/configs/phase4/probe/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1.yaml`
+**Git commit:** `f776104eb95f64bea44975f0050af29f595f46af` plus dirty
+working-tree Phase 4 changes.
+**Seed:** `3519994490`
+**W&B:** none; this was a local implementation/preflight and pre-PPO gate
+assignment.
+**Output:**
+`python/runs/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1/`
+
+Implemented an opt-in closed-loop supervised bridge that rolls out the current
+neural policy against `weak_basic_v2`, queries existing `multi_enemy_visible`
+teacher labels on policy-induced states, and runs bounded supervised update
+rounds. It writes policy-state movement/aim/fire agreement diagnostics. The
+feature is opt-in/off-by-default. PPO and W&B were not launched. No reward,
+sim-rule, tick-pipeline, action semantics, action-space field, replay format,
+phase-gate threshold, or existing W&B metric/schema changes were made.
+
+Final policy-state agreement: movement MSE `0.0154950926`, aim absolute error
+`0.2026730925`, fire accuracy `1.0`, fire positive recall `1.0`, policy fire
+rate `1.0`, and teacher fire rate `1.0`.
+
+The pre-PPO gate improved over the one-shot bridge but still failed score:
+Team A visible-fire rate `1.0`, Team A hit/fire `0.0427777778 >= 0.04`,
+objective_on_point `0.29 >= 0.25`, losses `0 <= 49`, wins `0`, mean score B
+`0.0`, but mean score A `0.0 < 1.0`. Gate artifact:
+`python/runs/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1/mappo/multi_enemy_closed_loop_supervised_bridge_gate.json`.
+Agreement artifact:
+`python/runs/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1/mappo/multi_enemy_closed_loop_supervised_bridge_agreement.json`.
+Checkpoint:
+`python/runs/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1/mappo/ckpt_multi_enemy_closed_loop_supervised_bridge.pt`.
+
+Verification passed: import boundary PASS, multi-enemy/pretrain focused suite
+`20 passed`, and full-env/pretrain focused suite `22 passed`.
+
+**Decision:** do not launch PPO or W&B training from this result. Do not retry
+the same closed-loop config unchanged and do not force PPO past the failed
+score check. Next work should be an offline zero-score draw audit before any
+new implementation or W&B assignment.

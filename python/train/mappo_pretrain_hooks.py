@@ -3,12 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 import torch
+from torch import nn
 
 from train.composition_rehearsal import (
     build_mappo_env_fn_with_overrides,
     composition_rehearsal_pretrain,
     load_frozen_mappo_teacher,
     run_composition_diagnostics,
+)
+from train.full_env_rehearsal import (
+    closed_loop_supervised_bridge_pretrain,
+    full_env_rehearsal_pretrain,
+    run_full_env_rehearsal_gate,
 )
 from train.mappo_bc_pretrain import (
     bc_pretrain_walk_and_shoot_to_objective,
@@ -17,6 +23,38 @@ from train.mappo_bc_pretrain import (
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
+
+_WARM_START_MIGRATION_COMPATIBLE_EXACT = "compatible_exact"
+
+
+def _load_compatible_warm_start(
+    model: nn.Module,
+    checkpoint_state: dict[str, torch.Tensor],
+) -> dict[str, list[str]]:
+    model_state = model.state_dict()
+    compatible: dict[str, torch.Tensor] = {}
+    skipped_unexpected: list[str] = []
+    skipped_shape_mismatch: list[str] = []
+
+    for key, value in checkpoint_state.items():
+        target_value = model_state.get(key)
+        if target_value is None:
+            skipped_unexpected.append(key)
+            continue
+        if tuple(value.shape) != tuple(target_value.shape):
+            skipped_shape_mismatch.append(
+                f"{key}(checkpoint={tuple(value.shape)}, model={tuple(target_value.shape)})"
+            )
+            continue
+        compatible[key] = value
+
+    load_result = model.load_state_dict(compatible, strict=False)
+    return {
+        "loaded": sorted(compatible),
+        "missing": sorted(load_result.missing_keys),
+        "skipped_unexpected": sorted(skipped_unexpected),
+        "skipped_shape_mismatch": sorted(skipped_shape_mismatch),
+    }
 
 
 def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
@@ -27,6 +65,20 @@ def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
     cfg = context.cfg
     phase_label = context.phase_label
     raw = torch.load(init_ckpt, map_location="cpu", weights_only=False)
+    warm_start_migration = run_cfg.get("warm_start_migration")
+    if warm_start_migration:
+        if warm_start_migration != _WARM_START_MIGRATION_COMPATIBLE_EXACT:
+            raise ValueError(f"unsupported warm_start_migration={warm_start_migration!r}")
+        report = _load_compatible_warm_start(trainer.model, raw["model_state_dict"])
+        print(
+            f"[{phase_label}/mappo] warm-start migration={warm_start_migration} "
+            f"loaded={len(report['loaded'])} missing={report['missing']} "
+            f"skipped_unexpected={report['skipped_unexpected']} "
+            f"skipped_shape_mismatch={report['skipped_shape_mismatch']}",
+            flush=True,
+        )
+        print(f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}", flush=True)
+        return
     if (
         cfg.aim_aux_coef > 0.0
         or cfg.target_selection_dim > 0
@@ -135,6 +187,136 @@ def maybe_run_composition_pretrain(
     )
     logger.log({f"composition_eval/{k}": float(v) for k, v in diagnostics.metrics.items()}, step=0)
     return diagnostics.passed
+
+
+def maybe_run_full_env_rehearsal(
+    context: RuntimeContext, trainer: MappoTrainer, logger: Any
+) -> bool:
+    run_cfg = context.run_cfg
+    rehearsal_cfg = dict(run_cfg.get("full_env_rehearsal", {}))
+    if not bool(rehearsal_cfg.get("enabled", False)):
+        return True
+    metrics = full_env_rehearsal_pretrain(
+        trainer.model,
+        context.env_fn,
+        {
+            **rehearsal_cfg,
+            "seed": int(rehearsal_cfg.get("seed", context.seed_base + 60_000)),
+            "log_label": context.phase_label,
+        },
+    )
+    if metrics:
+        logger.log({f"full_env_rehearsal/{k}": float(v) for k, v in metrics.items()}, step=0)
+    checkpoint_path = context.output_dir / "ckpt_full_env_rehearsal.pt"
+    torch.save(
+        {
+            "model_state_dict": trainer.model.state_dict(),
+            "config": {"mappo": trainer.model.cfg.__dict__, "env": context.ckpt_env_cfg},
+        },
+        checkpoint_path,
+    )
+    gate = run_full_env_rehearsal_gate(
+        trainer.model,
+        context.env_fn,
+        gate=dict(rehearsal_cfg.get("gate", {})),
+        output_dir=context.output_dir,
+        seed=context.seed_base + 95_000,
+        checkpoint_path=checkpoint_path,
+    )
+    print(
+        f"[{context.phase_label}/mappo] full_env_rehearsal_gate "
+        f"status={gate.status} "
+        f"team_a_hit_fire={gate.metrics['team_a_hit_fire']:.4f}>="
+        f"{gate.thresholds['min_team_a_hit_fire']:.4f} "
+        f"objective_on_point={gate.metrics['objective_on_point']:.3f}>="
+        f"{gate.thresholds['min_objective_on_point']:.3f} "
+        f"losses={gate.metrics['losses']:.0f}<={gate.thresholds['max_losses']:.0f} "
+        f"artifact={gate.path}",
+        flush=True,
+    )
+    logger.log(
+        {f"full_env_rehearsal_gate/{k}": float(v) for k, v in gate.metrics.items()},
+        step=0,
+    )
+    logger.log({"full_env_rehearsal_gate/passed": float(gate.passed)}, step=0)
+    return gate.passed
+
+
+def maybe_run_multi_enemy_supervised_bridge(
+    context: RuntimeContext, trainer: MappoTrainer, logger: Any
+) -> bool:
+    run_cfg = context.run_cfg
+    bridge_cfg = dict(run_cfg.get("multi_enemy_supervised_bridge", {}))
+    if not bool(bridge_cfg.get("enabled", False)):
+        return True
+    teacher = str(bridge_cfg.get("teacher", "multi_enemy_visible"))
+    if teacher != "multi_enemy_visible":
+        raise ValueError(
+            "run.multi_enemy_supervised_bridge.teacher must be 'multi_enemy_visible'"
+        )
+    if context.cfg.obs_encoder != "entity_attention_grid":
+        raise ValueError("multi_enemy_supervised_bridge requires entity_attention_grid obs")
+    if context.cfg.target_action_dim != 0:
+        raise ValueError("multi_enemy_supervised_bridge must not add target action fields")
+    pretrain_cfg = {
+        **bridge_cfg,
+        "seed": int(bridge_cfg.get("seed", context.seed_base + 70_000)),
+        "log_label": context.phase_label,
+    }
+    if bool(dict(bridge_cfg.get("closed_loop", {})).get("enabled", False)):
+        metrics = closed_loop_supervised_bridge_pretrain(
+            trainer.model,
+            context.env_fn,
+            pretrain_cfg,
+        )
+    else:
+        metrics = full_env_rehearsal_pretrain(
+            trainer.model,
+            context.env_fn,
+            pretrain_cfg,
+        )
+    if metrics:
+        logger.log(
+            {f"multi_enemy_supervised_bridge/{k}": float(v) for k, v in metrics.items()},
+            step=0,
+        )
+    checkpoint_path = context.output_dir / "ckpt_multi_enemy_supervised_bridge.pt"
+    torch.save(
+        {
+            "model_state_dict": trainer.model.state_dict(),
+            "config": {"mappo": trainer.model.cfg.__dict__, "env": context.ckpt_env_cfg},
+        },
+        checkpoint_path,
+    )
+    gate = run_full_env_rehearsal_gate(
+        trainer.model,
+        context.env_fn,
+        gate=dict(bridge_cfg.get("gate", {})),
+        output_dir=context.output_dir,
+        seed=context.seed_base + 96_000,
+        checkpoint_path=checkpoint_path,
+    )
+    print(
+        f"[{context.phase_label}/mappo] multi_enemy_supervised_bridge_gate "
+        f"status={gate.status} "
+        f"team_a_visible_fire_rate={gate.metrics['team_a_visible_fire_rate']:.4f}>="
+        f"{gate.thresholds['min_team_a_visible_fire_rate']:.4f} "
+        f"team_a_hit_fire={gate.metrics['team_a_hit_fire']:.4f}>="
+        f"{gate.thresholds['min_team_a_hit_fire']:.4f} "
+        f"objective_on_point={gate.metrics['objective_on_point']:.3f}>="
+        f"{gate.thresholds['min_objective_on_point']:.3f} "
+        f"mean_score_a={gate.metrics['mean_score_a']:.2f}>="
+        f"{gate.thresholds['min_mean_score_a']:.2f} "
+        f"losses={gate.metrics['losses']:.0f}<={gate.thresholds['max_losses']:.0f} "
+        f"artifact={gate.path}",
+        flush=True,
+    )
+    logger.log(
+        {f"multi_enemy_supervised_bridge_gate/{k}": float(v) for k, v in gate.metrics.items()},
+        step=0,
+    )
+    logger.log({"multi_enemy_supervised_bridge_gate/passed": float(gate.passed)}, step=0)
+    return gate.passed
 
 
 def maybe_run_bc_pretrain(context: RuntimeContext, trainer: MappoTrainer, logger: Any) -> bool:

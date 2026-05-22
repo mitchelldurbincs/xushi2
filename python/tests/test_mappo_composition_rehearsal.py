@@ -5,14 +5,17 @@ from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
+import pytest
 import torch
 from gymnasium import spaces
 
 from train.composition_rehearsal import (
+    build_mappo_env_fn_with_overrides,
     composition_rehearsal_losses,
     composition_rehearsal_pretrain,
     load_frozen_mappo_teacher,
 )
+from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
 from train.mappo_model import MappoActorCritic
 from train.mappo_rollout_trainer import make_mappo_config
 from train.train import load_config
@@ -259,3 +262,75 @@ def test_config_loading_adds_composition_defaults_and_probe_config_loads() -> No
     assert run_cfg["composition_gate"]["hit_fire_gate"] == 0.02
     assert run_cfg["composition_objective_env"]["opponent_bot"] == "weak_basic_v2"
     assert run_cfg["composition_combat_env"]["mini_game"] == "combat_1v1"
+
+
+@pytest.mark.parametrize(
+    "config_name,expected_steps",
+    [
+        ("phase4_mappo_composition_rehearsal_cap_duel_v2.yaml", 2000),
+        ("phase4_mappo_composition_rehearsal_cap_duel_v2_4000.yaml", 4000),
+    ],
+)
+def test_cap_duel_v2_combat_env_path_honors_knobs_and_has_finite_bc_loss(
+    config_name: str,
+    expected_steps: int,
+) -> None:
+    config_path = (
+        Path(__file__).resolve().parents[2]
+        / "experiments/configs/phase4/probe/"
+        / config_name
+    )
+    config = load_config(config_path)
+    run_cfg = config["run"]
+    assert run_cfg["composition_pretrain_steps"] == expected_steps
+    env_fn = build_mappo_env_fn_with_overrides(
+        config["env"],
+        run_cfg["composition_combat_env"],
+    )
+
+    env = env_fn()
+    try:
+        assert isinstance(env, Phase4CapDuelMappoEnv)
+        assert env.episode_decisions == 96
+        assert env.point_radius == 0.18
+        assert env.enemy_hp == 3
+        assert env.score_ticks_to_clear == 12
+        assert env.enemy_recontest_delay == 12
+        assert env.hit_tolerance == 0.12
+        assert env.hit_reward == 1.0
+        assert env.kill_bonus == 4.0
+        assert env.score_per_tick == 0.1
+        assert env.off_point_penalty == 0.0
+        assert env.time_penalty_per_decision == 0.0
+        assert env._hit_push == 0.0
+        assert env.spawn_distance == 0.4
+        assert env.respawn_at_spawn_position is True
+
+        obs, _info = env.reset(seed=123)
+        assert obs.shape == (3, ACTOR_PHASE1_DIM)
+        assert obs.dtype == np.float32
+        assert np.isfinite(obs).all()
+    finally:
+        env.close()
+
+    student = _zero_model()
+    objective_teacher = _constant_teacher(move_x=0.2, move_y=-0.1, aim=0.0, fire_logit=0.0)
+    combat_teacher = _constant_teacher(move_x=0.0, move_y=0.0, aim=0.2, fire_logit=3.0)
+    metrics = composition_rehearsal_pretrain(
+        student,
+        objective_teacher,
+        combat_teacher,
+        lambda: ConstantObsMappoEnv(),
+        env_fn,
+        {
+            "steps": 1,
+            "objective_batch_size": 3,
+            "combat_batch_size": 3,
+            "learning_rate": 1.0e-2,
+            "seed": 123,
+            "log_label": "test",
+        },
+    )
+
+    assert metrics
+    assert all(np.isfinite(float(value)) for value in metrics.values())

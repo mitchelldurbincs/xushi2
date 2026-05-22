@@ -1,0 +1,177 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: full_env_rehearsal_v3_cpp_basic
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+    - phase4_objective_combat_composition
+    - phase4_privileged_teacher_rehearsal
+  hypothesis: >
+    A training-time privileged cpp_basic teacher can provide higher-fidelity
+    full-env movement/aim/fire labels than the actor-observation-only v1/v2
+    teacher. The actor still receives only actor observations at inference.
+  falsification_criteria: >
+    Falsified before PPO if the direct teacher diagnostic fails, or if the
+    rehearsed neural policy cannot produce Team A hit/fire above 0.04,
+    objective on-point/contact above 0.25, and fewer than 50 losses in the
+    pre-PPO rehearsal gate.
+  lineage: >
+    Follow-up to full_env_rehearsal_v2 and the direct teacher diagnostic. The
+    actor-observation-only teacher failed against weak_basic_v2, while the
+    direct cpp_basic teacher won 10/10 with hit/fire 0.0917 and objective
+    on-point 0.8667.
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_full_env_rehearsal_v3_cpp_basic
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+
+run:
+  total_updates: 100
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_full_env_rehearsal_v3_cpp_basic
+  init_from_checkpoint: runs/phase4_mappo_basic_v6_5/mappo/ckpt_final.pt
+  full_env_rehearsal:
+    enabled: true
+    steps: 2000
+    batch_size: 256
+    learning_rate: 1.0e-4
+    teacher: cpp_basic
+    movement_coef: 1.0
+    aim_coef: 1.0
+    fire_coef: 1.0
+    target_selection_coef: 0.0
+    gate:
+      episodes: 50
+      min_team_a_hit_fire: 0.04
+      min_objective_on_point: 0.25
+      max_losses: 49
+      output: full_env_rehearsal_gate.json
+  matrix_eval:
+    episodes: 50
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_full_env_rehearsal_v3_cpp_basic
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_basic_score
+      metric: matrix/anchor/basic/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_full_env_rehearsal_3v3
+        prompt: >
+          In a greedy 3v3 replay vs weak_basic_v2 after cpp_basic full-env
+          rehearsal, does Team A approach/hold the point, aim and fire at
+          visible enemies, create a combat advantage, and convert score without
+          obvious reward hacking?

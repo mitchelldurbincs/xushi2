@@ -318,6 +318,7 @@ def _resolve_legacy_phase_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
         target_action_dim=int(phase_spec.get("target_action_dim", 0)),
     )
     env_cfg = dict(config.get("env", {}))
+    legacy_actor_obs = str(ckpt_env_cfg.get("actor_obs", _legacy_actor_obs(phase)))
     return RuntimeSpec(
         experiment=ExperimentSpec(phase=phase, phase_label=label, tags=(label,)),
         learner=LearnerSpec(
@@ -326,7 +327,7 @@ def _resolve_legacy_phase_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
         ),
         env=EnvSpec(
             kind=_legacy_env_kind(phase),
-            actor_obs=_legacy_actor_obs(phase),
+            actor_obs=legacy_actor_obs,
             critic_obs=("team_global" if shapes.critic_obs_dim is not None else None),
             team_size=int(env_cfg.get("team_size", shapes.n_agents)),
             learner_team=str(env_cfg.get("learner_team", ckpt_env_cfg.get("learner_team", "A"))),

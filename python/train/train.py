@@ -40,6 +40,7 @@ def load_config(path: Path) -> dict:
             run_cfg.setdefault("composition_combat_teacher_checkpoint", None)
             run_cfg.setdefault("composition_objective_batch_size", 256)
             run_cfg.setdefault("composition_combat_batch_size", 256)
+            run_cfg.setdefault("cap_duel_distill", {"enabled": False})
             run_cfg.setdefault(
                 "composition_gate",
                 {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from train.mappo_checkpoint_outputs import save_mappo_checkpoint
@@ -88,6 +89,7 @@ class MappoTrainingHooks:
         return self.trainer.collect_rollout()
 
     def update_step(self, update_idx: int, rollout, lr: float):
+        self.trainer.set_update_index(update_idx)
         metrics = self.trainer.update(rollout)
         metrics["team_spirit"] = self._last_team_spirit
         metrics["majority_on_point_alpha"] = self._last_majority_on_point_alpha
@@ -129,10 +131,21 @@ class MappoTrainingHooks:
 
     def on_log(self, update_idx: int, lr: float, metrics: dict[str, float]) -> None:
         phase_label = self.context.phase_label
+        train_metrics = {
+            key: value for key, value in metrics.items() if not key.startswith("distill/")
+        }
+        distill_metrics = {
+            key: value for key, value in metrics.items() if key.startswith("distill/")
+        }
         self.wandb_logger.log(
-            {f"train/{k}": float(v) for k, v in metrics.items()},
+            {f"train/{k}": float(v) for k, v in train_metrics.items()},
             step=update_idx,
         )
+        if distill_metrics:
+            self.wandb_logger.log(
+                {key: float(value) for key, value in distill_metrics.items()},
+                step=update_idx,
+            )
         self.wandb_logger.log({"train/lr": float(lr)}, step=update_idx)
         objective_unlock_log = metrics.get(
             "objective_unlock_seconds",
@@ -171,6 +184,9 @@ class MappoTrainingHooks:
             f"same_tgt={metrics.get('target_selection_same_target_fraction', 0.0):.3f} "
             f"focus_H={metrics.get('target_selection_label_entropy', 0.0):.3f} "
             f"fallback={metrics.get('target_selection_fallback_rate', 0.0):.3f} "
+            f"distill={metrics.get('distill/loss', 0.0):.4f}/"
+            f"{metrics.get('distill/aim_loss', 0.0):.4f}/"
+            f"{metrics.get('distill/fire_loss', 0.0):.4f} "
             f"gn={metrics['actor_grad_norm']:.2e}/"
             f"{metrics['critic_grad_norm']:.2e}/"
             f"{metrics['trunk_grad_norm']:.2e} "
@@ -237,7 +253,42 @@ class MappoTrainingHooks:
                 ),
                 output_dir=self.context.output_dir,
             )
-        return False
+        return self._maybe_stop_cap_duel_distill(update_idx, eval_stats)
+
+    def _maybe_stop_cap_duel_distill(self, update_idx: int, eval_stats) -> bool:
+        gate_cfg = dict(self.context.run_cfg.get("cap_duel_distill_early_stop", {}))
+        if not bool(gate_cfg.get("enabled", False)):
+            return False
+        stop_update = int(gate_cfg.get("update", 50))
+        if int(update_idx) < stop_update:
+            return False
+        min_hit_fire = float(gate_cfg.get("min_team_a_hit_fire", 0.04))
+        max_score = float(gate_cfg.get("max_mean_score_a", 0.0))
+        if (
+            float(eval_stats.team_a_hit_fire) >= min_hit_fire
+            or float(eval_stats.mean_team_a_score) > max_score
+        ):
+            return False
+        payload = {
+            "status": "EARLY_STOP",
+            "reason": "cap_duel_distill_hit_fire_zero_score",
+            "update": int(update_idx),
+            "team_a_hit_fire": float(eval_stats.team_a_hit_fire),
+            "min_team_a_hit_fire": min_hit_fire,
+            "mean_score_a": float(eval_stats.mean_team_a_score),
+            "max_mean_score_a": max_score,
+        }
+        path = self.context.output_dir / "early_stop_decision.json"
+        path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(
+            f"[{self.context.phase_label}/mappo] early_stop "
+            f"reason={payload['reason']} update={update_idx} "
+            f"hit_fire={eval_stats.team_a_hit_fire:.4f}<{min_hit_fire:.4f} "
+            f"score_a={eval_stats.mean_team_a_score:.2f}<={max_score:.2f} "
+            f"path={path}",
+            flush=True,
+        )
+        return True
 
     def _log_canonical_eval(self, update_idx: int) -> None:
         canonical_stats = self._last_canonical_eval_stats

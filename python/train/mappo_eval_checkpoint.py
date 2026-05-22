@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from train.cap_duel_distill import configure_cap_duel_distill_anchor
 from train.common_orchestration import LoopConfig, run_training_loop
 from train.mappo_checkpoint_outputs import save_final_mappo_checkpoints
 from train.mappo_post_training import maybe_run_post_training_matrix_eval
 from train.mappo_pretrain_hooks import (
     maybe_run_bc_pretrain,
     maybe_run_composition_pretrain,
+    maybe_run_full_env_rehearsal,
+    maybe_run_multi_enemy_supervised_bridge,
     maybe_warm_start,
 )
 from train.mappo_rollout_trainer import MappoTrainer
@@ -59,6 +62,7 @@ def train_mappo_from_config(config: dict) -> dict[str, float]:
     # knows how to hold the cap. Loaded BEFORE BC pretrain so BC, if also
     # configured, fine-tunes on top of the warm-started weights.
     maybe_warm_start(context, trainer)
+    configure_cap_duel_distill_anchor(context, trainer)
 
     hooks = MappoTrainingHooks(
         context=context,
@@ -67,10 +71,24 @@ def train_mappo_from_config(config: dict) -> dict[str, float]:
         total_updates=total_updates,
     )
     try:
-        composition_gate_passed = maybe_run_composition_pretrain(context, trainer, wandb_logger)
+        rehearsal_gate_passed = maybe_run_full_env_rehearsal(context, trainer, wandb_logger)
+        if not rehearsal_gate_passed:
+            total_updates = 0
+        bridge_gate_passed = True
+        if rehearsal_gate_passed:
+            bridge_gate_passed = maybe_run_multi_enemy_supervised_bridge(
+                context, trainer, wandb_logger
+            )
+        if not bridge_gate_passed:
+            total_updates = 0
+        composition_gate_passed = True
+        if rehearsal_gate_passed and bridge_gate_passed:
+            composition_gate_passed = maybe_run_composition_pretrain(
+                context, trainer, wandb_logger
+            )
         if not composition_gate_passed:
             total_updates = 0
-        if composition_gate_passed:
+        if rehearsal_gate_passed and bridge_gate_passed and composition_gate_passed:
             bc_gate_passed = maybe_run_bc_pretrain(context, trainer, wandb_logger)
             if not bc_gate_passed:
                 total_updates = 0

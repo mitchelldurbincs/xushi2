@@ -157,6 +157,15 @@ def make_mappo_match_env(
             fog_mode=fog,
             visible_radius=float(visible_radius),
         )
+    if actor_obs == "multi_enemy_entity_grid":
+        from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
+
+        return Phase4MultiEnemyMappoEnv(
+            dict(sim_cfg),
+            opponent_bot=str(opponent_bot),
+            learner_team=str(learner_team),
+            reward_cfg=reward,
+        )
     if actor_obs == "entity_grid":
         from envs.phase6_grid_mappo import Phase6GridMappoEnv
 

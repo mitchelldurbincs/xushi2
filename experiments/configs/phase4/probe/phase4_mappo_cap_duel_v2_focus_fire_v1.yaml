@@ -1,0 +1,168 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: cap_duel_v2_focus_fire_transfer_probe
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+    - phase4_objective_combat_composition
+    - phase4_target_selection_diffusion
+  hypothesis: >
+    Warm-starting the honest cap-duel v2 policy into full weak_basic_v2 3v3
+    with existing team-level focus-fire conditioning preserves kill-then-cap
+    timing while adding concentrated target selection.
+  success_threshold_update_50: >
+    Success if update-50 eval has >0 Team A score, >0 wins, or Team A kills >
+    Team B kills with recent training on-point contact > 0.25.
+  falsification_criteria: >
+    Falsified if update-50 eval has 0 Team A score, 0 wins, recent training
+    on-point contact < 0.25, and Team A hit/fire < 0.02.
+  max_updates_if_ambiguous: 100
+  lineage: >
+    Combines solved phase4_mappo_cap_duel_selfplay_v2 checkpoint with the
+    existing phase4_mappo_focus_fire_v1 target-conditioning infrastructure.
+  eval_metrics:
+    - team_a_same_target_fraction
+    - team_a_target_selection_entropy
+    - target_selection_fallback_rate
+
+wandb:
+  enabled: true
+  required: true
+  init_timeout_seconds: 30
+  group: phase4_focus_fire
+
+env:
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  reward:
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 1.0
+    kill_bonus: 1.0
+    damage_dealt_coef: 0.01
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.05
+  sim:
+    round_length_seconds: 60
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 240
+
+model:
+  use_recurrence: true
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-6
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 4
+  target_conditioned_combat: true
+  target_selection_label: team_focus_low_hp
+  target_selection_aux_coef: 0.5
+  target_selection_aux_mode: team_focus_low_hp
+  target_selection_objective_proximity_coef: 0.1
+
+run:
+  total_updates: 100
+  eval_every: 50
+  eval_episodes: 50
+  checkpoint_every: 50
+  log_every: 5
+  output_dir: runs/phase4_mappo_cap_duel_v2_focus_fire_v1
+  init_from_checkpoint: runs/phase4_mappo_cap_duel_selfplay_v2/mappo/ckpt_final.pt
+  matrix_eval:
+    episodes: 50
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_cap_duel_v2_focus_fire_v1
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_basic_score
+      metric: matrix/anchor/basic/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_noop_no_loss
+      metric: matrix/anchor/noop/loss_rate
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: "<="
+      threshold: 0.5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_focus_fire_kill_then_hold_3v3
+        prompt: >
+          In a greedy 3v3 replay vs weak_basic_v2 from the cap-duel v2
+          focus-fire run, does Team A concentrate fire on shared low-HP or
+          objective-relevant enemies, create a combat advantage, and hold the
+          point long enough to convert score without obvious reward hacking?
