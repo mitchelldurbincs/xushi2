@@ -7,13 +7,10 @@ import pytest
 import torch
 import yaml
 
-from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
 from train.mappo import MappoActorCritic, make_mappo_config
 from train.phases import resolve_phase
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-from xushi2.map_randomization import map_layout_hash
-from xushi2.obs_manifest import CRITIC_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.runner import _build_config
 from xushi2.self_play_schedule import SelfPlaySchedule
 from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy, SnapshotPool
@@ -23,7 +20,7 @@ from _paths import config_path
 
 def _write_snapshot(path: Path) -> None:
     with open(
-        config_path("phase8_random_map_probe.yaml"),
+        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -208,7 +205,7 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
         fake_normalize_world_for_team,
     )
     with open(
-        config_path("phase8_random_map_probe.yaml"),
+        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)
@@ -221,56 +218,3 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
     assert captured_multi == [live_bounds]
     assert captured_norm
     assert all(bounds == live_bounds for bounds in captured_norm)
-
-
-def test_phase9_env_uses_snapshot_opponent(shared_snapshot_path: Path) -> None:
-    snapshot_path = shared_snapshot_path
-    with open(
-        config_path("phase9_snapshot_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    sim_cfg = dict(config["env"]["sim"])
-    league_cfg = {
-        "latest": [str(snapshot_path)],
-        "historical": [str(snapshot_path)],
-        "anchor": [str(snapshot_path)],
-        "weights": dict(config["env"]["snapshot_league"]["weights"]),
-    }
-    env = Phase9SnapshotMappoEnv(
-        sim_cfg,
-        opponent_bot="snapshot",
-        snapshot_paths=[str(snapshot_path)],
-        reward_cfg=config["env"]["reward"],
-        fog_mode=config["env"]["fog_mode"],
-        visible_radius=float(config["env"]["visible_radius"]),
-        map_randomization=config["env"]["map_randomization"],
-        snapshot_league=league_cfg,
-    )
-    try:
-        obs, info = env.reset(seed=123)
-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert info["snapshot_path"] == str(snapshot_path)
-        assert info["snapshot_group"] in {"latest", "historical", "anchor"}
-        assert info["snapshot_league"] == "latest:0.7:1,historical:0.2:1,anchor:0.1:1"
-        assert "map_bounds" in info
-        assert len(info["cover_markers"]) == 4
-        assert len(info["wall_segments"]) == 2
-        assert info["map_layout_hash"] == map_layout_hash(
-            info["map_bounds"], info["cover_markers"], info["wall_segments"]
-        )
-        reset_layout = info["map_layout_hash"]
-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
-        env.build_critic_obs(critic_obs)
-        assert np.all(np.isfinite(critic_obs))
-        next_obs, reward, term, trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
-        assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert reward.shape == (3,)
-        assert isinstance(term, bool)
-        assert isinstance(trunc, bool)
-        assert info["snapshot_path"] == str(snapshot_path)
-        assert info["snapshot_group"] in {"latest", "historical", "anchor"}
-        assert info["map_layout_hash"] == reset_layout
-        assert len(info["wall_segments"]) == 2
-    finally:
-        env.close()

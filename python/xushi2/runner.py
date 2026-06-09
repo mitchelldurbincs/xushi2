@@ -85,8 +85,7 @@ def _objective_timing_value(sim_cfg: dict, field: str, default_ticks: int) -> in
     raw_seconds = sim_cfg.get(seconds_key, nested.get(f"{field}_seconds"))
     if raw_ticks is not None and raw_seconds is not None:
         raise ValueError(
-            f"set only one of sim.{ticks_key} and sim.{seconds_key} "
-            f"(or objective_timing.{field}_*)"
+            f"set only one of sim.{ticks_key} and sim.{seconds_key} (or objective_timing.{field}_*)"
         )
     if raw_ticks is not None:
         ticks = int(raw_ticks)
@@ -130,12 +129,12 @@ def _build_mechanics(mech_cfg: dict) -> _cpp.Phase1MechanicsConfig:
 
 
 def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.MatchConfig:
-    missing_root = _REQUIRED_SIM_KEYS - sim_cfg.keys()
-    if missing_root:
-        raise KeyError(f"sim config is missing required key(s): {sorted(missing_root)}")
     unknown_root = sim_cfg.keys() - _REQUIRED_SIM_KEYS - _OPTIONAL_SIM_KEYS
     if unknown_root:
         raise ValueError(f"sim config has unknown key(s): {sorted(unknown_root)}")
+    missing_root = _REQUIRED_SIM_KEYS - sim_cfg.keys()
+    if missing_root:
+        raise KeyError(f"sim config is missing required key(s): {sorted(missing_root)}")
 
     cfg = _cpp.MatchConfig()
     cfg.seed = int(sim_cfg["seed"] if seed_override is None else seed_override)
@@ -150,12 +149,12 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
     )
     if "map" in sim_cfg:
         map_cfg = sim_cfg["map"]
-        missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
-        if missing_map:
-            raise KeyError(f"sim.map is missing required key(s): {sorted(missing_map)}")
         unknown_map = map_cfg.keys() - _REQUIRED_MAP_KEYS
         if unknown_map:
             raise ValueError(f"sim.map has unknown key(s): {sorted(unknown_map)}")
+        missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
+        if missing_map:
+            raise KeyError(f"sim.map is missing required key(s): {sorted(missing_map)}")
         cfg.map.min_x = float(map_cfg["min_x"])
         cfg.map.min_y = float(map_cfg["min_y"])
         cfg.map.max_x = float(map_cfg["max_x"])

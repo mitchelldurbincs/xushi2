@@ -9,7 +9,7 @@ import yaml
 from envs.phase11_current_selfplay_mappo import Phase11CurrentSelfplayMappoEnv
 from train.mappo import MappoActorCritic, make_mappo_config, train_phase4_from_config
 from train.phases import resolve_phase
-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.obs_manifest import CRITIC_DIM
 from _paths import config_path
 
@@ -31,8 +31,6 @@ def _env() -> Phase11CurrentSelfplayMappoEnv:
         reward_cfg={"distance_shaping_coef": 0.01},
         map_randomization={"span_jitter": 2.0, "min_span": 45.0, "max_span": 55.0},
     )
-
-
 
 
 def test_phase11_current_selfplay_forces_team_scalar_reward_contract() -> None:
@@ -57,7 +55,6 @@ def test_phase11_current_selfplay_forces_team_scalar_reward_contract() -> None:
         env.close()
 
 
-
 def test_phase11_current_selfplay_rejects_per_agent_reward_override() -> None:
     try:
         Phase11CurrentSelfplayMappoEnv(
@@ -78,9 +75,11 @@ def test_phase11_current_selfplay_rejects_per_agent_reward_override() -> None:
         raise AssertionError("expected ValueError for per_agent_rewards=True")
     except ValueError as exc:
         assert "per_agent_rewards" in str(exc)
+
+
 def _write_phase8_snapshot(path: Path) -> None:
     with open(
-        config_path("phase8_random_map_probe.yaml"),
+        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
         encoding="utf-8",
     ) as fh:
         config = yaml.safe_load(fh)

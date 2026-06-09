@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import numpy as np
 
-from xushi2.entity_obs import (
-    ENTITY_TOKEN_DIM,
-    MULTI_ENEMY_TOKEN_COUNT,
+ENTITY_TOKEN_DIM: int = 18
+MULTI_ENEMY_TOKEN_COUNT: int = 5
+GRID_SIZE: int = 32
+GRID_CHANNELS: int = 3
+GRID_FLAT_DIM: int = GRID_CHANNELS * GRID_SIZE * GRID_SIZE
+MULTI_ENEMY_ENTITY_OBS_DIM: int = (
+    MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM + MULTI_ENEMY_TOKEN_COUNT
 )
-from xushi2.grid_obs import (
-    GRID_CHANNELS,
-    GRID_FLAT_DIM,
-    GRID_SIZE,
-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
-)
+MULTI_ENEMY_ENTITY_GRID_OBS_DIM: int = MULTI_ENEMY_ENTITY_OBS_DIM + GRID_FLAT_DIM
+
 from xushi2.obs_manifest import (
     ACTOR_PHASE1_DIM,
     CRITIC_DIM,
@@ -243,6 +243,15 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
                 _paint(grids[row], 2, rel, 0.5)
 
     return out.reshape(*obs.shape[:-1], MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+
+
+def entity_obs_self_position(obs: np.ndarray) -> np.ndarray:
+    """Return the self-token team-frame position from flattened token observations."""
+    obs = np.asarray(obs, dtype=np.float32)
+    min_dim = ENTITY_TOKEN_DIM
+    if obs.shape[-1] < min_dim:
+        raise ValueError(f"entity obs last dim must be at least {min_dim}, got {obs.shape}")
+    return obs[..., _POSITION]
 
 
 def zero_masked_enemy_tokens(obs: np.ndarray) -> np.ndarray:

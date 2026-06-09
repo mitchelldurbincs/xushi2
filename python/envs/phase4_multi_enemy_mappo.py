@@ -10,7 +10,7 @@ from gymnasium import spaces
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
     map_bounds_from_sim_cfg,
@@ -117,8 +117,7 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
             native = _cpp.observable_enemy_slots(self._base._sim, own_slot)
             for enemy_idx, enemy_slot in enumerate(self._enemy_slots):
                 alive = (
-                    float(critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0])
-                    > 0.5
+                    float(critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0]) > 0.5
                 )
                 visible[row, enemy_idx] = alive and bool(native[enemy_slot])
         return visible

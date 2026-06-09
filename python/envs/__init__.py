@@ -18,15 +18,6 @@ _EXPORTS = {
         "Phase4CurrentSelfplayMappoEnv",
     ),
     "Phase4MappoEnv": ("envs.phase4_mappo", "Phase4MappoEnv"),
-    "Phase5EntityMappoEnv": ("envs.phase5_entity_mappo", "Phase5EntityMappoEnv"),
-    "Phase6GridMappoEnv": ("envs.phase6_grid_mappo", "Phase6GridMappoEnv"),
-    "Phase7FogMappoEnv": ("envs.phase7_fog_mappo", "Phase7FogMappoEnv"),
-    "Phase8RandomMapMappoEnv": ("envs.phase8_random_map_mappo", "Phase8RandomMapMappoEnv"),
-    "Phase9SnapshotMappoEnv": ("envs.phase9_snapshot_mappo", "Phase9SnapshotMappoEnv"),
-    "Phase10TargetSlotMappoEnv": (
-        "envs.phase10_target_slot_mappo",
-        "Phase10TargetSlotMappoEnv",
-    ),
     "Phase11CurrentSelfplayMappoEnv": (
         "envs.phase11_current_selfplay_mappo",
         "Phase11CurrentSelfplayMappoEnv",
@@ -36,12 +27,6 @@ _EXPORTS = {
         "envs.phase4_selfplay_mappo",
         "Phase4CurrentSelfplayMappoEnv",
     ),
-    "EntityObsMappoEnv": ("envs.phase5_entity_mappo", "Phase5EntityMappoEnv"),
-    "EntityGridObsMappoEnv": ("envs.phase6_grid_mappo", "Phase6GridMappoEnv"),
-    "FogMappoMatchEnv": ("envs.phase7_fog_mappo", "Phase7FogMappoEnv"),
-    "RandomizedMapMappoEnv": ("envs.phase8_random_map_mappo", "Phase8RandomMapMappoEnv"),
-    "SnapshotOpponentMappoEnv": ("envs.phase9_snapshot_mappo", "Phase9SnapshotMappoEnv"),
-    "TargetSlotMappoEnv": ("envs.phase10_target_slot_mappo", "Phase10TargetSlotMappoEnv"),
     "SixAgentCurrentSelfplayMappoEnv": (
         "envs.phase11_current_selfplay_mappo",
         "Phase11CurrentSelfplayMappoEnv",

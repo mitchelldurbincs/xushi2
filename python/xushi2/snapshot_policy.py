@@ -11,15 +11,13 @@ import torch
 
 from train.mappo import MappoActorCritic, MappoConfig
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.entity_obs import actor_obs_to_entity_obs
-from xushi2.grid_obs import actor_obs_to_entity_grid_obs
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
     map_bounds_from_sim_cfg,
     normalize_world_for_team,
 )
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
-from xushi2.partial_obs import actor_obs_to_partial_entity_grid_obs
+from xushi2.partial_obs import actor_obs_to_entity_grid_obs, actor_obs_to_partial_entity_grid_obs
 
 
 class SnapshotPolicy:
@@ -72,7 +70,7 @@ class SnapshotPolicy:
         if self.cfg.obs_encoder == "flat":
             return flat.astype(np.float32, copy=False)
         if self.cfg.obs_encoder == "entity_attention":
-            return actor_obs_to_entity_obs(flat)
+            raise ValueError("entity_attention snapshot observations are no longer supported")
         if self.cfg.obs_encoder == "entity_attention_grid":
             if self.phase >= 7:
                 if self.cfg.entity_token_count > 3:

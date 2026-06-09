@@ -12,8 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from train.runtime_specs import RuntimeSpec, resolve_runtime_spec
-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
 
 
 @dataclass(frozen=True)
@@ -74,9 +73,7 @@ def checkpoint_runtime(ckpt_config: dict[str, Any]) -> CheckpointRuntime:
     has_mappo = "mappo" in ckpt_config
     if not has_mappo:
         raise ValueError("checkpoint runtime only supports MAPPO checkpoints")
-    phase_int, phase_label = parse_phase_metadata(
-        ckpt_config.get("phase"), has_mappo=has_mappo
-    )
+    phase_int, phase_label = parse_phase_metadata(ckpt_config.get("phase"), has_mappo=has_mappo)
     env_cfg = dict(ckpt_config.get("env", {}))
     mappo_cfg = dict(ckpt_config.get("mappo", {}))
     runtime_env_cfg = _runtime_env_cfg(env_cfg, mappo_cfg)
@@ -121,10 +118,6 @@ def _actor_obs_from_mappo_cfg(mappo_cfg: dict[str, Any]) -> str:
     obs_dim = int(mappo_cfg.get("obs_dim", 31))
     if obs_dim == 31:
         return "flat"
-    if obs_dim == ENTITY_OBS_DIM:
-        return "entity"
-    if obs_dim == ENTITY_GRID_OBS_DIM:
-        return "entity_grid"
     if obs_dim in (
         MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
         MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT,

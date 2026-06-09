@@ -36,7 +36,7 @@ from train.recurrent_common import (
     set_optimizer_learning_rate,
 )
 from train.runtime_specs import resolve_runtime_spec
-from xushi2.entity_obs import entity_obs_self_position
+from xushi2.multi_enemy_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
 
@@ -141,9 +141,7 @@ class MappoTrainer:
     def set_update_index(self, update_idx: int) -> None:
         self._active_update_idx = int(update_idx)
 
-    def set_cap_duel_distill_anchor(
-        self, anchor: CapDuelDistillAnchor | None
-    ) -> None:
+    def set_cap_duel_distill_anchor(self, anchor: CapDuelDistillAnchor | None) -> None:
         self.cap_duel_distill_anchor = anchor
 
     def set_team_spirit(self, value: float) -> None:
@@ -160,12 +158,8 @@ class MappoTrainer:
     def set_uncontested_on_point_alpha(self, value: float) -> None:
         self.vec_env.set_uncontested_on_point_alpha(float(value))
 
-    def set_objective_timing_seconds(
-        self, unlock_seconds: float, capture_seconds: float
-    ) -> None:
-        self.vec_env.set_objective_timing_seconds(
-            float(unlock_seconds), float(capture_seconds)
-        )
+    def set_objective_timing_seconds(self, unlock_seconds: float, capture_seconds: float) -> None:
+        self.vec_env.set_objective_timing_seconds(float(unlock_seconds), float(capture_seconds))
 
     @property
     def current_learning_rate(self) -> float:
@@ -212,9 +206,8 @@ class MappoTrainer:
             ret_mean, ret_std = 0.0, 1.0
 
         distill_batch: CapDuelDistillBatch | None = None
-        if (
-            self.cap_duel_distill_anchor is not None
-            and self.cap_duel_distill_anchor.should_run(self._active_update_idx)
+        if self.cap_duel_distill_anchor is not None and self.cap_duel_distill_anchor.should_run(
+            self._active_update_idx
         ):
             distill_batch = self.cap_duel_distill_anchor.collect_batch(
                 update_idx=self._active_update_idx,
@@ -464,9 +457,7 @@ class MappoTrainer:
             target_aux_losses.append(target_aux_loss)
             target_aux_accs.append(target_aux_acc)
             target_aux_counts.append(target_aux_count)
-            for key, value in target_selection_aux_metrics(
-                obs_t, cfg, mask=flat_mask
-            ).items():
+            for key, value in target_selection_aux_metrics(obs_t, cfg, mask=flat_mask).items():
                 target_aux_metric_parts[key].append(value)
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
@@ -551,15 +542,13 @@ class MappoTrainer:
             aim_entropy_mean,
             binary_entropy_mean,
             other_entropy_mean,
-        ) = (
-            self._entropy_bonus(
-                move_entropy=move_entropy,
-                aim_entropy=aim_entropy,
-                binary_entropy=binary_entropy,
-                other_entropy=other_entropy,
-                entropy=entropy,
-                valid_agent=valid_agent,
-            )
+        ) = self._entropy_bonus(
+            move_entropy=move_entropy,
+            aim_entropy=aim_entropy,
+            binary_entropy=binary_entropy,
+            other_entropy=other_entropy,
+            entropy=entropy,
+            valid_agent=valid_agent,
         )
         total_loss = (
             policy_loss
@@ -671,9 +660,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
         binary_action_dim=int(runtime.shapes.binary_action_dim),
         target_action_dim=int(runtime.shapes.target_action_dim),
         value_per_agent=bool(ppo_cfg.get("value_per_agent", False)),
-        mask_fire_when_no_visible_enemy=bool(
-            ppo_cfg.get("mask_fire_when_no_visible_enemy", False)
-        ),
+        mask_fire_when_no_visible_enemy=bool(ppo_cfg.get("mask_fire_when_no_visible_enemy", False)),
         embed_dim=int(model_cfg["embed_dim"]),
         gru_hidden=int(model_cfg["gru_hidden"]),
         head_hidden=int(model_cfg["head_hidden"]),
@@ -690,9 +677,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
             else float(ppo_cfg["entropy_coef_move"])
         ),
         entropy_coef_aim=(
-            None
-            if ppo_cfg.get("entropy_coef_aim") is None
-            else float(ppo_cfg["entropy_coef_aim"])
+            None if ppo_cfg.get("entropy_coef_aim") is None else float(ppo_cfg["entropy_coef_aim"])
         ),
         entropy_coef_binary=(
             None
@@ -739,9 +724,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
 
     gae_lambda = float(ppo_cfg["gae_lambda"])
     if not (0.0 <= gae_lambda <= 1.0):
-        raise ValueError(
-            f"ppo.gae_lambda must satisfy 0 <= gae_lambda <= 1, got {gae_lambda!r}"
-        )
+        raise ValueError(f"ppo.gae_lambda must satisfy 0 <= gae_lambda <= 1, got {gae_lambda!r}")
 
     clip_ratio = float(ppo_cfg["clip_ratio"])
     if clip_ratio <= 0.0:
@@ -749,9 +732,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
 
     value_clip_ratio = float(ppo_cfg["value_clip_ratio"])
     if value_clip_ratio <= 0.0:
-        raise ValueError(
-            f"ppo.value_clip_ratio must be > 0, got {value_clip_ratio!r}"
-        )
+        raise ValueError(f"ppo.value_clip_ratio must be > 0, got {value_clip_ratio!r}")
 
     for key in (
         "entropy_coef",

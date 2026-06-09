@@ -20,8 +20,9 @@ def _raise_invalid(param: str, value: float | int, reason: str) -> None:
 
 
 def _validate_topology_config(cfg: dict) -> None:
+    raw_base_bounds = dict(cfg.get("base_bounds", {}))
     base = dict(DEFAULT_MAP_BOUNDS)
-    base.update(dict(cfg.get("base_bounds", {})))
+    base.update(raw_base_bounds)
     min_x = float(base["min_x"])
     max_x = float(base["max_x"])
     min_y = float(base["min_y"])
@@ -38,9 +39,9 @@ def _validate_topology_config(cfg: dict) -> None:
     wall_count_per_side = int(cfg.get("wall_count_per_side", 1))
 
     if not min_x < max_x:
-        _raise_invalid("base_bounds", base, "requires min_x < max_x")
+        _raise_invalid("base_bounds", raw_base_bounds or base, "requires min_x < max_x")
     if not min_y < max_y:
-        _raise_invalid("base_bounds", base, "requires min_y < max_y")
+        _raise_invalid("base_bounds", raw_base_bounds or base, "requires min_y < max_y")
     if min_span > max_span:
         _raise_invalid("min_span", min_span, f"must be <= max_span ({max_span!r})")
 

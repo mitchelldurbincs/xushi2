@@ -6,28 +6,13 @@ from tests._paths import config_path
 from train.mappo import make_mappo_config
 from train.mappo_bc_pretrain import _walk_to_objective_targets
 from train.phases import resolve_phase
-from xushi2.entity_obs import (
-    ENTITY_OBS_DIM,
-    ENTITY_TOKEN_COUNT,
-    ENTITY_TOKEN_DIM,
-    MULTI_ENEMY_TOKEN_COUNT,
-)
-from xushi2.grid_obs import (
-    ENTITY_GRID_OBS_DIM,
-    GRID_CHANNELS,
-    GRID_SIZE,
-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
-)
+from xushi2.multi_enemy_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 
 pytestmark = pytest.mark.contract_fast
 
-PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
-
 
 def test_phase4_smoke_config_builds_mappo_config() -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
-    ) as fh:
+    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
     assert cfg.num_envs == 2
@@ -38,9 +23,7 @@ def test_phase4_smoke_config_builds_mappo_config() -> None:
 
 
 def test_phase4_config_can_select_async_vector_backend() -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
-    ) as fh:
+    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     config["ppo"] = dict(config["ppo"])
     config["ppo"]["vector_env"] = "async"
@@ -77,9 +60,7 @@ def test_phase4_config_can_select_async_vector_backend() -> None:
 def test_mappo_config_rejects_out_of_range_hyperparameters(
     key: str, value: float, msg: str
 ) -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
-    ) as fh:
+    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     config["ppo"] = dict(config["ppo"])
     config["ppo"][key] = value
@@ -88,9 +69,7 @@ def test_mappo_config_rejects_out_of_range_hyperparameters(
 
 
 def test_phase4_basic_config_builds_mappo_config() -> None:
-    with open(
-        config_path("phase4/baseline/phase4_mappo_basic.yaml"), encoding="utf-8"
-    ) as fh:
+    with open(config_path("phase4/baseline/phase4_mappo_basic.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
     assert cfg.num_envs == 8
@@ -131,191 +110,6 @@ def test_phase4_objective_probe_config_is_compact() -> None:
     assert config["run"]["total_updates"] == 1
 
 
-def test_phase5_entity_attention_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase5_entity_attention_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    cfg = make_mappo_config(config)
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == ENTITY_OBS_DIM
-    assert cfg.obs_encoder == "entity_attention"
-    assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
-    assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
-    assert cfg.entity_num_heads == 2
-    assert config["run"]["bc_pretrain_steps"] == 200
-    assert config["run"]["total_updates"] == 1
-
-
-def test_phase6_entity_grid_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase6_entity_grid_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    cfg = make_mappo_config(config)
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == ENTITY_GRID_OBS_DIM
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
-    assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
-    assert cfg.grid_channels == GRID_CHANNELS
-    assert cfg.grid_size == GRID_SIZE
-    assert config["run"]["bc_pretrain_steps"] == 200
-    assert config["run"]["total_updates"] == 1
-
-
-def test_phase7_team_fog_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase7_team_fog_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    phase, spec = resolve_phase(config)
-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
-    cfg = make_mappo_config(config)
-    assert phase == 7
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert ckpt_env_cfg["fog_mode"] == "team_shared"
-    assert ckpt_env_cfg["visible_radius"] == 0.65
-    assert config["run"]["bc_pretrain_steps"] == 500
-    assert config["run"]["bc_batch_size"] == 900
-    assert config["run"]["total_updates"] == 1
-    assert config["run"]["eval_gate"]["min_episodes"] == 2
-    assert config["run"]["eval_gate"]["min_win_rate"] == 1.0
-    assert config["run"]["eval_gate"]["max_draw_rate"] == 0.0
-    assert config["run"]["eval_gate"]["min_mean_reward"] == 10.0
-    assert config["run"]["eval_gate"]["min_mean_score_a"] == 7.0
-    assert config["run"]["eval_gate"]["max_mean_score_b"] == 0.0
-
-
-def test_phase7_per_agent_fog_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase7_per_agent_fog_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    phase, spec = resolve_phase(config)
-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
-    cfg = make_mappo_config(config)
-    assert phase == 7
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert ckpt_env_cfg["fog_mode"] == "per_agent"
-    assert ckpt_env_cfg["visible_radius"] == 0.65
-    assert config["run"]["bc_pretrain_steps"] == 500
-    assert config["run"]["bc_batch_size"] == 900
-    assert config["run"]["total_updates"] == 1
-    assert config["run"]["eval_gate"]["min_episodes"] == 2
-    assert config["run"]["eval_gate"]["min_win_rate"] == 1.0
-    assert config["run"]["eval_gate"]["max_draw_rate"] == 0.0
-    assert config["run"]["eval_gate"]["min_mean_reward"] == 10.0
-    assert config["run"]["eval_gate"]["min_mean_score_a"] == 7.0
-    assert config["run"]["eval_gate"]["max_mean_score_b"] == 0.0
-
-
-def test_phase8_random_map_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase8_random_map_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    phase, spec = resolve_phase(config)
-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
-    cfg = make_mappo_config(config)
-    assert phase == 8
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert ckpt_env_cfg["fog_mode"] == "team_shared"
-    assert ckpt_env_cfg["map_randomization"]["span_jitter"] == 5.0
-    assert ckpt_env_cfg["map_randomization"]["cover_count_per_side"] == 2
-    assert ckpt_env_cfg["map_randomization"]["cover_jitter"] == 1.0
-    assert ckpt_env_cfg["map_randomization"]["cover_radius"] == 1.0
-    assert ckpt_env_cfg["sim"]["randomize_map"] is True
-    assert config["run"]["bc_pretrain_steps"] == 500
-    assert config["run"]["bc_batch_size"] == 900
-    assert config["run"]["total_updates"] == 1
-
-
-def test_phase9_snapshot_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase9_snapshot_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    phase, spec = resolve_phase(config)
-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
-    cfg = make_mappo_config(config)
-    assert phase == 9
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert ckpt_env_cfg["opponent_bot"] == "snapshot"
-    assert len(ckpt_env_cfg["snapshot_paths"]) == 1
-    assert ckpt_env_cfg["snapshot_league"]["weights"]["latest"] == 0.7
-    assert ckpt_env_cfg["snapshot_league"]["weights"]["historical"] == 0.2
-    assert ckpt_env_cfg["snapshot_league"]["weights"]["anchor"] == 0.1
-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["current"] == 0.7
-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["snapshot"] == 0.2
-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["anchor"] == 0.1
-    assert config["run"]["snapshot_retention"]["max_latest"] == 2
-    assert config["run"]["snapshot_retention"]["preserve_best"] == 1
-    assert config["run"]["matrix_eval"]["episodes"] == 1
-    assert config["run"]["matrix_eval"]["anchor_bots"] == ["noop"]
-    assert len(config["run"]["matrix_eval"]["opponent_checkpoints"]) == 1
-    assert config["run"]["matrix_eval"]["gate"]["min_rows"] == 2
-    assert config["run"]["matrix_eval"]["gate"]["min_win_rate"]["bot"] == 1.0
-    assert config["run"]["bc_pretrain_steps"] == 500
-    assert config["run"]["bc_batch_size"] == 900
-    assert config["run"]["total_updates"] == 1
-
-
-def test_phase10_target_slot_probe_config_is_compact() -> None:
-    with open(
-        config_path("phase10_target_slot_probe.yaml"),
-        encoding="utf-8",
-    ) as fh:
-        config = yaml.safe_load(fh)
-    phase, spec = resolve_phase(config)
-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
-    cfg = make_mappo_config(config)
-    assert phase == 10
-    assert cfg.action_dim == 7
-    assert cfg.target_action_dim == MULTI_ENEMY_TOKEN_COUNT
-    assert cfg.num_envs == 2
-    assert cfg.rollout_len == 32
-    assert cfg.obs_dim == PHASE10_TARGET_OBS_DIM
-    assert cfg.obs_encoder == "entity_attention_grid"
-    assert ckpt_env_cfg["opponent_bot"] == "noop"
-    assert ckpt_env_cfg["sim"]["hero_kinds"] == [
-        "Vanguard",
-        "Ranger",
-        "Mender",
-        "Vanguard",
-        "Ranger",
-        "Mender",
-    ]
-    assert ckpt_env_cfg["map_randomization"]["span_jitter"] == 5.0
-    assert config["run"]["bc_pretrain_steps"] == 500
-    assert config["run"]["bc_batch_size"] == 900
-    assert config["run"]["total_updates"] == 1
-
-
 def test_phase11_mixed_league_probe_config_is_compact() -> None:
     with open(
         config_path("phase11/probe/phase11_mixed_league_probe.yaml"),
@@ -339,9 +133,7 @@ def test_phase11_mixed_league_probe_config_is_compact() -> None:
 
 
 def test_phase4_walk_bc_target_points_toward_objective() -> None:
-    with open(
-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
-    ) as fh:
+    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
     cfg = make_mappo_config(config)
     obs = torch.tensor(

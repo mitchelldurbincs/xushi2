@@ -61,6 +61,7 @@ def _merge_sim_cfg_with_overrides(base_sim_cfg: dict, args: Namespace) -> dict:
         mechanics["respawn_ticks"] = args.respawn_ticks
 
     sim_cfg["mechanics"] = mechanics
+    sim_cfg.setdefault("seed", 0)
     sim_cfg.setdefault("fog_of_war_enabled", False)
     sim_cfg.setdefault("randomize_map", False)
     return sim_cfg
