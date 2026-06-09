@@ -10,8 +10,6 @@ from importlib import import_module
 from typing import Any
 
 _EXPORTS = {
-    "MemoryToyEnv": ("envs.memory_toy", "MemoryToyEnv"),
-    "Phase3RangerEnv": ("envs.phase3_ranger", "Phase3RangerEnv"),
     "Phase4AimOnlyMappoEnv": ("envs.phase4_aim_only_mappo", "Phase4AimOnlyMappoEnv"),
     "Phase4CapDuelMappoEnv": ("envs.phase4_cap_duel_mappo", "Phase4CapDuelMappoEnv"),
     "Phase4Combat1v1MappoEnv": ("envs.phase4_combat_1v1_mappo", "Phase4Combat1v1MappoEnv"),
@@ -49,8 +47,6 @@ _EXPORTS = {
         "Phase11CurrentSelfplayMappoEnv",
     ),
     "make_mappo_match_env": ("envs.runtime_factory", "make_mappo_match_env"),
-    "make_memory_toy_env": ("envs.runtime_factory", "make_memory_toy_env"),
-    "make_ranger_duel_env": ("envs.runtime_factory", "make_ranger_duel_env"),
     "mappo_env_fn_from_config": ("envs.runtime_factory", "mappo_env_fn_from_config"),
 }
 

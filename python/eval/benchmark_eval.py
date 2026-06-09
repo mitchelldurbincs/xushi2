@@ -23,11 +23,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from eval.eval_memory_toy import load_checkpoint as load_memory_toy_checkpoint
-from eval.eval_memory_toy import run_ablation
-from eval.eval_phase3 import load_checkpoint as load_phase3_checkpoint
-from train.ppo_recurrent.evaluate import evaluate_policy
-from train.ppo_recurrent.orchestration import make_env_fn
 from xushi2.runner import run_episode
 
 
@@ -94,37 +89,9 @@ def _run_phase0_scripted(args: argparse.Namespace, seed: int, episodes: int) -> 
     return elapsed, total_steps
 
 
-def _run_phase3_checkpoint(args: argparse.Namespace, seed: int, episodes: int) -> tuple[float, int | None]:
-    model, ckpt_config = load_phase3_checkpoint(args.checkpoint)
-    train_config = {"phase": int(ckpt_config.get("phase", 3)), "env": ckpt_config["env"]}
-    env_fn, _env_meta, _seed_base = make_env_fn(train_config)
-    t0 = time.perf_counter()
-    _ = evaluate_policy(model, env_fn, num_episodes=episodes, seed=seed)
-    elapsed = time.perf_counter() - t0
-    return elapsed, None
-
-
-def _run_memory_toy(args: argparse.Namespace, seed: int, episodes: int) -> tuple[float, int | None]:
-    model, config = load_memory_toy_checkpoint(args.checkpoint)
-    t0 = time.perf_counter()
-    _ = run_ablation(
-        model=model,
-        config=config,
-        num_episodes=episodes,
-        seed=seed,
-        mode=args.memory_mode,
-    )
-    elapsed = time.perf_counter() - t0
-    return elapsed, None
-
-
 def _run_mode(args: argparse.Namespace, seed: int, episodes: int) -> tuple[float, int | None]:
     if args.mode == "phase0_scripted":
         return _run_phase0_scripted(args, seed=seed, episodes=episodes)
-    if args.mode == "phase3_checkpoint":
-        return _run_phase3_checkpoint(args, seed=seed, episodes=episodes)
-    if args.mode == "memory_toy":
-        return _run_memory_toy(args, seed=seed, episodes=episodes)
     raise ValueError(f"unsupported mode: {args.mode!r}")
 
 
@@ -135,10 +102,8 @@ def _to_payload(args: argparse.Namespace, rows: list[BenchResult]) -> dict[str, 
             {
                 **asdict(row),
                 "config": {
-                    "checkpoint": args.checkpoint,
                     "bot_a": args.bot_a,
                     "bot_b": args.bot_b,
-                    "memory_mode": args.memory_mode,
                     "round_length_seconds": args.round_length_seconds,
                     "revolver_damage_centi_hp": args.revolver_damage_centi_hp,
                     "revolver_fire_cooldown_ticks": args.revolver_fire_cooldown_ticks,
@@ -165,7 +130,7 @@ def main() -> int:
     parser.add_argument(
         "--mode",
         required=True,
-        choices=("phase0_scripted", "phase3_checkpoint", "memory_toy"),
+        choices=("phase0_scripted",),
     )
     parser.add_argument("--episodes", type=int, default=20)
     parser.add_argument("--warmup-episodes", type=int, default=2)
@@ -173,9 +138,6 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--json-out", type=str, default=None)
     parser.add_argument("--csv-out", type=str, default=None)
-
-    parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--memory-mode", type=str, default="normal", choices=("normal", "zero_every_tick", "random_every_tick"))
 
     parser.add_argument("--bot-a", type=str, default="basic")
     parser.add_argument("--bot-b", type=str, default="basic")
@@ -185,9 +147,6 @@ def main() -> int:
     parser.add_argument("--revolver-hitbox-radius", type=float, default=0.75)
     parser.add_argument("--respawn-ticks", type=int, default=120)
     args = parser.parse_args()
-
-    if args.mode in {"phase3_checkpoint", "memory_toy"} and not args.checkpoint:
-        parser.error("--checkpoint is required for checkpoint-based modes")
 
     rows: list[BenchResult] = []
     for r in range(args.repeat):

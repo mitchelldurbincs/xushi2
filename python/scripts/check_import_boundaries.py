@@ -30,7 +30,11 @@ class Violation:
 
 
 def _iter_py_files() -> list[Path]:
-    return [p for p in ROOT.rglob("*.py") if "__pycache__" not in p.parts]
+    return [
+        p
+        for p in ROOT.rglob("*.py")
+        if "__pycache__" not in p.parts and ".venv" not in p.parts
+    ]
 
 
 def _module_name(path: Path) -> str:

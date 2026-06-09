@@ -24,7 +24,7 @@ from train.mappo_model import (
     target_selection_aux_metrics,
 )
 from train.mappo_rollout import collect_rollout, step_loss_mask
-from train.ppo_recurrent.losses import (
+from train.losses import (
     _masked_mean,
     action_logprob_and_entropy_parts,
 )

@@ -3,19 +3,14 @@
 Usage:
     python -m scripts.dump_replay \
         --checkpoint runs/.../ckpt_0600.pt \
-        --output ../data/replays/phase3_v3_eval.replay \
+        --output ../data/replays/phase4_eval.replay \
         --seed 0xD1CEDA7A
 
 Replay format (ASCII, line-delimited):
     Line 1: header — space-separated ``key=value`` pairs. Required keys:
         format, seed, round_seconds, action_repeat,
         mech_dmg, mech_fcd, mech_hbr, mech_resp
-    Phase 3 lines: one decision per line, 13 numeric fields:
-        tick mx0 my0 ad0 pf0 a10 a20 mx3 my3 ad3 pf3 a13 a23
-    where slot 0 is Team A's Ranger, slot 3 is Team B's Ranger. Booleans
-    are 0/1 ints. ``aim_delta`` is in radians (already scaled to ±π/4).
-
-    Phase 4-9 and Phase 11 lines: one decision per line, 37 numeric fields:
+    MAPPO lines: one decision per line, 37 numeric fields:
         tick, then six action slots of
         mx my aim_delta_rad primary_fire ability_1 ability_2.
     Phase 10+ lines append target_slot per action slot, for 43 fields total.
@@ -37,12 +32,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eval.eval_phase3 import load_checkpoint as load_phase3_checkpoint
-from scripts.replay_dump.rollout import (
-    dump_mappo,
-    dump_phase3,
-    load_mappo_checkpoint,
-)
+from scripts.replay_dump.rollout import dump_mappo, load_mappo_checkpoint
 from train.runtime_adapter import resolve_runtime_env_factory
 
 
@@ -72,32 +62,24 @@ def main() -> int:
 
     raw_ckpt = torch.load(Path(args.checkpoint), map_location="cpu", weights_only=False)
     ckpt_config = dict(raw_ckpt.get("config", {}))
-    if "mappo" in ckpt_config:
-        model, ckpt_config = load_mappo_checkpoint(args.checkpoint)
-        resolve_runtime_env_factory(
-            ckpt_config,
-            require_learner="mappo",
-            context="MAPPO replay dump",
-        )
-        n_decisions = dump_mappo(
-            model,
-            ckpt_config,
-            seed=int(args.seed),
-            episodes=int(args.episodes),
-            max_decisions=args.max_decisions,
-            output_path=output_path,
-            stochastic=bool(args.stochastic),
-        )
-    else:
-        model, ckpt_config = load_phase3_checkpoint(args.checkpoint)
-        n_decisions = dump_phase3(
-            model,
-            ckpt_config,
-            seed=int(args.seed),
-            episodes=int(args.episodes),
-            max_decisions=args.max_decisions,
-            output_path=output_path,
-        )
+    if "mappo" not in ckpt_config:
+        raise ValueError("replay dumping only supports MAPPO checkpoints")
+
+    model, ckpt_config = load_mappo_checkpoint(args.checkpoint)
+    resolve_runtime_env_factory(
+        ckpt_config,
+        require_learner="mappo",
+        context="MAPPO replay dump",
+    )
+    n_decisions = dump_mappo(
+        model,
+        ckpt_config,
+        seed=int(args.seed),
+        episodes=int(args.episodes),
+        max_decisions=args.max_decisions,
+        output_path=output_path,
+        stochastic=bool(args.stochastic),
+    )
 
     print(f"[dump_replay] wrote {n_decisions} decisions to {output_path}")
     return 0

@@ -1,5 +1,0 @@
-version: memory_toy_gate/v1
-normal_mean_min: -0.15
-zero_mean_range: [-1.2, -0.8]
-random_mean_range: [-1.5, -0.8]
-normal_zero_gap_min: 0.5

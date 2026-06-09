@@ -27,15 +27,6 @@ def test_format_phase_banner_phase0_default() -> None:
     assert "bots=basic vs noop" in banner
 
 
-def test_format_phase_banner_phase3() -> None:
-    banner = format_phase_banner(
-        _normalized(3, learner_kind="ppo_recurrent", env_kind="ranger_duel"),
-        "phase3",
-    )
-    assert "opponent=basic" in banner
-    assert "learner_team=A" in banner
-
-
 def test_format_phase_banner_phase11() -> None:
     n = _normalized(11, learner_kind="mappo", env_kind="mappo_match")
     n = NormalizedEntryConfig(**{**n.__dict__, "env_cfg": {"n_agents": 6}})

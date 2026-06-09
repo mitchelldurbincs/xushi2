@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 
-_LOSSES_PATH = Path(__file__).resolve().parents[1] / "train" / "ppo_recurrent" / "losses.py"
+_LOSSES_PATH = Path(__file__).resolve().parents[1] / "train" / "losses.py"
 _SPEC = importlib.util.spec_from_file_location("ppo_losses", _LOSSES_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
 _LOSSES = importlib.util.module_from_spec(_SPEC)

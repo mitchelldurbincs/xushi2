@@ -4,16 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from functools import partial
 from typing import Any
 
 import gymnasium as gym
 
-from envs.runtime_factory import (
-    make_memory_toy_env,
-    make_ranger_duel_env,
-    mappo_env_fn_from_config,
-)
+from envs.runtime_factory import mappo_env_fn_from_config
 from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
 from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 
@@ -127,78 +122,9 @@ def _resolve_explicit_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
     env_cfg = dict(config.get("env", {}))
     learner_kind = str(learner_cfg.get("kind", "mappo"))
     env_kind = str(env_cfg.get("kind"))
-    if env_kind == "memory_toy":
-        return _explicit_memory_toy_spec(config, learner_kind, env_cfg)
-    if env_kind == "ranger_duel":
-        return _explicit_ranger_duel_spec(config, learner_kind, env_cfg)
     if env_kind == "mappo_match":
         return _explicit_mappo_match_spec(config, learner_kind, env_cfg)
     raise ValueError(f"unsupported explicit env.kind {env_kind!r}")
-
-
-def _explicit_memory_toy_spec(
-    config: dict[str, Any], learner_kind: str, env_cfg: dict[str, Any]
-) -> RuntimeSpec:
-    ep_len = int(env_cfg.get("episode_length", 64))
-    cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
-    exp = _experiment_from_config(config, default_label="memory_toy")
-    return RuntimeSpec(
-        experiment=exp,
-        learner=LearnerSpec(kind=learner_kind, training_variants=("recurrent", "feedforward")),
-        env=EnvSpec(
-            kind="memory_toy",
-            actor_obs="toy",
-            critic_obs=None,
-            team_size=1,
-            learner_team="A",
-            opponent_kind="none",
-            features={},
-        ),
-        shapes=ShapeSpec(
-            obs_dim=3,
-            action_dim=2,
-            continuous_action_dim=2,
-            binary_action_dim=0,
-        ),
-        env_fn=partial(make_memory_toy_env, ep_len, cue_ticks),
-        ckpt_env_cfg={"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
-        seed_base=int(env_cfg.get("seed_base", 0)),
-    )
-
-
-def _explicit_ranger_duel_spec(
-    config: dict[str, Any], learner_kind: str, env_cfg: dict[str, Any]
-) -> RuntimeSpec:
-    base_cfg = _base_env_cfg(env_cfg)
-    exp = _experiment_from_config(config, default_label="ranger_duel")
-    return RuntimeSpec(
-        experiment=exp,
-        learner=LearnerSpec(kind=learner_kind, training_variants=("recurrent",)),
-        env=EnvSpec(
-            kind="ranger_duel",
-            actor_obs="flat",
-            critic_obs=None,
-            team_size=1,
-            learner_team=base_cfg["learner_team"],
-            opponent_kind=base_cfg["opponent_bot"],
-            features={},
-        ),
-        shapes=ShapeSpec(
-            obs_dim=31,
-            action_dim=6,
-            continuous_action_dim=3,
-            binary_action_dim=3,
-        ),
-        env_fn=partial(
-            make_ranger_duel_env,
-            base_cfg["sim"],
-            base_cfg["opponent_bot"],
-            base_cfg["learner_team"],
-            base_cfg["reward"],
-        ),
-        ckpt_env_cfg=base_cfg,
-        seed_base=_resolve_seed_base(env_cfg, base_cfg["sim"]),
-    )
 
 
 def _explicit_mappo_match_spec(
@@ -345,16 +271,10 @@ def _legacy_learner_kind(phase_spec: dict[str, Any]) -> str:
     variants = tuple(str(v) for v in phase_spec.get("training_variants", ()))
     if "mappo" in variants:
         return "mappo"
-    if "recurrent" in variants:
-        return "ppo_recurrent"
     return "scripted_determinism"
 
 
 def _legacy_env_kind(phase: int) -> str:
-    if phase == 2:
-        return "memory_toy"
-    if phase == 3:
-        return "ranger_duel"
     if phase >= 4:
         return "mappo_match"
     return "scripted_determinism"
