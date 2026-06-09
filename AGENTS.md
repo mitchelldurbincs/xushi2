@@ -91,7 +91,7 @@ experiments/configs/phase4/
     legacy/     archived; do not use for new runs
 ```
 
-Other phases live alongside: `phase11/probe/`, `phase3/`, plus top-level `phase{0,1b,2,5,6,7,8,9,10}*.yaml`.
+Other current config roots live alongside Phase 4: `experiments/configs/phase3/{smoke,baseline,probe,legacy}/`, `experiments/configs/phase11/probe/`, `experiments/configs/runtime/`, and top-level smoke/probe YAMLs such as `phase0_determinism.yaml`, `phase1b_env_smoke.yaml`, `phase2_memory_toy.yaml`, `phase5_entity_attention_probe.yaml`, `phase6_entity_grid_probe.yaml`, `phase7_*_fog_probe.yaml`, `phase8_random_map_probe.yaml`, `phase9_snapshot_probe.yaml`, and `phase10_target_slot_probe.yaml`.
 
 ## W&B
 

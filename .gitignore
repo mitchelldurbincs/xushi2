@@ -79,3 +79,6 @@ python/xushi2/Release/
 # Git worktrees
 .worktrees/
 build_fpic/
+
+# Runtime replay outputs
+replays/
