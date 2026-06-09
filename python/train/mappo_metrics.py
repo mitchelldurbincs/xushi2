@@ -4,7 +4,7 @@ import torch
 
 from train.mappo_model import _OWN_POSITION_SLICE
 from train.losses import _masked_mean
-from xushi2.entity_obs import entity_obs_self_position
+from xushi2.multi_enemy_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 
 
@@ -25,7 +25,9 @@ def rollout_metrics(cfg, rollout) -> dict[str, float]:
     if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
         obs_np = rollout.actor_obs.detach().cpu().numpy()
         own_pos_np = entity_obs_self_position(obs_np)
-        own_pos = torch.as_tensor(own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device)
+        own_pos = torch.as_tensor(
+            own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device
+        )
         self_on_point = torch.zeros_like(own_pos[..., :1])
     else:
         own_pos = rollout.actor_obs[:, :, :, _OWN_POSITION_SLICE]

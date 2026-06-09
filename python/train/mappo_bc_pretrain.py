@@ -18,7 +18,7 @@ from train.mappo_model import (
     mode_aux_targets,
     target_selection_aux_loss_and_accuracy,
 )
-from xushi2.entity_obs import entity_obs_self_position
+from xushi2.multi_enemy_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 
 _AIM_ACTION_INDEX = 2
@@ -293,9 +293,7 @@ def bc_pretrain_walk_to_objective(
                 pred_cont = torch.tanh(mean)
                 target = target_seq[t]
                 cont_losses.append(
-                    torch.nn.functional.mse_loss(
-                        pred_cont, target[:, : cfg.continuous_action_dim]
-                    )
+                    torch.nn.functional.mse_loss(pred_cont, target[:, : cfg.continuous_action_dim])
                 )
                 binary_losses.append(
                     torch.nn.functional.binary_cross_entropy_with_logits(
@@ -308,23 +306,17 @@ def bc_pretrain_walk_to_objective(
                     )
                 )
                 aim_pred = model.aim_aux_prediction_from_features(features)
-                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
-                    aim_pred, obs_seq[t], cfg
-                )
+                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, obs_seq[t], cfg)
                 aim_aux_losses.append(aim_loss)
                 aim_aux_rmses.append(aim_rmse)
                 aim_aux_counts.append(aim_count)
                 target_aux_loss, target_aux_acc, target_aux_count = (
-                    target_selection_aux_loss_and_accuracy(
-                        target_selection_logits, obs_seq[t], cfg
-                    )
+                    target_selection_aux_loss_and_accuracy(target_selection_logits, obs_seq[t], cfg)
                 )
                 target_aux_losses.append(target_aux_loss)
                 target_aux_accs.append(target_aux_acc)
                 target_aux_counts.append(target_aux_count)
-                mode_target = torch.zeros(
-                    obs_seq.shape[1], dtype=torch.long, device=obs_seq.device
-                )
+                mode_target = torch.zeros(obs_seq.shape[1], dtype=torch.long, device=obs_seq.device)
                 mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
                     mode_logits, obs_seq[t], cfg, labels=mode_target
                 )
@@ -482,9 +474,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
                         )
                     )
                     aim_pred = model.aim_aux_prediction_from_features(features)
-                    aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
-                        aim_pred, seq_obs[t], cfg
-                    )
+                    aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, seq_obs[t], cfg)
                     aim_aux_losses.append(aim_loss)
                     aim_aux_rmses.append(aim_rmse)
                     aim_aux_counts.append(aim_count)

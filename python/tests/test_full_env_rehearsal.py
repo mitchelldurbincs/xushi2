@@ -19,8 +19,8 @@ from train.full_env_rehearsal import (
 from train.mappo_model import MappoActorCritic, MappoConfig
 from envs.phase4_mappo import Phase4MappoEnv
 from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
-from xushi2.grid_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+from xushi2.multi_enemy_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
 
 _OWN_AIM = actor_field_slice("own_aim_unit")

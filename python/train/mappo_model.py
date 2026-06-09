@@ -13,12 +13,7 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from xushi2.entity_obs import (
-    ENTITY_OBS_DIM,
-    ENTITY_TOKEN_COUNT,
-    ENTITY_TOKEN_DIM,
-)
-from xushi2.grid_obs import GRID_CHANNELS, GRID_SIZE
+from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, GRID_CHANNELS, GRID_SIZE
 from xushi2.obs_manifest import actor_field_slice
 
 _LOG2 = 0.6931471805599453
@@ -260,28 +255,6 @@ class MappoActorCritic(nn.Module):
                 nn.ReLU(),
             )
             self.actor_entity_encoder = None
-        elif cfg.obs_encoder == "entity_attention":
-            if cfg.obs_dim != ENTITY_OBS_DIM:
-                raise ValueError(
-                    f"entity_attention obs_dim must be {ENTITY_OBS_DIM}, got {cfg.obs_dim}"
-                )
-            if (
-                cfg.entity_token_count != ENTITY_TOKEN_COUNT
-                or cfg.entity_token_dim != ENTITY_TOKEN_DIM
-            ):
-                raise ValueError(
-                    "entity_attention token shape must match "
-                    f"({ENTITY_TOKEN_COUNT}, {ENTITY_TOKEN_DIM})"
-                )
-            from train.entity_attention import EntityAttentionEncoder
-
-            self.actor_embed = None
-            self.actor_entity_encoder = EntityAttentionEncoder(
-                entity_dim=cfg.entity_token_dim,
-                embed_dim=cfg.embed_dim,
-                num_heads=cfg.entity_num_heads,
-                output_dim=cfg.embed_dim,
-            )
         elif cfg.obs_encoder == "entity_attention_grid":
             base_obs_dim = (
                 cfg.entity_token_count * cfg.entity_token_dim
@@ -341,9 +314,7 @@ class MappoActorCritic(nn.Module):
         ):
             if cfg.obs_encoder != "flat":
                 raise ValueError("target-conditioned combat currently supports only flat obs")
-            expected_target_dim = (
-                4 if cfg.target_selection_aux_mode == "team_focus_low_hp" else 3
-            )
+            expected_target_dim = 4 if cfg.target_selection_aux_mode == "team_focus_low_hp" else 3
             if cfg.target_selection_dim != expected_target_dim:
                 raise ValueError(
                     "target-conditioned combat requires target_selection_dim="
@@ -377,15 +348,11 @@ class MappoActorCritic(nn.Module):
         )
         self.actor_mean_head = nn.Linear(cfg.head_hidden, cfg.continuous_action_dim)
         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
-        self.actor_mode_head = (
-            nn.Linear(cfg.head_hidden, 2) if cfg.mode_gated_combat else None
-        )
+        self.actor_mode_head = nn.Linear(cfg.head_hidden, 2) if cfg.mode_gated_combat else None
         self.actor_target_head = (
             nn.Linear(cfg.head_hidden, cfg.target_action_dim) if cfg.target_action_dim > 0 else None
         )
-        self.actor_aim_aux_head = (
-            nn.Linear(cfg.head_hidden, 1) if cfg.aim_aux_coef > 0.0 else None
-        )
+        self.actor_aim_aux_head = nn.Linear(cfg.head_hidden, 1) if cfg.aim_aux_coef > 0.0 else None
         self.log_std = nn.Parameter(torch.ones(cfg.continuous_action_dim) * cfg.action_log_std_init)
         self.critic = nn.Sequential(
             nn.Linear(cfg.critic_obs_dim, cfg.head_hidden),
@@ -427,9 +394,7 @@ class MappoActorCritic(nn.Module):
             return None
         return self.actor_aim_aux_head(features).squeeze(-1)
 
-    def target_selection_logits_from_features(
-        self, features: torch.Tensor
-    ) -> torch.Tensor | None:
+    def target_selection_logits_from_features(self, features: torch.Tensor) -> torch.Tensor | None:
         if self.actor_target_selection_head is None:
             return None
         return self.actor_target_selection_head(features)
@@ -450,11 +415,7 @@ class MappoActorCritic(nn.Module):
         logits: torch.Tensor,
         mode_logits: torch.Tensor | None,
     ) -> torch.Tensor:
-        if (
-            not self.cfg.mode_gated_combat
-            or mode_logits is None
-            or logits.shape[-1] == 0
-        ):
+        if not self.cfg.mode_gated_combat or mode_logits is None or logits.shape[-1] == 0:
             return logits
         p_fire_raw = torch.sigmoid(logits[:, 0])
         p_combat = self.combat_probability(mode_logits)
@@ -476,11 +437,7 @@ class MappoActorCritic(nn.Module):
         mean = self.actor_mean_head(head_features)
         logits = self.actor_binary_head(head_features)
         mode_logits = self.mode_logits_from_features(head_features)
-        if (
-            target_context is not None
-            and logits.shape[-1] > 0
-            and self.cfg.binary_action_dim > 0
-        ):
+        if target_context is not None and logits.shape[-1] > 0 and self.cfg.binary_action_dim > 0:
             fire_gate = (target_context.selected_visible * target_context.confidence).clamp(
                 min=1.0e-3
             )
@@ -619,9 +576,7 @@ class MappoActorCritic(nn.Module):
         return action, h_next
 
 
-def aim_aux_targets(
-    obs: torch.Tensor, cfg: MappoConfig
-) -> tuple[torch.Tensor, torch.Tensor]:
+def aim_aux_targets(obs: torch.Tensor, cfg: MappoConfig) -> tuple[torch.Tensor, torch.Tensor]:
     """Return target enemy angle in radians and a visibility mask.
 
     Phase-4 flat actor observations expose the nearest enemy alive flag at
@@ -819,11 +774,9 @@ def target_selection_aux_targets(
             own_g = _own_pos.view(groups, cfg.n_agents, 2)[:, 0, :]
             enemy_pos_g = own_g[:, None, :] + rel_g
             dist_obj = torch.linalg.vector_norm(enemy_pos_g, dim=-1)
-            score = (
-                1.0 / hp_g.clamp(min=1.0e-6)
-                + cfg.target_selection_objective_proximity_coef
-                / dist_obj.clamp(min=1.0e-6)
-            )
+            score = 1.0 / hp_g.clamp(
+                min=1.0e-6
+            ) + cfg.target_selection_objective_proximity_coef / dist_obj.clamp(min=1.0e-6)
             score = score.masked_fill(~visible_g, -float("inf"))
             team_labels = score.argmax(dim=-1)
             has_team_target = visible_g.any(dim=-1)
@@ -837,13 +790,11 @@ def target_selection_aux_targets(
             labels = labels_g.reshape(-1)
             valid = torch.ones_like(row_visible, dtype=torch.bool)
         else:
-            score = (
-                1.0 / hp.clamp(min=1.0e-6)
-                + cfg.target_selection_objective_proximity_coef
-                / torch.linalg.vector_norm(_own_pos[:, None, :] + rel, dim=-1).clamp(
-                    min=1.0e-6
-                )
-            )
+            score = 1.0 / hp.clamp(
+                min=1.0e-6
+            ) + cfg.target_selection_objective_proximity_coef / torch.linalg.vector_norm(
+                _own_pos[:, None, :] + rel, dim=-1
+            ).clamp(min=1.0e-6)
             score = score.masked_fill(~visible, -float("inf"))
             team_labels = score.argmax(dim=-1)
             labels = torch.where(row_visible & visible.any(dim=-1), team_labels, labels)

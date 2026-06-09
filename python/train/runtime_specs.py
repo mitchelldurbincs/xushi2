@@ -9,8 +9,7 @@ from typing import Any
 import gymnasium as gym
 
 from envs.runtime_factory import mappo_env_fn_from_config
-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 
 
 @dataclass(frozen=True)
@@ -76,7 +75,9 @@ def resolve_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
 def _has_explicit_runtime_spec(config: dict[str, Any]) -> bool:
     learner = config.get("learner")
     env = config.get("env")
-    return isinstance(learner, dict) and "kind" in learner and isinstance(env, dict) and "kind" in env
+    return (
+        isinstance(learner, dict) and "kind" in learner and isinstance(env, dict) and "kind" in env
+    )
 
 
 def _experiment_from_config(config: dict[str, Any], *, default_label: str) -> ExperimentSpec:
@@ -139,7 +140,9 @@ def _explicit_mappo_match_spec(
     snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
     self_play = bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
     mini_game = env_cfg.get("mini_game")
-    default_agents = 3 if mini_game == "cap_duel" else 6 if self_play else env_cfg.get("team_size", 3)
+    default_agents = (
+        3 if mini_game == "cap_duel" else 6 if self_play else env_cfg.get("team_size", 3)
+    )
     n_agents = int(env_cfg.get("n_agents", default_agents))
     shapes = _mappo_shapes(actor_obs=actor_obs, target_slot=target_slot, n_agents=n_agents)
     ckpt_env_cfg = {
@@ -196,23 +199,19 @@ def _explicit_mappo_match_spec(
 
 def _mappo_shapes(*, actor_obs: str, target_slot: bool, n_agents: int) -> ShapeSpec:
     if target_slot:
-        obs_dim = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
-    elif actor_obs == "flat":
+        raise ValueError("target_slot actor observations were removed with phase10")
+    if actor_obs == "flat":
         obs_dim = 31
-    elif actor_obs == "entity":
-        obs_dim = ENTITY_OBS_DIM
-    elif actor_obs == "entity_grid":
-        obs_dim = ENTITY_GRID_OBS_DIM
     elif actor_obs in ("multi_enemy_entity_grid", "partial_entity_grid"):
         obs_dim = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
     else:
         raise ValueError(f"unsupported mappo actor_obs {actor_obs!r}")
-    target_dim = MULTI_ENEMY_TOKEN_COUNT if target_slot else 0
+    target_dim = 0
     return ShapeSpec(
         obs_dim=obs_dim,
         critic_obs_dim=135,
         n_agents=int(n_agents),
-        action_dim=6 + (1 if target_slot else 0),
+        action_dim=6,
         continuous_action_dim=3,
         binary_action_dim=3,
         target_action_dim=target_dim,
@@ -257,7 +256,9 @@ def _resolve_legacy_phase_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
             critic_obs=("team_global" if shapes.critic_obs_dim is not None else None),
             team_size=int(env_cfg.get("team_size", shapes.n_agents)),
             learner_team=str(env_cfg.get("learner_team", ckpt_env_cfg.get("learner_team", "A"))),
-            opponent_kind=str(env_cfg.get("opponent_bot", ckpt_env_cfg.get("opponent_bot", "basic"))),
+            opponent_kind=str(
+                env_cfg.get("opponent_bot", ckpt_env_cfg.get("opponent_bot", "basic"))
+            ),
             features=_legacy_features(phase, env_cfg, ckpt_env_cfg, shapes),
         ),
         shapes=shapes,
@@ -281,11 +282,7 @@ def _legacy_env_kind(phase: int) -> str:
 
 
 def _legacy_actor_obs(phase: int) -> str:
-    if phase in (5,):
-        return "entity"
-    if phase in (6,):
-        return "entity_grid"
-    if phase >= 7:
+    if phase == 11:
         return "multi_enemy_entity_grid"
     return "flat"
 
@@ -298,7 +295,9 @@ def _legacy_features(
 ) -> dict[str, Any]:
     return {
         "fog": str(env_cfg.get("fog_mode", ckpt_env_cfg.get("fog_mode", "none"))),
-        "map_randomization": bool(env_cfg.get("map_randomization", ckpt_env_cfg.get("map_randomization", {}))),
+        "map_randomization": bool(
+            env_cfg.get("map_randomization", ckpt_env_cfg.get("map_randomization", {}))
+        ),
         "snapshot": bool(env_cfg.get("snapshot_paths", ckpt_env_cfg.get("snapshot_paths", ()))),
         "current_selfplay": bool(dict(env_cfg.get("self_play", {})).get("enabled", phase == 11)),
         "target_slot": shapes.target_action_dim > 0,

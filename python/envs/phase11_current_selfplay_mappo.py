@@ -15,7 +15,7 @@ from gymnasium import spaces
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.map_randomization import (
     map_layout_hash,
     randomized_cover_markers,
@@ -186,9 +186,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
                     )
                 opponent = opponent[:, :6]
                 for idx, slot in enumerate((3, 4, 5)):
-                    actions[slot] = Phase4MappoEnv._action_to_cpp_for_slot(
-                        opponent[idx], slot
-                    )
+                    actions[slot] = Phase4MappoEnv._action_to_cpp_for_slot(opponent[idx], slot)
                 self._last_opponent_actions[:] = opponent
             else:
                 bot = self._last_match.anchor_bot or "noop"
@@ -215,7 +213,9 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
-            team_a_term, team_b_term = self._coerce_team_scalar_rewards(ta, tb, source="add_terminal")
+            team_a_term, team_b_term = self._coerce_team_scalar_rewards(
+                ta, tb, source="add_terminal"
+            )
             for i in range(3):
                 team_rewards[i] += team_a_term
                 team_rewards[i + 3] += team_b_term
@@ -232,9 +232,13 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
             info,
         )
 
-    def _coerce_team_scalar_rewards(self, reward_a: Any, reward_b: Any, *, source: str) -> tuple[float, float]:
+    def _coerce_team_scalar_rewards(
+        self, reward_a: Any, reward_b: Any, *, source: str
+    ) -> tuple[float, float]:
         if _PHASE11_PER_AGENT_REWARDS:
-            raise RuntimeError("Phase-11 current self-play env expects scalar team rewards contract")
+            raise RuntimeError(
+                "Phase-11 current self-play env expects scalar team rewards contract"
+            )
         team_a = self._coerce_single_team_scalar_reward(reward_a, team_name="A", source=source)
         team_b = self._coerce_single_team_scalar_reward(reward_b, team_name="B", source=source)
         return team_a, team_b

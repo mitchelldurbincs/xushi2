@@ -18,7 +18,7 @@ from train.mappo_model import (
     MappoConfig,
     target_selection_aux_loss_and_accuracy,
 )
-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
 from xushi2.obs_manifest import actor_field_slice
 from xushi2 import xushi2_cpp as _cpp
 
@@ -105,9 +105,7 @@ def scripted_objective_focus_fire_targets(
     target_angle = torch.atan2(rel[:, 0], rel[:, 1])
     aim_unit = obs[:, _OWN_AIM]
     current_angle = torch.atan2(aim_unit[:, 0], aim_unit[:, 1])
-    delta = _wrap_angle(target_angle - current_angle).clamp(
-        -_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT
-    )
+    delta = _wrap_angle(target_angle - current_angle).clamp(-_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT)
     if cfg.continuous_action_dim > _AIM_ACTION_INDEX:
         cont[:, _AIM_ACTION_INDEX] = torch.where(
             visible,
@@ -133,16 +131,12 @@ def multi_enemy_visible_targets(
     if cfg.obs_encoder != "entity_attention_grid":
         raise ValueError("multi_enemy_visible teacher requires entity_attention_grid obs")
     if cfg.entity_token_count != MULTI_ENEMY_TOKEN_COUNT:
-        raise ValueError(
-            "multi_enemy_visible teacher requires the multi-enemy token layout"
-        )
+        raise ValueError("multi_enemy_visible teacher requires the multi-enemy token layout")
     obs = actor_obs
     token_width = cfg.entity_token_count * cfg.entity_token_dim
     if cfg.entity_token_dim != ENTITY_TOKEN_DIM or obs.shape[-1] < token_width:
         raise ValueError("multi_enemy_visible teacher received incompatible token shape")
-    tokens = obs[:, :token_width].view(
-        obs.shape[0], cfg.entity_token_count, cfg.entity_token_dim
-    )
+    tokens = obs[:, :token_width].view(obs.shape[0], cfg.entity_token_count, cfg.entity_token_dim)
     mask = obs[:, token_width : token_width + cfg.entity_token_count] > 0.5
 
     cont = torch.zeros(
@@ -181,9 +175,7 @@ def multi_enemy_visible_targets(
     target_angle = torch.atan2(target_rel[:, 1], target_rel[:, 0])
     aim_unit = tokens[:, _SELF_TOKEN, _ENTITY_AIM]
     current_angle = torch.atan2(aim_unit[:, 0], aim_unit[:, 1])
-    delta = _wrap_angle(target_angle - current_angle).clamp(
-        -_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT
-    )
+    delta = _wrap_angle(target_angle - current_angle).clamp(-_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT)
     if cfg.continuous_action_dim > _AIM_ACTION_INDEX:
         cont[:, _AIM_ACTION_INDEX] = torch.where(
             has_target,
@@ -254,7 +246,9 @@ def full_env_rehearsal_loss(
     }
 
 
-def _cpp_bot_targets(env: gym.Env, cfg: MappoConfig, bot_name: str) -> tuple[torch.Tensor, torch.Tensor]:
+def _cpp_bot_targets(
+    env: gym.Env, cfg: MappoConfig, bot_name: str
+) -> tuple[torch.Tensor, torch.Tensor]:
     sim = getattr(env, "_sim", None)
     slots = tuple(getattr(env, "_own_slots", (0, 1, 2)))
     if sim is None:
@@ -390,10 +384,16 @@ def _collect_policy_state_batch(
             target_cont_rows.append(cont.cpu().numpy().astype(np.float32, copy=True))
             target_binary_rows.append(binary.cpu().numpy().astype(np.float32, copy=True))
             policy_cont_rows.append(
-                policy_action[:, : cfg.continuous_action_dim].cpu().numpy().astype(np.float32, copy=True)
+                policy_action[:, : cfg.continuous_action_dim]
+                .cpu()
+                .numpy()
+                .astype(np.float32, copy=True)
             )
             policy_binary_rows.append(
-                policy_action[:, cfg.continuous_action_dim :].cpu().numpy().astype(np.float32, copy=True)
+                policy_action[:, cfg.continuous_action_dim :]
+                .cpu()
+                .numpy()
+                .astype(np.float32, copy=True)
             )
             obs_np, _reward, term, trunc, _info = env.step(action_np)
             if term or trunc:
@@ -429,7 +429,9 @@ def policy_state_agreement_metrics(batch: PolicyStateBatch) -> dict[str, float]:
     target_fire = batch.target_binary[:, _PRIMARY_FIRE_BINARY_INDEX] > 0.5
     policy_fire = batch.policy_binary[:, _PRIMARY_FIRE_BINARY_INDEX] > 0.5
     fire_agreement = (target_fire == policy_fire).to(torch.float32).mean()
-    fire_positive_agreement = ((target_fire & policy_fire).to(torch.float32).sum() / target_fire.to(torch.float32).sum().clamp(min=1.0))
+    fire_positive_agreement = (target_fire & policy_fire).to(torch.float32).sum() / target_fire.to(
+        torch.float32
+    ).sum().clamp(min=1.0)
     return {
         "move_mse": float(move_mse.item()),
         "aim_abs_error": float(aim_abs_error.item()),
@@ -513,7 +515,9 @@ def closed_loop_supervised_bridge_pretrain(
     rounds = int(closed_cfg.get("rounds", 0))
     updates_per_round = int(closed_cfg.get("updates_per_round", 0))
     if rounds <= 0 or updates_per_round <= 0:
-        raise ValueError("closed-loop supervised bridge requires positive bounded rounds and updates_per_round")
+        raise ValueError(
+            "closed-loop supervised bridge requires positive bounded rounds and updates_per_round"
+        )
     batch_size = int(closed_cfg.get("batch_size", config.get("batch_size", 256)))
     learning_rate = float(closed_cfg.get("learning_rate", config.get("learning_rate", 1.0e-4)))
     seed = int(closed_cfg.get("seed", config.get("seed", 0)))
@@ -579,7 +583,9 @@ def closed_loop_supervised_bridge_pretrain(
         )
     if diagnostics:
         final_diag = diagnostics[-1]
-        last.update({f"final_agreement_{k}": float(v) for k, v in final_diag.items() if k != "round"})
+        last.update(
+            {f"final_agreement_{k}": float(v) for k, v in final_diag.items() if k != "round"}
+        )
     return last
 
 

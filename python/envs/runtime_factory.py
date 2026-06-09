@@ -83,77 +83,10 @@ def make_mappo_match_env(
     if mini_game not in (None, ""):
         raise ValueError(f"unknown mappo mini_game {mini_game!r}")
 
-    if target_slot:
-        from envs.phase10_target_slot_mappo import Phase10TargetSlotMappoEnv
-
-        return Phase10TargetSlotMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-            fog_mode=fog or "team_shared",
-            visible_radius=float(visible_radius),
-            map_randomization=map_cfg,
-        )
-    if tuple(snapshot_paths):
-        from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
-
-        return Phase9SnapshotMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-            fog_mode=fog or "team_shared",
-            visible_radius=float(visible_radius),
-            map_randomization=map_cfg,
-            snapshot_paths=list(snapshot_paths),
-            snapshot_league=league_cfg,
-        )
-    if map_cfg:
-        from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
-
-        return Phase8RandomMapMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-            fog_mode=fog or "team_shared",
-            visible_radius=float(visible_radius),
-            map_randomization=map_cfg,
-        )
-    if fog is not None:
-        from envs.phase7_fog_mappo import Phase7FogMappoEnv
-
-        return Phase7FogMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-            fog_mode=fog,
-            visible_radius=float(visible_radius),
-        )
     if actor_obs == "multi_enemy_entity_grid":
         from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
 
         return Phase4MultiEnemyMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-        )
-    if actor_obs == "entity_grid":
-        from envs.phase6_grid_mappo import Phase6GridMappoEnv
-
-        return Phase6GridMappoEnv(
-            dict(sim_cfg),
-            opponent_bot=str(opponent_bot),
-            learner_team=str(learner_team),
-            reward_cfg=reward,
-        )
-    if actor_obs == "entity":
-        from envs.phase5_entity_mappo import Phase5EntityMappoEnv
-
-        return Phase5EntityMappoEnv(
             dict(sim_cfg),
             opponent_bot=str(opponent_bot),
             learner_team=str(learner_team),
@@ -191,9 +124,7 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
         mini_game_cfg=dict(cfg.get("mini_game_config", {})),
         self_play=bool(self_play_cfg.get("enabled", cfg.get("current_selfplay", False))),
         self_play_schedule=(
-            dict(cfg.get("self_play_schedule", {}))
-            if "self_play_schedule" in cfg
-            else None
+            dict(cfg.get("self_play_schedule", {})) if "self_play_schedule" in cfg else None
         ),
         snapshot_paths=tuple(str(p) for p in cfg.get("snapshot_paths", ())),
         snapshot_league=(

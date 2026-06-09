@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from envs.phase7_fog_mappo import Phase7FogMappoEnv
-from xushi2.entity_obs import ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
-from xushi2.grid_obs import (
-    GRID_FLAT_DIM,
-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
-)
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
+from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, GRID_FLAT_DIM
+from xushi2.partial_obs import ENTITY_TOKEN_COUNT
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
 from xushi2.partial_obs import actor_obs_to_partial_entity_grid_obs
 
 
@@ -145,46 +141,3 @@ def test_partial_obs_hidden_enemy_live_fields_do_not_leak() -> None:
     assert np.all(tokens[:, 1, 10:17] == 0.0)
     assert np.all(tokens[:, 1, 17] == 0.5)
     assert np.max(enemy_grid) == 0.5
-
-
-def test_phase7_env_returns_partial_entity_grid_obs_and_phase4_critic_obs() -> None:
-    env = Phase7FogMappoEnv(
-        _make_sim_cfg(),
-        opponent_bot="noop",
-        fog_mode="team_shared",
-        visible_radius=0.65,
-    )
-    try:
-        obs, info = env.reset(seed=0)
-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert obs.dtype == np.float32
-        assert info["learner_team"] == "A"
-        assert info["last_seen_enemy_position"].shape == (3, 3, 2)
-        assert info["last_seen_valid"].shape == (3, 3)
-
-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
-        env.build_critic_obs(critic_obs)
-        assert np.all(np.isfinite(critic_obs))
-
-        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
-        assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert reward.shape == (3,)
-        assert isinstance(term, bool)
-        assert isinstance(trunc, bool)
-    finally:
-        env.close()
-
-
-def test_phase7_env_accepts_per_agent_fog_mode() -> None:
-    env = Phase7FogMappoEnv(
-        _make_sim_cfg(),
-        opponent_bot="noop",
-        fog_mode="per_agent",
-        visible_radius=0.65,
-    )
-    try:
-        obs, _info = env.reset(seed=0)
-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert obs.dtype == np.float32
-    finally:
-        env.close()

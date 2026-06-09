@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from _paths import repo_path
 
 from scripts.analyze_replay_combat import _config_from_header
 
@@ -35,7 +35,7 @@ def test_replay_analysis_legacy_header_defaults_objective_timing() -> None:
 
 
 def test_replay_header_emits_objective_timing_keys_from_dump_smoke_fixture() -> None:
-    fixture = Path("data/replays/golden_phase0_basic.txt")
+    fixture = repo_path("data/replays/golden_phase0_basic.txt")
     first_line = fixture.read_text(encoding="utf-8").splitlines()[0]
     # Existing fixture is a legacy text replay: absence of these keys is still
     # valid and covered by fallback behavior.

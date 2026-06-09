@@ -118,11 +118,11 @@ def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
     ) == (0, 0, 1)
 
 
-def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
-    checkpoint = tmp_path / "phase8.pt"
+def test_eval_mappo_matrix_writes_bot_rows(tmp_path: Path) -> None:
+    checkpoint = tmp_path / "phase4_multi_enemy.pt"
     _write_checkpoint(
         checkpoint,
-        "phase8_random_map_probe.yaml",
+        "phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml",
         phase=8,
     )
     output = tmp_path / "matrix.json"
@@ -131,14 +131,12 @@ def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
         checkpoint,
         output,
         anchor_bots=("noop",),
-        opponent_checkpoints=(checkpoint,),
     )
 
     assert "opponent=bot:noop" in result.stdout
-    assert "opponent=snapshot:phase8.pt" in result.stdout
     rows = _load_matrix_rows(output)
-    assert len(rows) == 2
-    assert {row["opponent_type"] for row in rows} == {"bot", "snapshot"}
+    assert len(rows) == 1
+    assert {row["opponent_type"] for row in rows} == {"bot"}
     for row in rows:
         assert row["episodes"] == 1
         assert 0.0 <= row["win_rate"] <= 1.0

@@ -13,11 +13,6 @@ pytestmark = [pytest.mark.slow, pytest.mark.smoke_behavior, pytest.mark.bc_probe
     ("config_name", "output_name"),
     [
         ("phase4/probe/phase4_mappo_objective_probe.yaml", "phase4_objective"),
-        ("phase5_entity_attention_probe.yaml", "phase5_entity"),
-        ("phase6_entity_grid_probe.yaml", "phase6_grid"),
-        ("phase7_team_fog_probe.yaml", "phase7_fog"),
-        ("phase7_per_agent_fog_probe.yaml", "phase7_per_agent_fog"),
-        ("phase8_random_map_probe.yaml", "phase8_random_map"),
     ],
 )
 def test_mappo_bc_probe_can_be_best_result(

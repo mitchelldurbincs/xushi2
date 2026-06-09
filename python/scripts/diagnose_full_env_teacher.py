@@ -9,9 +9,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import torch
@@ -21,7 +24,7 @@ from train.full_env_rehearsal import scripted_objective_focus_fire_targets
 from train.mappo_rollout_trainer import make_mappo_config
 from train.runtime_specs import resolve_runtime_spec
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
 
 _AIM_DELTA_LIMIT = float(np.pi / 4.0)
 _SELF_TOKEN = 0
@@ -184,9 +187,7 @@ def run_teacher_diagnostic(
                     "uncontested_on_point_seconds_a",
                 ):
                     episode_totals[key] += float(objective.get(key, 0.0))
-                if term or trunc or (
-                    max_decisions is not None and decisions >= int(max_decisions)
-                ):
+                if term or trunc or (max_decisions is not None and decisions >= int(max_decisions)):
                     break
 
             final_tick = float(final_info.get("tick", 0.0))

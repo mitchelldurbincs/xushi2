@@ -103,65 +103,6 @@ def _assert_header_contains(lines: Sequence[str], expected: Sequence[str]) -> No
             _SIX_SLOT_REPLAY_FIELDS,
         ),
         (
-            "phase5_entity_attention_probe.yaml",
-            5,
-            "phase5_mappo.pt",
-            ("phase=5", "team_size=3"),
-            _SIX_SLOT_REPLAY_FIELDS,
-        ),
-        (
-            "phase6_entity_grid_probe.yaml",
-            6,
-            "phase6_mappo.pt",
-            ("phase=6", "team_size=3"),
-            _SIX_SLOT_REPLAY_FIELDS,
-        ),
-        (
-            "phase7_team_fog_probe.yaml",
-            7,
-            "phase7_mappo.pt",
-            ("phase=7", "fog=1", "last_seen=1", "fog_mode=team_shared", "team_size=3"),
-            _SIX_SLOT_REPLAY_FIELDS,
-        ),
-        (
-            "phase7_per_agent_fog_probe.yaml",
-            7,
-            "phase7b_mappo.pt",
-            ("phase=7", "fog=1", "last_seen=1", "fog_mode=per_agent", "team_size=3"),
-            _SIX_SLOT_REPLAY_FIELDS,
-        ),
-        (
-            "phase8_random_map_probe.yaml",
-            8,
-            "phase8_mappo.pt",
-            (
-                "phase=8",
-                "map_min_x=",
-                "map_max_y=",
-                "layout=0x",
-                "cover=",
-                "walls=",
-                "fog=1",
-                "team_size=3",
-                "loss_mask=1,1,1",
-            ),
-            _SIX_SLOT_REPLAY_FIELDS,
-        ),
-        (
-            "phase10_target_slot_probe.yaml",
-            10,
-            "phase10_mappo.pt",
-            (
-                "phase=10",
-                "target_slot=1",
-                "heroes=vanguard,ranger,mender,vanguard,ranger,mender",
-                "map_min_x=",
-                "fog=1",
-                "team_size=3",
-            ),
-            1 + 6 * 7,
-        ),
-        (
             "phase11/probe/phase11_current_selfplay_probe.yaml",
             11,
             "phase11_mappo.pt",
@@ -231,60 +172,13 @@ def test_dump_replay_supports_phase4_current_selfplay_checkpoint(
     assert slot3[1] > 0.0
 
 
-def test_dump_replay_supports_phase9_snapshot_checkpoint(
-    tmp_path: Path,
-) -> None:
-    snapshot_path = _write_checkpoint(
-        tmp_path,
-        filename="snapshot.pt",
-        config=_load_config("phase8_random_map_probe.yaml"),
-        phase=8,
-    )
-
-    config = _load_config("phase9_snapshot_probe.yaml")
-    config["env"] = dict(config["env"])
-    config["env"]["snapshot_paths"] = [str(snapshot_path)]
-    config["env"]["snapshot_league"] = {
-        "latest": [str(snapshot_path)],
-        "historical": [str(snapshot_path)],
-        "anchor": [str(snapshot_path)],
-        "weights": {"latest": 0.7, "historical": 0.2, "anchor": 0.1},
-    }
-    checkpoint_path = _write_checkpoint(
-        tmp_path,
-        filename="phase9_mappo.pt",
-        config=config,
-        phase=9,
-    )
-    lines = _dump_replay(
-        checkpoint_path=checkpoint_path,
-        replay_path=tmp_path / "phase9_policy.replay",
-    )
-
-    _assert_header_contains(
-        lines,
-        (
-            "phase=9",
-            "map_min_x=",
-            "schedule=current:0.7,snapshot:0.2,anchor:0.1",
-            "league=latest:0.7:1,historical:0.2:1,anchor:0.1:1",
-            "snapshot_group=",
-            "snapshot=snapshot.pt",
-            "fog=1",
-            "team_size=3",
-            "loss_mask=1,1,1",
-        ),
-    )
-    _assert_replay_shape(lines)
-
-
 def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
     tmp_path: Path,
 ) -> None:
     snapshot_path = _write_checkpoint(
         tmp_path,
         filename="phase8_snapshot.pt",
-        config=_load_config("phase8_random_map_probe.yaml"),
+        config=_load_config("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
         phase=8,
     )
 

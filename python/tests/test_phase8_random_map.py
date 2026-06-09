@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
-from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.map_randomization import (
     map_layout_hash,
     randomized_cover_markers,
     randomized_map_bounds,
     randomized_wall_segments,
 )
-from xushi2.obs_manifest import CRITIC_DIM
 from xushi2.runner import _build_config
 
 
@@ -245,67 +241,3 @@ def test_map_layout_hash_is_deterministic_and_geometry_dependent() -> None:
     assert len(a) == 18
     assert a != c
     assert a != d
-
-
-def test_phase8_env_resets_with_seeded_randomized_map() -> None:
-    env = Phase8RandomMapMappoEnv(
-        _make_sim_cfg(),
-        opponent_bot="noop",
-        fog_mode="team_shared",
-        visible_radius=0.65,
-        map_randomization={
-            "span_jitter": 5.0,
-            "min_span": 45.0,
-            "max_span": 55.0,
-            "cover_count_per_side": 2,
-            "cover_jitter": 1.0,
-            "cover_radius": 1.0,
-            "wall_count_per_side": 1,
-            "wall_jitter": 1.0,
-            "wall_half_width": 0.25,
-            "wall_length": 5.0,
-        },
-    )
-    try:
-        obs_a, info_a = env.reset(seed=123)
-        bounds_a = info_a["map_bounds"]
-        covers_a = info_a["cover_markers"]
-        walls_a = info_a["wall_segments"]
-        layout_a = info_a["map_layout_hash"]
-        obs_b, info_b = env.reset(seed=123)
-        bounds_b = info_b["map_bounds"]
-        covers_b = info_b["cover_markers"]
-        walls_b = info_b["wall_segments"]
-        layout_b = info_b["map_layout_hash"]
-        obs_c, info_c = env.reset(seed=124)
-        bounds_c = info_c["map_bounds"]
-        covers_c = info_c["cover_markers"]
-        walls_c = info_c["wall_segments"]
-        layout_c = info_c["map_layout_hash"]
-
-        assert obs_a.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert obs_b.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert obs_c.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
-        assert bounds_a == bounds_b
-        assert bounds_a != bounds_c
-        assert covers_a == covers_b
-        assert covers_a != covers_c
-        assert walls_a == walls_b
-        assert walls_a != walls_c
-        assert layout_a == layout_b
-        assert layout_a == map_layout_hash(bounds_a, covers_a, walls_a)
-        assert layout_a != layout_c
-        assert len(covers_a) == 4
-        assert covers_a[0]["radius"] == 1.0
-        assert len(walls_a) == 2
-        assert walls_a[0]["half_width"] == 0.25
-
-        _next_obs, _reward, _term, _trunc, step_info = env.step(np.zeros((3, 6), dtype=np.float32))
-        assert step_info["map_layout_hash"] == layout_c
-        assert step_info["wall_segments"] == walls_c
-
-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
-        env.build_critic_obs(critic_obs)
-        assert np.all(np.isfinite(critic_obs))
-    finally:
-        env.close()
