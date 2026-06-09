@@ -14,7 +14,7 @@ from train.mappo_model import (
     wrapped_angle_error,
 )
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.ppo_recurrent.losses import (
+from train.losses import (
     action_logprob_and_entropy,
     action_logprob_and_entropy_parts,
 )

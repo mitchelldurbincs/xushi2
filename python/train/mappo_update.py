@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from train.mappo_model import mode_aux_loss_and_accuracy, target_selection_aux_loss_and_accuracy
-from train.ppo_recurrent.losses import action_logprob_and_entropy, compute_ppo_loss
+from train.losses import action_logprob_and_entropy, compute_ppo_loss
 
 
 @dataclass(frozen=True)

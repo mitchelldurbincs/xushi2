@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from train.mappo_model import _OWN_POSITION_SLICE
-from train.ppo_recurrent.losses import _masked_mean
+from train.losses import _masked_mean
 from xushi2.entity_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 

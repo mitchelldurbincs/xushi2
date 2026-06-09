@@ -6,12 +6,10 @@ import numpy as np
 import torch
 
 from train.mappo import MappoActorCritic, MappoConfig
-from train.ppo_recurrent.orchestration import make_env_fn
 from train.checkpoint_runtime import checkpoint_runtime
 
 from .formatting import (
     action_to_fields,
-    format_decision,
     format_decision_six,
     policy_action_to_world_fields,
 )
@@ -32,61 +30,6 @@ def load_mappo_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
 
 # Compatibility alias for older imports.
 load_phase4_checkpoint = load_mappo_checkpoint
-
-
-def dump_phase3(
-    model,
-    ckpt_config: dict,
-    *,
-    seed: int,
-    episodes: int,
-    max_decisions: int | None,
-    output_path: Path,
-) -> int:
-    train_config = {
-        "phase": int(ckpt_config.get("phase", 3)),
-        "env": ckpt_config["env"],
-    }
-    env_fn, _env_meta, _seed_base = make_env_fn(train_config)
-    header = header_fields(ckpt_config, seed=seed)
-
-    n_decisions = 0
-    with output_path.open("w", encoding="ascii") as f:
-        f.write(" ".join(f"{k}={v}" for k, v in header.items()) + "\n")
-
-        for ep in range(int(episodes)):
-            env = env_fn()
-            try:
-                obs, info = env.reset(seed=int(seed) + ep)
-                h = model.init_hidden(batch_size=1)
-                done = False
-                tick = int(info.get("tick", 0))
-                while not done:
-                    if max_decisions is not None and n_decisions >= max_decisions:
-                        return n_decisions
-                    obs_t = torch.as_tensor(obs, dtype=torch.float32).view(1, -1)
-                    with torch.no_grad():
-                        action_t, h = model.greedy_action(obs_t, h)
-                    action = action_t.squeeze(0).cpu().numpy()
-                    learner_fields = action_to_fields(action)
-                    obs, _r, term, trunc, info = env.step(action)
-                    opp = info["opponent_action"]
-                    opponent_fields = [
-                        float(opp["move_x"]),
-                        float(opp["move_y"]),
-                        float(opp["aim_delta"]),
-                        float(opp["primary_fire"]),
-                        float(opp["ability_1"]),
-                        float(opp["ability_2"]),
-                    ]
-                    f.write(format_decision(tick, learner_fields, opponent_fields))
-                    f.write("\n")
-                    n_decisions += 1
-                    tick = int(info.get("tick", tick + int(header["action_repeat"])))
-                    done = bool(term or trunc)
-            finally:
-                env.close()
-    return n_decisions
 
 
 def dump_mappo(

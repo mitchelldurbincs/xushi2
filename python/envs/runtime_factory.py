@@ -14,31 +14,6 @@ from typing import Any
 import gymnasium as gym
 
 
-def make_memory_toy_env(episode_length: int, cue_visible_ticks: int) -> gym.Env:
-    from envs.memory_toy import MemoryToyEnv
-
-    return MemoryToyEnv(
-        episode_length=int(episode_length),
-        cue_visible_ticks=int(cue_visible_ticks),
-    )
-
-
-def make_ranger_duel_env(
-    sim_cfg: dict[str, Any],
-    opponent_bot: str,
-    learner_team: str,
-    reward_cfg: dict[str, Any],
-) -> gym.Env:
-    from envs.phase3_ranger import Phase3RangerEnv
-
-    return Phase3RangerEnv(
-        dict(sim_cfg),
-        opponent_bot=str(opponent_bot),
-        learner_team=str(learner_team),
-        reward_cfg=dict(reward_cfg),
-    )
-
-
 def make_mappo_match_env(
     *,
     sim_cfg: dict[str, Any],

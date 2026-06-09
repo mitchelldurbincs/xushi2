@@ -13,7 +13,7 @@ For Phase 4 training/eval configuration context, see
 | --- | --- | --- | --- | --- |
 | `python/scripts/eval_mappo_matrix.py` | Evaluate one or more MAPPO checkpoints against anchor bots and/or snapshot checkpoints; emits matchup rows with win/draw/loss and score stats. | Generate a compact league/matrix artifact for Phase 4+ checkpoint quality and comparison. | `--checkpoint` (repeat), `--anchor-bot` (repeat), `--opponent-checkpoint` (repeat), `--episodes`, `--seed`, `--output` | Optional matrix JSON file from `--output` (list of matchup rows). |
 | `python/scripts/check_mappo_matrix.py` | Gate a matrix JSON artifact against threshold rules (minimum rows, min win-rate by opponent type, max draw-rate). | CI/automation pass-fail check after matrix eval. | `--matrix`, `--min-rows`, `--min-win-rate opponent_type=value` (repeat), `--max-draw-rate opponent_type=value` (repeat), `--output` | Optional gate summary JSON from `--output`; non-zero exit on gate failure. |
-| `python/scripts/dump_replay.py` | Run checkpoint eval rollout(s) and dump deterministic text replay for viewer playback. Supports Phase 3 and MAPPO phases. | Produce artifact to inspect model behavior visually in the replay viewer after eval/gating. | `--checkpoint`, `--output`, `--seed`, `--episodes`, `--max-decisions`, `--stochastic` | Text replay file at `--output` (ASCII line-delimited replay format). |
+| `python/scripts/dump_replay.py` | Run checkpoint eval rollout(s) and dump deterministic text replay for viewer playback. Supports MAPPO phases. | Produce artifact to inspect model behavior visually in the replay viewer after eval/gating. | `--checkpoint`, `--output`, `--seed`, `--episodes`, `--max-decisions`, `--stochastic` | Text replay file at `--output` (ASCII line-delimited replay format). |
 
 ## Other utility scripts
 
@@ -22,7 +22,6 @@ For Phase 4 training/eval configuration context, see
 | `python/scripts/list_configs.py` | Discover experiment configs by metadata (`phase`, `purpose`, `status`) and print canonical module-entrypoint commands. See `experiments/configs/README.md` §"Config metadata schema". |
 | `python/scripts/check_import_boundaries.py` | Enforce Python package import-direction rules (`xushi2` → `envs` → `train`). See `docs/architecture/python_layers.md`. |
 | `python/scripts/check_viewer_bench.py` | Compare a viewer-benchmark result JSON against the baseline within the 15% tolerance band. Used by `make bench-viewer`. |
-| `python/scripts/diag_phase3_plumbing.py` | Phase-3 plumbing probe: drives `XushiEnv` with hand-written actions vs a noop opponent and prints objective-state-machine diagnostics. |
 
 
 ## Canonical pytest gates

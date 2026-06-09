@@ -130,7 +130,7 @@ def normalize_entry_config(config: dict) -> NormalizedEntryConfig:
     )
     env_cfg = dict(config.get("env", {}))
     sim_cfg = dict(config.get("sim", {}))
-    if runtime.env.kind in ("memory_toy", "ranger_duel", "mappo_match"):
+    if runtime.env.kind == "mappo_match":
         sim_cfg = dict(env_cfg.get("sim", {}))
     run_cfg = dict(config.get("run", {}))
     base_seed = int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
@@ -169,15 +169,6 @@ def format_phase_banner(normalized: NormalizedEntryConfig, phase_raw: object) ->
             f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
             f"base_seed=0x{normalized.base_seed:x}"
         )
-    if normalized.learner_kind == "ppo_recurrent":
-        return (
-            f"[xushi2] {phase_part} {normalized.env_kind} "
-            f"opponent={normalized.env_cfg.get('opponent_bot', '?')} "
-            f"learner_team={normalized.env_cfg.get('learner_team', 'A')} "
-            f"base_seed=0x{normalized.base_seed:x}"
-        )
-    if normalized.env_kind == "memory_toy":
-        return f"[xushi2] {phase_part} memory_toy base_seed=0x{normalized.base_seed:x}"
     return (
         f"[xushi2] {phase_part} episodes={episodes} "
         f"bots={bot_a} vs {bot_b} base_seed=0x{normalized.base_seed:x}"
@@ -208,29 +199,6 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
             )
         return rc
 
-    if normalized.learner_kind == "ppo_recurrent":
-        from train.ppo_recurrent import train_from_config
-
-        result = train_from_config(full_config)
-        recurrent = float(result["recurrent"])
-        from train.runtime_adapter import resolve_runtime_env_factory
-
-        runtime, _env_fn, _seed_base = resolve_runtime_env_factory(
-            full_config,
-            require_learner="ppo_recurrent",
-            context="recurrent PPO phase",
-        )
-        if "feedforward" in runtime.learner.training_variants:
-            feedforward = float(result["feedforward"])
-            gap = recurrent - feedforward
-            print(
-                f"[{normalized.phase_label}] recurrent_final={recurrent:.3f} "
-                f"feedforward_final={feedforward:.3f} gap={gap:.3f}"
-            )
-        else:
-            print(f"[{normalized.phase_label}] recurrent_final={recurrent:.3f}")
-        return 0
-
     if normalized.learner_kind == "mappo":
         from train.mappo_eval_checkpoint import train_mappo_from_config
 
@@ -240,7 +208,6 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
 
     print(f"[xushi2] unsupported phase/config shape: phase={phase_label!r}")
     return 2
-
 
 def main() -> int:
     _enable_usr1_traceback_dump()

@@ -60,7 +60,7 @@ class CheckpointRuntime:
 
 def parse_phase_metadata(raw_phase: Any, *, has_mappo: bool) -> tuple[int | None, str]:
     if raw_phase is None:
-        return (4 if has_mappo else 3), ("phase4" if has_mappo else "phase3")
+        return (4 if has_mappo else None), ("phase4" if has_mappo else "unknown")
     raw_text = str(raw_phase)
     try:
         phase_int = int(raw_text.removeprefix("phase"))
@@ -72,6 +72,8 @@ def parse_phase_metadata(raw_phase: Any, *, has_mappo: bool) -> tuple[int | None
 
 def checkpoint_runtime(ckpt_config: dict[str, Any]) -> CheckpointRuntime:
     has_mappo = "mappo" in ckpt_config
+    if not has_mappo:
+        raise ValueError("checkpoint runtime only supports MAPPO checkpoints")
     phase_int, phase_label = parse_phase_metadata(
         ckpt_config.get("phase"), has_mappo=has_mappo
     )

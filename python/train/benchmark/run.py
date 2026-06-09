@@ -14,8 +14,6 @@ from pathlib import Path
 import torch
 
 from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
-from train.ppo_recurrent.orchestration import make_ppo_config
-from train.ppo_recurrent.trainer import PPOTrainer
 from train.runtime_specs import resolve_runtime_spec
 from train.train import load_config
 
@@ -77,18 +75,6 @@ def _build_trainers(config: dict, target: str, seed: int, vector_env: str):
     seed_base = runtime.seed_base
     run_seed = int(seed_base) + int(seed)
 
-    if target in ("ppo_recurrent", "env_step_only", "update_only"):
-        ppo_cfg = dict(config.get("ppo", {}))
-        ppo_cfg["vector_env"] = vector_env
-        local_cfg = dict(config)
-        local_cfg["ppo"] = ppo_cfg
-        trainer = PPOTrainer(
-            env_fn,
-            make_ppo_config(local_cfg, use_recurrence=(target == "ppo_recurrent")),
-            seed=run_seed,
-        )
-        return trainer, "ppo"
-
     if target == "mappo":
         if runtime.learner.kind != "mappo":
             raise ValueError(
@@ -115,19 +101,13 @@ def _run_once(
     vector_env: str,
 ) -> BenchAggregate:
     trainer, trainer_kind = _build_trainers(config, target, seed, vector_env)
-    cfg = trainer.config if trainer_kind == "ppo" else trainer.cfg
+    cfg = trainer.cfg
     env_steps_per_iteration = int(cfg.num_envs) * int(cfg.rollout_len)
 
     try:
         for _ in range(warmup_iterations):
-            if target == "env_step_only":
-                trainer.collect_rollout()
-            elif target == "update_only":
-                rollout = trainer.collect_rollout()
-                trainer.update(rollout)
-            else:
-                rollout = trainer.collect_rollout()
-                trainer.update(rollout)
+            rollout = trainer.collect_rollout()
+            trainer.update(rollout)
 
         rollout_time = 0.0
         update_time = 0.0
@@ -136,13 +116,10 @@ def _run_once(
             t0 = time.perf_counter()
             rollout = trainer.collect_rollout()
             t1 = time.perf_counter()
-            if target != "env_step_only":
-                trainer.update(rollout)
+            trainer.update(rollout)
             t2 = time.perf_counter()
-            if target != "update_only":
-                rollout_time += t1 - t0
-            if target != "env_step_only":
-                update_time += t2 - t1
+            rollout_time += t1 - t0
+            update_time += t2 - t1
             total_samples += env_steps_per_iteration
 
         total_time = rollout_time + update_time
@@ -192,7 +169,7 @@ def _emit(result: BenchResult, output_format: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="xushi2 benchmark entrypoint")
-    parser.add_argument("--target", choices=["ppo_recurrent", "mappo", "env_step_only", "update_only"], required=True)
+    parser.add_argument("--target", choices=["mappo"], required=True)
     parser.add_argument("--config", type=Path, required=True, help="Path to a phase config YAML")
     parser.add_argument("--warmup-iterations", type=int, default=2)
     parser.add_argument("--measured-iterations", type=int, default=10)

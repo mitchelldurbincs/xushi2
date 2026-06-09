@@ -13,28 +13,6 @@ from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
 
 
-def _make_phase2_env(episode_length: int, cue_visible_ticks: int):
-    from envs.runtime_factory import make_memory_toy_env
-
-    return make_memory_toy_env(episode_length, cue_visible_ticks)
-
-
-def _make_phase3_env(
-    sim_cfg: dict,
-    opponent_bot: str,
-    learner_team: str,
-    reward_cfg: dict,
-):
-    from envs.runtime_factory import make_ranger_duel_env
-
-    return make_ranger_duel_env(
-        sim_cfg,
-        opponent_bot,
-        learner_team,
-        reward_cfg,
-    )
-
-
 def _make_phase4_env(
     sim_cfg: dict,
     opponent_bot: str,
@@ -240,33 +218,6 @@ def _extract_map_randomization(env_cfg: dict) -> dict:
 
 def _resolve_seed_base(env_cfg: dict, sim_cfg: dict) -> int:
     return int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
-
-
-def _phase2_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
-    env_cfg = config.get("env", {})
-    ep_len = int(env_cfg.get("episode_length", 64))
-    cue_ticks = int(env_cfg.get("cue_visible_ticks", 4))
-    return (
-        partial(_make_phase2_env, ep_len, cue_ticks),
-        {"episode_length": ep_len, "cue_visible_ticks": cue_ticks},
-        int(env_cfg.get("seed_base", 0)),
-    )
-
-
-def _phase3_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
-    env_cfg = config.get("env", {})
-    base_cfg = _extract_base_env_cfg(env_cfg)
-    return (
-        partial(
-            _make_phase3_env,
-            base_cfg["sim"],
-            base_cfg["opponent_bot"],
-            base_cfg["learner_team"],
-            base_cfg["reward"],
-        ),
-        base_cfg,
-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
-    )
 
 
 def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
@@ -487,24 +438,6 @@ PHASE_REGISTRY: dict[int, dict] = {
         "label": "phase0",
         "training_variants": (),
         "seed_deriver": _phase0_seed,
-    },
-    2: {
-        "label": "phase2",
-        "obs_dim": 3,
-        "action_dim": 2,
-        "continuous_action_dim": 2,
-        "binary_action_dim": 0,
-        "training_variants": ("recurrent", "feedforward"),
-        "env_bundle": _phase2_env_bundle,
-    },
-    3: {
-        "label": "phase3",
-        "obs_dim": 31,
-        "action_dim": 6,
-        "continuous_action_dim": 3,
-        "binary_action_dim": 3,
-        "training_variants": ("recurrent",),
-        "env_bundle": _phase3_env_bundle,
     },
     4: {
         "label": "phase4",
