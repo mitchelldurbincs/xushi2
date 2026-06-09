@@ -851,3 +851,130 @@ def test_uncontested_on_point_scalar_path_is_symmetric():
 
     assert a == pytest.approx(-0.6)
     assert b == pytest.approx(0.6)
+
+
+# --- objective conversion shaping (cap-progress PBRS + capture bonus) ----
+
+
+def test_cap_progress_potential_rewards_progress_gain_to_on_point_member():
+    rc = RewardCalculator(per_agent_rewards=True, cap_progress_potential_coef=1.0)
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, 0.0, 0.0)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.objective_conversion_state = (0.0, 1.0, 0.5)
+    sim.on_point_by_slot = [1, 0, 0, 0, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(0.5)
+    assert b.sum() == pytest.approx(-0.5)
+    np.testing.assert_allclose(a, [0.5, 0.0, 0.0], atol=1.0e-6)
+    np.testing.assert_allclose(b, [-0.5 / 3.0] * 3, atol=1.0e-6)
+    metrics = rc.objective_conversion_metrics()
+    assert metrics["conversion_phi_a"] == pytest.approx(0.5)
+    assert metrics["cap_progress_potential_reward_a"] == pytest.approx(0.5)
+    assert metrics["captures_a"] == 0.0
+
+
+def test_cap_progress_potential_charges_decay_uniformly():
+    rc = RewardCalculator(per_agent_rewards=True, cap_progress_potential_coef=1.0)
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, 1.0, 0.5)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    # Point left empty: progress decays 0.5 -> 0.25.
+    sim.objective_conversion_state = (0.0, 1.0, 0.25)
+    sim.on_point_by_slot = [0, 0, 0, 0, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(-0.25)
+    assert b.sum() == pytest.approx(0.25)
+    np.testing.assert_allclose(a, [-0.25 / 3.0] * 3, atol=1.0e-6)
+
+
+def test_capture_completion_pays_event_bonus_once():
+    rc = RewardCalculator(
+        per_agent_rewards=True,
+        cap_progress_potential_coef=1.0,
+        capture_completed_bonus=1.5,
+    )
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, 1.0, 239.0 / 240.0)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    # Ownership flips to Team A; sim resets cap progress to 0.
+    sim.objective_conversion_state = (1.0, 0.0, 0.0)
+
+    a, b = rc.step(sim)
+
+    # PBRS is nearly smooth across the flip (phi 239/240 -> 1.0), plus bonus.
+    assert a.sum() == pytest.approx(1.5 + 1.0 / 240.0)
+    assert b.sum() == pytest.approx(-(1.5 + 1.0 / 240.0))
+    assert rc.objective_conversion_metrics()["captures_a"] == 1.0
+
+    # Holding ownership without state change pays nothing more.
+    sim.tick += _cpp.TICK_HZ
+    a, b = rc.step(sim)
+    assert a.sum() == pytest.approx(0.0)
+    assert rc.objective_conversion_metrics()["captures_a"] == 1.0
+
+
+def test_enemy_capture_charges_team_a():
+    rc = RewardCalculator(
+        per_agent_rewards=True,
+        cap_progress_potential_coef=1.0,
+        capture_completed_bonus=1.5,
+    )
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, -1.0, 239.0 / 240.0)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.objective_conversion_state = (-1.0, 0.0, 0.0)
+    sim.on_point_by_slot = [0, 0, 0, 1, 0, 0]
+
+    a, b = rc.step(sim)
+
+    assert a.sum() == pytest.approx(-(1.5 + 1.0 / 240.0))
+    assert b.sum() == pytest.approx(1.5 + 1.0 / 240.0)
+    np.testing.assert_allclose(b, [1.5 + 1.0 / 240.0, 0.0, 0.0], atol=1.0e-6)
+    assert rc.objective_conversion_metrics()["captures_b"] == 1.0
+
+
+def test_conversion_scalar_path_is_symmetric():
+    rc = RewardCalculator(cap_progress_potential_coef=1.0)
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, 0.0, 0.0)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.objective_conversion_state = (0.0, 1.0, 0.25)
+
+    a, b = rc.step(sim)
+
+    assert a == pytest.approx(0.25)
+    assert b == pytest.approx(-0.25)
+
+
+def test_conversion_disabled_by_default():
+    rc = RewardCalculator(per_agent_rewards=True)
+    sim = _FakeSim()
+    sim.objective_conversion_state = (0.0, 0.0, 0.0)
+    rc.reset(sim)
+    sim.tick = _cpp.TICK_HZ
+    sim.objective_conversion_state = (1.0, 1.0, 1.0)
+
+    a, b = rc.step(sim)
+
+    np.testing.assert_array_equal(a, np.zeros(3, dtype=np.float32))
+    np.testing.assert_array_equal(b, np.zeros(3, dtype=np.float32))
+    metrics = rc.objective_conversion_metrics()
+    assert metrics["cap_progress_potential_coef"] == 0.0
+    assert metrics["captures_a"] == 0.0
+
+
+def test_conversion_negative_params_rejected():
+    with pytest.raises(ValueError):
+        RewardCalculator(cap_progress_potential_coef=-0.01)
+    with pytest.raises(ValueError):
+        RewardCalculator(capture_completed_bonus=-0.01)

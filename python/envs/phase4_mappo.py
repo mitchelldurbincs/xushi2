@@ -194,6 +194,7 @@ class Phase4MappoEnv(gym.Env):
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
         reward_metrics = self._reward_calc.majority_on_point_metrics()
         reward_metrics.update(self._reward_calc.uncontested_on_point_metrics())
+        reward_metrics.update(self._reward_calc.objective_conversion_metrics())
         own_reward = r_a if self._learner_team_str == "A" else r_b
 
         terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)

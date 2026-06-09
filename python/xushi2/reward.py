@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 __all__ = [
+    "CAPTURE_COMPLETED_BONUS_DEFAULT",
+    "CAP_PROGRESS_POTENTIAL_COEF_DEFAULT",
     "DAMAGE_DEALT_COEF_DEFAULT",
     "DEATH_PENALTY_DEFAULT",
     "DISTANCE_SHAPING_COEF_DEFAULT",
@@ -43,6 +45,8 @@ TIME_PENALTY_PER_SECOND_DEFAULT: float = 0.0
 DAMAGE_DEALT_COEF_DEFAULT: float = 0.0
 MAJORITY_ON_POINT_COEF_DEFAULT: float = 0.0
 UNCONTESTED_ON_POINT_COEF_DEFAULT: float = 0.0
+CAP_PROGRESS_POTENTIAL_COEF_DEFAULT: float = 0.0
+CAPTURE_COMPLETED_BONUS_DEFAULT: float = 0.0
 
 
 class RewardCalculator:
@@ -67,6 +71,8 @@ class RewardCalculator:
         majority_on_point_distribute: str = "on_point",
         uncontested_on_point_coef: float = UNCONTESTED_ON_POINT_COEF_DEFAULT,
         uncontested_on_point_distribute: str = "on_point",
+        cap_progress_potential_coef: float = CAP_PROGRESS_POTENTIAL_COEF_DEFAULT,
+        capture_completed_bonus: float = CAPTURE_COMPLETED_BONUS_DEFAULT,
     ) -> None:
         if shaping_clip <= 0.0:
             raise ValueError("shaping_clip must be > 0")
@@ -82,6 +88,10 @@ class RewardCalculator:
             raise ValueError("majority_on_point_coef must be >= 0")
         if uncontested_on_point_coef < 0.0:
             raise ValueError("uncontested_on_point_coef must be >= 0")
+        if cap_progress_potential_coef < 0.0:
+            raise ValueError("cap_progress_potential_coef must be >= 0")
+        if capture_completed_bonus < 0.0:
+            raise ValueError("capture_completed_bonus must be >= 0")
         if majority_on_point_distribute not in ("on_point", "uniform"):
             raise ValueError(
                 "majority_on_point_distribute must be 'on_point' or 'uniform', "
@@ -108,9 +118,18 @@ class RewardCalculator:
         self._majority_on_point_distribute = str(majority_on_point_distribute)
         self._uncontested_on_point_alpha = float(uncontested_on_point_coef)
         self._uncontested_on_point_distribute = str(uncontested_on_point_distribute)
+        self._cap_progress_potential_coef = float(cap_progress_potential_coef)
+        self._capture_completed_bonus = float(capture_completed_bonus)
         self._last_majority_on_point_metrics = self._empty_majority_on_point_metrics()
         self._last_uncontested_on_point_metrics = (
             self._empty_uncontested_on_point_metrics()
+        )
+        self._prev_conversion_phi_a = 0.0
+        self._prev_owner_sign_a = 0.0
+        self._captures_a = 0
+        self._captures_b = 0
+        self._last_objective_conversion_metrics = (
+            self._empty_objective_conversion_metrics()
         )
         self._extractor = EventDeltaExtractor(per_agent=self._per_agent)
         self._prev = EventCounters()
@@ -121,6 +140,8 @@ class RewardCalculator:
             or self._on_point_shaping_coef > 0.0
             or self._majority_on_point_alpha > 0.0
             or self._uncontested_on_point_alpha > 0.0
+            or self._cap_progress_potential_coef > 0.0
+            or self._capture_completed_bonus > 0.0
             or self._per_agent
         )
         self._obs = ObsAccessor(enabled=obs_enabled)
@@ -147,6 +168,18 @@ class RewardCalculator:
             "uncontested_on_point_reward_b": 0.0,
         }
 
+    @staticmethod
+    def _empty_objective_conversion_metrics() -> dict[str, float]:
+        return {
+            "cap_progress_potential_coef": 0.0,
+            "capture_completed_bonus": 0.0,
+            "conversion_phi_a": 0.0,
+            "cap_progress_potential_reward_a": 0.0,
+            "capture_completed_reward_a": 0.0,
+            "captures_a": 0.0,
+            "captures_b": 0.0,
+        }
+
     def reset(self, sim) -> None:
         self._prev = self._extractor.read(sim)
         self._prev_tick = int(getattr(sim, "tick", 0))
@@ -155,6 +188,19 @@ class RewardCalculator:
         self._last_uncontested_on_point_metrics = (
             self._empty_uncontested_on_point_metrics()
         )
+        self._captures_a = 0
+        self._captures_b = 0
+        self._last_objective_conversion_metrics = (
+            self._empty_objective_conversion_metrics()
+        )
+        state = self._objective_conversion_state(sim)
+        if state is None:
+            self._prev_conversion_phi_a = 0.0
+            self._prev_owner_sign_a = 0.0
+        else:
+            owner_sign, cap_sign, progress = state
+            self._prev_conversion_phi_a = owner_sign + cap_sign * progress
+            self._prev_owner_sign_a = owner_sign
 
     def set_team_spirit(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
@@ -184,6 +230,73 @@ class RewardCalculator:
 
     def uncontested_on_point_metrics(self) -> dict[str, float]:
         return dict(self._last_uncontested_on_point_metrics)
+
+    def objective_conversion_metrics(self) -> dict[str, float]:
+        return dict(self._last_objective_conversion_metrics)
+
+    def _objective_conversion_state(self, sim) -> tuple[float, float, float] | None:
+        """Return (owner_sign_a, cap_sign_a, cap_progress) or None.
+
+        Tests may fake this with a sim attribute ``objective_conversion_state``
+        holding the same tuple; otherwise the values are read from Team A's
+        actor observation (global objective fields).
+        """
+        if (
+            self._cap_progress_potential_coef <= 0.0
+            and self._capture_completed_bonus <= 0.0
+        ):
+            return None
+        fake = getattr(sim, "objective_conversion_state", None)
+        if fake is not None:
+            owner_sign, cap_sign, progress = fake
+            return float(owner_sign), float(cap_sign), float(progress)
+        return self._obs.objective_conversion_state(sim)
+
+    def _objective_conversion_term(self, sim) -> float:
+        """Team-A-signed conversion shaping for this step (B receives the negation).
+
+        Two parts:
+        - Potential-based shaping on the objective state machine with
+          Phi_A = owner_sign + cap_sign * cap_progress_fraction. The step
+          reward is coef * (Phi' - Phi), so accruing capture progress and
+          gaining ownership pay incrementally, while letting progress decay
+          or losing ownership costs the same amount back. Potential-based
+          terms do not change the optimal policy, so this can stay enabled
+          permanently (no anneal needed).
+        - A one-time event bonus when objective ownership flips to a team
+          (the capture-completion event the score chain depends on).
+        """
+        state = self._objective_conversion_state(sim)
+        if state is None:
+            metrics = self._empty_objective_conversion_metrics()
+            metrics["cap_progress_potential_coef"] = self._cap_progress_potential_coef
+            metrics["capture_completed_bonus"] = self._capture_completed_bonus
+            self._last_objective_conversion_metrics = metrics
+            return 0.0
+        owner_sign, cap_sign, progress = state
+        phi_a = owner_sign + cap_sign * progress
+        pbrs_a = self._cap_progress_potential_coef * (
+            phi_a - self._prev_conversion_phi_a
+        )
+        bonus_a = 0.0
+        if owner_sign > 0.5 and self._prev_owner_sign_a <= 0.5:
+            self._captures_a += 1
+            bonus_a += self._capture_completed_bonus
+        elif owner_sign < -0.5 and self._prev_owner_sign_a >= -0.5:
+            self._captures_b += 1
+            bonus_a -= self._capture_completed_bonus
+        self._prev_conversion_phi_a = phi_a
+        self._prev_owner_sign_a = owner_sign
+        self._last_objective_conversion_metrics = {
+            "cap_progress_potential_coef": self._cap_progress_potential_coef,
+            "capture_completed_bonus": self._capture_completed_bonus,
+            "conversion_phi_a": phi_a,
+            "cap_progress_potential_reward_a": pbrs_a,
+            "capture_completed_reward_a": bonus_a,
+            "captures_a": float(self._captures_a),
+            "captures_b": float(self._captures_b),
+        }
+        return pbrs_a + bonus_a
 
     def _decision_seconds(self, sim) -> float:
         now_tick = int(getattr(sim, "tick", self._prev_tick))
@@ -232,6 +345,10 @@ class RewardCalculator:
         )
         raw_a += uncontested_a - uncontested_b
         raw_b -= uncontested_a - uncontested_b
+
+        conversion_a = self._objective_conversion_term(sim)
+        raw_a += conversion_a
+        raw_b -= conversion_a
 
         tp = ShapingTerms.time_penalty_per_tick(self._time_penalty_per_second)
         raw_a += tp
@@ -293,6 +410,17 @@ class RewardCalculator:
                 sim, (3, 4, 5)
             )
             raw_a -= uncontested_b / 3.0
+
+        conversion_a = self._objective_conversion_term(sim)
+        if conversion_a > 0.0:
+            # Team A gained potential/ownership: credit A's on-point members.
+            raw_a += conversion_a * self._on_point_shares(sim, (0, 1, 2))
+            raw_b -= conversion_a / 3.0
+        elif conversion_a < 0.0:
+            # Team B gained (or A's progress decayed): credit B's on-point
+            # members and charge A uniformly.
+            raw_b += (-conversion_a) * self._on_point_shares(sim, (3, 4, 5))
+            raw_a += conversion_a / 3.0
 
         raw_a += self._obs.distance_term(sim, self._distance_shaping_coef)
         raw_b -= self._obs.distance_term(sim, self._distance_shaping_coef)

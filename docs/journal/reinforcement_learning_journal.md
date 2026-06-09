@@ -2517,3 +2517,61 @@ Verification passed: import boundary PASS, multi-enemy/pretrain focused suite
 the same closed-loop config unchanged and do not force PPO past the failed
 score check. Next work should be an offline zero-score draw audit before any
 new implementation or W&B assignment.
+
+## 2026-06-09 — Phase 4 objective-conversion reward terms + conversion_v1 setup
+
+**Status:** implementation + smoke complete; the long run is queued for the
+user's machine. Strategy doc:
+`docs/reports/2026-06-09-phase4-breakthrough-analysis.md`. Runbook:
+`docs/reports/2026-06-09-phase4-conversion-runbook.md`.
+
+**Diagnosis behind this change:** a full review of the journal, the objective
+state machine (`src/sim/src/internal/sim_objective.cpp`), and
+`python/xushi2/reward.py` found that no reward term has ever pointed inside the
+kill -> hold -> capture(240 uncontested ticks) -> own -> score chain that gates
+all Phase 4 scoring. The 2026-05-22 closed-loop bridge checkpoint already wins
+the fight against weak_basic_v2 (0/50 losses, 13.4/0 kills, 4.9s uncontested,
+238 cap-progress gain ticks vs 197 loss) and fails only the final hold. Kills
+pay instantly while holding pays nothing for ~80 decisions, so the gradient
+actively teaches leaving the point. Related: the 2026-05-19 easy-timing
+falsification used the old flat-obs spray warm start (0.0s uncontested); it
+does not apply to the bridge checkpoint.
+
+**Implementation (additive, config-gated, off by default):**
+`RewardCalculator` gains `cap_progress_potential_coef` (potential-based shaping
+with `Phi_A = owner_sign + cap_sign * cap_progress`, read from Team A's actor
+obs via the existing `ObsAccessor`; PBRS, so policy-invariant and anneal-free)
+and `capture_completed_bonus` (one-time team bonus on objective ownership
+flip). Conversion metrics (`captures_a/b`, `conversion_phi_a`, per-step
+contributions) flow into `info["reward_metrics"]`. No C++, sim-rule,
+obs/action, replay, or existing-metric changes. Verification: 7 new unit tests
+plus a real-sim integration test (noop opponent, scripted walk-on-point ->
+capture completes and pays); `tests/test_reward.py` +
+`tests/test_phase4_mappo_env.py` + selfplay/team-spirit suites all pass
+(113 passed); ruff delta vs HEAD is zero.
+
+**New configs:**
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v1.yaml` (300
+updates: bridge-checkpoint warm start from the new tracked copy
+`data/checkpoints/phase4_multi_enemy_closed_loop_bridge_v1.pt`, timing
+curriculum 5s/2s -> 15s/8s over 150 updates, `uncontested_on_point_coef 0.15`,
+`cap_progress_potential_coef 1.0`, `capture_completed_bonus 2.0`,
+`shaping_clip 30` — the default 3.0 cumulative clip has been silently
+saturating every Phase 4 run — kill/death 0.5, LR 1e-5, per-action entropy
+move 0.01 / aim 0.03 / binary 0.02) and
+`experiments/configs/phase4/smoke/phase4_mappo_conversion_smoke.yaml`.
+
+**Smoke result (4 updates, Windows):** the pipeline works end to end
+(warm start loads, curriculum schedules, rewards finite, eval + checkpoints
+written). More importantly, the update-2 eval under eased 10s/5s timing was
+**4/4 WINS vs weak_basic_v2, score 3.10/2.93, kills 10.0/0.0** — the first
+Team A wins against an objective-contesting bot in the project's history,
+directly confirming that conversion opportunity, not combat, was the missing
+piece. The update-4 eval regressed to 0/4 because the smoke anneals to
+canonical 15s/8s in just 4 updates; the real config takes 150.
+
+**Decision:** run `phase4_mappo_conversion_v1.yaml` next (from repo root).
+Judge update 25-150 evals on conversion precursors (uncontested seconds,
+cap-progress retention, captures/score under eased timing), and the gate on
+canonical-eval score after the anneal completes. Escalation ladder and abort
+criteria are in the runbook.

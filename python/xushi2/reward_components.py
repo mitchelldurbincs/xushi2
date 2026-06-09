@@ -58,11 +58,36 @@ class ObsAccessor:
         if enabled:
             self.pos_slice = actor_field_slice("own_position")
             self.on_point_slice = actor_field_slice("self_on_point")
+            self.owner_slice = actor_field_slice("objective_owner_onehot")
+            self.cap_team_slice = actor_field_slice("cap_team_onehot")
+            self.cap_progress_slice = actor_field_slice("cap_progress")
             self.obs_bufs = [np.zeros(ACTOR_PHASE1_DIM, dtype=np.float32) for _ in range(_cpp.AGENTS_PER_MATCH)]
             self.obs_buf_a = self.obs_bufs[_TEAM_A_RANGER_SLOT]
             self.obs_buf_b = self.obs_bufs[_TEAM_B_RANGER_SLOT]
         else:
             self.pos_slice = self.on_point_slice = self.obs_bufs = self.obs_buf_a = self.obs_buf_b = None
+            self.owner_slice = self.cap_team_slice = self.cap_progress_slice = None
+
+    def objective_conversion_state(self, sim) -> tuple[float, float, float] | None:
+        """Read (owner_sign_a, cap_sign_a, cap_progress) from Team A's POV.
+
+        Signs are +1 when the field favors Team A ("Us" from slot 0's view),
+        -1 for Team B, 0 for Neutral. cap_progress is the [0, 1] fraction of
+        objective_capture_ticks. The fields are global objective state, so any
+        slot's obs carries them; slot 0 is used so "Us" means Team A.
+        """
+        if self.obs_buf_a is None or self.owner_slice is None:
+            return None
+        try:
+            _cpp.build_actor_obs(sim, _TEAM_A_RANGER_SLOT, self.obs_buf_a)
+        except Exception:
+            return None
+        owner = self.obs_buf_a[self.owner_slice]
+        cap_team = self.obs_buf_a[self.cap_team_slice]
+        owner_sign = float(owner[1]) - float(owner[2])
+        cap_sign = float(cap_team[1]) - float(cap_team[2])
+        progress = float(self.obs_buf_a[self.cap_progress_slice][0])
+        return owner_sign, cap_sign, progress
 
     def distance_term(self, sim, coef: float) -> float:
         if coef <= 0.0 or self.obs_buf_a is None or self.obs_buf_b is None or self.pos_slice is None:

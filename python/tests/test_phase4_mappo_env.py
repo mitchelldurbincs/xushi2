@@ -321,3 +321,51 @@ def test_idle_1000_ticks_no_crash():
         _, _, term, trunc, _ = env.step(action)
         if term or trunc:
             env.reset(seed=int(rng.integers(0, 2**31 - 1)))
+
+
+# --- objective conversion reward terms (real sim integration) ---
+
+
+def test_conversion_reward_terms_run_against_real_sim():
+    """New env.reward keys flow into RewardCalculator and read real obs.
+
+    With a noop opponent and Team A driven onto the point, the capture-progress
+    potential must eventually pay positive reward and a capture completion must
+    be observed once the objective unlocks and 'capture_seconds' elapse.
+    """
+    sim_cfg = _make_sim_cfg(round_length=40)
+    sim_cfg["objective_unlock_seconds"] = 2.0
+    sim_cfg["objective_capture_seconds"] = 2.0
+    env = Phase4MappoEnv(
+        sim_cfg,
+        opponent_bot="noop",
+        reward_cfg={
+            "cap_progress_potential_coef": 1.0,
+            "capture_completed_bonus": 2.0,
+            "score_per_second": 0.0,
+            "kill_bonus": 0.0,
+            "death_penalty": 0.0,
+        },
+    )
+    obs, info = env.reset(seed=7)
+    pos_slice = actor_field_slice("own_position")
+    total_conversion = 0.0
+    captures = 0.0
+    for _ in range(300):
+        action = np.zeros((3, 6), dtype=np.float32)
+        for i in range(3):
+            own = obs[i][pos_slice]
+            to_point = -own
+            norm = float(np.hypot(to_point[0], to_point[1]))
+            if norm > 1.0e-6:
+                action[i, 0] = to_point[0] / norm
+                action[i, 1] = to_point[1] / norm
+        obs, _reward, terminated, truncated, info = env.step(action)
+        metrics = info["reward_metrics"]
+        total_conversion += float(metrics["cap_progress_potential_reward_a"])
+        total_conversion += float(metrics["capture_completed_reward_a"])
+        captures = float(metrics["captures_a"])
+        if terminated or truncated:
+            break
+    assert captures >= 1.0
+    assert total_conversion > 0.5
