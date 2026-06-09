@@ -9,10 +9,12 @@ learner, observation shape, action head, replay path, or eval mode is selected.
 
 Current runtime selection flows through `train.runtime_specs.resolve_runtime_spec`:
 
-- `learner.kind` selects the learner family (`mappo`, `ppo_recurrent`,
-  `scripted_determinism`).
-- `env.kind` selects the task family (`mappo_match`, `ranger_duel`,
-  `memory_toy`).
+- `learner.kind` selects the learner family (`mappo`,
+  `scripted_determinism`). The single-agent `ppo_recurrent` family was
+  removed in the 2026-06 cleanup.
+- `env.kind` selects the task family (`mappo_match` is the only explicit
+  kind; `ranger_duel` and `memory_toy` were removed with the single-agent
+  pipeline).
 - Env capabilities select behavior: `actor_obs`, `critic_obs`, `team_size`,
   `opponent`, `features.fog`, `features.map_randomization`,
   `features.target_slot`, snapshot/self-play config, and mini-game config.

@@ -103,8 +103,9 @@ remain valid since they store actor weights only.
 
 ### Phase 2 (recurrent PPO on 1v1 memory toy)
 
-Toy env spec lives elsewhere (`docs/memory_toy.md`, TBD). Purpose is to
-validate RNN training, not to exercise the real obs pipeline.
+The toy env validated RNN training, not the real obs pipeline. The env, its
+trainer, and `docs/memory_toy.md` were removed in the 2026-06 single-agent
+cleanup (gate result: `docs/plans/archive/2026-04-23-phase2-result.md`).
 
 ### Phase 3 (recurrent PPO, 1v1 Ranger, flat obs)
 

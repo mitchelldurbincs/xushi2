@@ -71,14 +71,17 @@ command) rather than fighting shell activation syntax.
 
 ## Standard training run
 
-Two equivalent forms. Pick one and stick to it:
+Always launch from the **repo root**: config-internal paths (warm-start
+checkpoints under `data/checkpoints/`, fixtures under `data/`) are
+repo-root-relative and break when launched from `python/`. Two equivalent
+forms:
 
 ```bash
-# Form A (from repo root, requires `make py-install` to expose the console script)
+# Form A (requires `make py-install` to expose the console script)
 xushi2-train --config experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
-# Form B (from python/, module entrypoint — note the relative path)
-cd python && python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
+# Form B (module entrypoint; the editable install makes train importable from anywhere)
+python/.venv/bin/python -m train.train --config experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 ```
 
 Real Phase 4 config layout (do not invent paths):
@@ -91,7 +94,7 @@ experiments/configs/phase4/
     legacy/     archived; do not use for new runs
 ```
 
-Other current config roots live alongside Phase 4: `experiments/configs/phase3/{smoke,baseline,probe,legacy}/`, `experiments/configs/phase11/probe/`, `experiments/configs/runtime/`, and top-level smoke/probe YAMLs such as `phase0_determinism.yaml`, `phase1b_env_smoke.yaml`, `phase2_memory_toy.yaml`, `phase5_entity_attention_probe.yaml`, `phase6_entity_grid_probe.yaml`, `phase7_*_fog_probe.yaml`, `phase8_random_map_probe.yaml`, `phase9_snapshot_probe.yaml`, and `phase10_target_slot_probe.yaml`.
+Other current config roots live alongside Phase 4: `experiments/configs/phase11/probe/`, `experiments/configs/runtime/`, and the top-level YAMLs `phase0_determinism.yaml`, `phase1b_env_smoke.yaml`, and `_gate_defaults.yaml`. The single-agent Phase 2/3 pipeline and the Phase 5–10 probe configs were removed in the 2026-06 cleanup; their envs/configs no longer exist.
 
 ## W&B
 
@@ -193,7 +196,7 @@ If any of these change, call it out explicitly in the card summary and flag it f
 
 > No function that iterates over hidden enemies or full state may be called by `actor_obs_builder`.
 
-A leak silently invalidates the research contribution. Any change to `python/xushi2/{entity_obs,partial_obs,multi_enemy_obs,obs_manifest}.py`, `python/train/mappo_model.py`, or the C++ observation builders requires the existing leak tests to be run and the test list to be cited in completion metadata.
+A leak silently invalidates the research contribution. Any change to `python/xushi2/{partial_obs,multi_enemy_obs,obs_manifest}.py`, `python/train/mappo_model.py`, or the C++ observation builders requires the existing leak tests to be run and the test list to be cited in completion metadata.
 
 ## Testing priorities
 

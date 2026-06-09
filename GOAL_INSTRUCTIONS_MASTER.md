@@ -534,7 +534,7 @@ From `python/`:
 
 ```powershell
 py -3.13 -m scripts.check_import_boundaries
-py -3.13 -m pytest tests/test_phase7_partial_obs.py tests/test_phase5_entity_obs.py tests/test_phase6_grid_obs.py -q
+py -3.13 -m pytest tests/test_phase7_partial_obs.py tests/test_phase4_multi_enemy_actor_obs.py -q
 py -3.13 -m pytest tests/test_phase4_mappo_env.py tests/test_mappo_pretrain_hooks.py tests/test_mappo_focus_fire.py -q
 ```
 

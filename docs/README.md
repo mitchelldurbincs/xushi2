@@ -20,7 +20,6 @@ This index groups project documentation by purpose.
 - [`game_design.md`](./game_design.md): Gameplay goals and simulator design constraints.
 - [`rl_design.md`](./rl_design.md): RL stack architecture and phase progression design.
 - [`coding_philosophy.md`](./coding_philosophy.md): Coding principles used across the repo.
-- [`memory_toy.md`](./memory_toy.md): Memory toy environment rationale and behavior.
 
 ## Architecture
 

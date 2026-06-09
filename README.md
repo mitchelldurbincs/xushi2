@@ -4,7 +4,7 @@ Deterministic 2D 3v3 control-point shooter simulator for multi-agent RL, with re
 
 ## Project overview
 
-Xushi2 combines a deterministic C++ simulation core with Python training/evaluation tooling for recurrent PPO/MAPPO experiments across a phased environment ladder.
+Xushi2 combines a deterministic C++ simulation core with Python training/evaluation tooling for recurrent MAPPO experiments across a phased environment ladder.
 
 ## Quickstart
 
@@ -12,8 +12,8 @@ Xushi2 combines a deterministic C++ simulation core with Python training/evaluat
 - `src/python_bindings/` — `xushi2_cpp` pybind module
 - `src/viewer/` — replay/debug viewer
 - `python/xushi2/` — env wrappers, obs/reward adapters, vector envs
-- `python/train/` — recurrent PPO/MAPPO training stack
-- `python/envs/` — phase-specific envs (Phase 3/4/5/6/7/8/9/10/11)
+- `python/train/` — recurrent MAPPO training stack
+- `python/envs/` — phase-specific envs (Phase 4/11)
 - `experiments/configs/` — training configs
 - `docs/` — specs, design docs, plans/results
 
@@ -71,23 +71,26 @@ make run-bench
 cd python
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e '.[dev]'   # dev extras include pytest and ruff
 ```
 
 ### Common training entrypoints
 
+Launch from the repo root — config-internal paths (warm-start checkpoints,
+`data/` fixtures) are repo-root-relative:
+
 ```bash
 # Phase 4 MAPPO smoke
-python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
+python/.venv/bin/python -m train.train --config experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
 # Phase 4 async vector-env smoke
-python -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_async_smoke.yaml
+python/.venv/bin/python -m train.train --config experiments/configs/phase4/smoke/phase4_mappo_async_smoke.yaml
 
 # Phase 11 current self-play probe
-python -m train.train --config ../experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml
+python/.venv/bin/python -m train.train --config experiments/configs/phase11/probe/phase11_current_selfplay_probe.yaml
 
 # Phase 11 mixed league probe
-python -m train.train --config ../experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
+python/.venv/bin/python -m train.train --config experiments/configs/phase11/probe/phase11_mixed_league_probe.yaml
 ```
 
 
@@ -152,7 +155,7 @@ Hardware variance guidance:
 
 ## Python training benchmark
 
-`xushi2-bench` (installed by `make py-install`) measures rollout and update throughput for the recurrent PPO / MAPPO trainers against a phase config:
+`xushi2-bench` (installed by `make py-install`) measures rollout and update throughput for the MAPPO trainer against a phase config:
 
 ```bash
 # MAPPO end-to-end (rollout + update) on the phase 4 smoke config
@@ -162,9 +165,6 @@ xushi2-bench --target mappo \
     --output json
 ```
 
-Targets:
-- `mappo` / `ppo_recurrent` — full rollout + update path
-- `env_step_only` — bills only environment stepping (isolate the env)
-- `update_only` — bills only the policy update (isolate the learner)
+The only target is `mappo` (full rollout + update path); use `--vector-env async` to benchmark the async vector env.
 
 JSON output captures Python/torch versions, CPU count, and git SHA so results are comparable across runs.

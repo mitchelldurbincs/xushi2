@@ -54,10 +54,12 @@ bench-smoke: bench-cpp
 	done'
 
 py-install:
-	cd python && $(PYTHON) -m venv .venv && .venv/bin/pip install -e .
+	cd python && $(PYTHON) -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
+# Runs from the repo root: config-internal paths (warm-start checkpoints,
+# data/ fixtures) are repo-root-relative.
 train-smoke:
-	cd python && $(VENV_PY) -m train.train --config ../experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
+	$(VENV_PY) -m train.train --config experiments/configs/phase4/smoke/phase4_mappo_smoke.yaml
 
 format:
 	cd python && $(VENV_RUFF) format .

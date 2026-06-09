@@ -231,7 +231,7 @@ Note: objective shaping is **0.01 per second while controlling the objective** (
 
 where `dist_*` is the own-team-frame normalized distance from the hero's position to arena center (i.e., the objective location; same `own_position` field as the actor obs). The term is zero-sum symmetrized — team B sees the negation after teams swap — so the `V_A ≈ −V_B` invariant holds. It passes through the same `[-3.0, +3.0]` per-episode clip as other shaping.
 
-This exists for probes where the canonical event-triggered shaping is too sparse for random-init exploration to discover the cap (notably `phase3_ranger_noop_probe.yaml`, where a motionless opponent never triggers kill/score events so the base reward is event-free until the agent independently discovers cap-sitting). Typical values: `0.005–0.01` while ramping a new scenario; `0.0` for baseline / gate-clear runs.
+This exists for probes where the canonical event-triggered shaping is too sparse for random-init exploration to discover the cap (notably noop-opponent probes such as `phase4/probe/phase4_mappo_noop_probe.yaml`, where a motionless opponent never triggers kill/score events so the base reward is event-free until the agent independently discovers cap-sitting). Typical values: `0.005–0.01` while ramping a new scenario; `0.0` for baseline / gate-clear runs.
 
 This is a curriculum lever, not part of the canonical reward. It should be zero or annealed to zero before any run treated as a gate-clear result.
 
@@ -381,7 +381,7 @@ Latest-vs-latest only produces cyclic strategies and catastrophic forgetting. Ol
 
 Conservative by intent. MAPPO-paper findings that drove these: keep PPO clip well under 0.2, limit epochs on hard problems, normalize values, avoid aggressive minibatching on on-policy data.
 
-The table above targets the Phase 4+ MAPPO configuration at scaled training; Phase 3 runs single-agent recurrent PPO with the same hyperparameter profile minus the centralized critic. Several parameters have phase-specific overrides for the short-horizon Phase 1–3 ladder (see `experiments/configs/phase3/baseline/phase3_ranger_recurrent.yaml`):
+The table above targets the Phase 4+ MAPPO configuration at scaled training; Phase 3 ran single-agent recurrent PPO with the same hyperparameter profile minus the centralized critic. Several parameters had phase-specific overrides for the short-horizon Phase 1–3 ladder (the single-agent Phase 1–3 configs and trainer were removed in the 2026-06 cleanup; the values are kept here for lineage):
 
 - **γ = 0.99 for Phase 1–3** short-horizon episodes (30 s rounds ≈ 100 decisions; 0.99 gives effective horizon ≈ 100). Ramp to γ = 0.997 at Phase 4+ when round length grows.
 - **RNN hidden size = 64 for Phase 1–3** flat-obs runs (31-dim obs, shorter memory horizon). Scale up toward 256 with observation complexity at Phase 5+ and to 512 if underfitting.
