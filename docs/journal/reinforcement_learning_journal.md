@@ -2575,3 +2575,122 @@ Judge update 25-150 evals on conversion precursors (uncontested seconds,
 cap-progress retention, captures/score under eased timing), and the gate on
 canonical-eval score after the anneal completes. Escalation ladder and abort
 criteria are in the runbook.
+
+## 2026-06-10 — Phase 4 conversion PPO diagnostics + objective-conversion bridge
+
+**Status:** `NOT_REACHED`; PPO diagnostics and conversion bridge preflight are
+negative evidence, not blockers.
+
+**Git commit:** `5e25a680bdb7c60cc48ed3f6e35c3b25d85e6bd0` plus the current
+working-tree bridge/config changes.
+**Seed:** `3519994490`.
+**W&B:** disabled / unavailable; no run URL.
+
+### conversion_v1 no-W&B diagnostic
+
+Config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v1.yaml`.
+Output:
+`runs/phase4_mappo_conversion_v1/`.
+
+The full `conversion_v1` run was launched with W&B disabled and intentionally
+stopped at update 50 because it met the runbook's early-stop condition.
+
+- update 25 eval: `0W/50L/0D`, score `0.00/15.63`, kills `12.0/0.0`,
+  Team A hit/fire `0.0456`, Team A uncontested `0.50s`, cap gain `57`.
+- update 50 eval: `0W/0L/50D`, score `0.00/0.00`, kills `1.0/0.0`,
+  Team A hit/fire `0.0228`, Team A uncontested `0.50s`, cap gain `13`.
+- Checkpoints: `runs/phase4_mappo_conversion_v1/mappo/ckpt_0025.pt` and
+  `runs/phase4_mappo_conversion_v1/mappo/ckpt_0050.pt`.
+
+**Decision:** the `1e-5` PPO run erased the bridge behavior before conversion
+could stabilize. Do not continue this exact run to 300 updates.
+
+### conversion_v1 LR 3e-6 diagnostic
+
+New config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v1_lr3e6.yaml`.
+Output:
+`runs/phase4_mappo_conversion_v1_lr3e6/`.
+
+This was a config-only diagnostic derived from `conversion_v1`: W&B disabled,
+learning rate `1.0e-5 -> 3.0e-6`, eval/checkpoint cadence `25 -> 10`, separate
+output directory, same seed, reward, timing curriculum, warm start, model, and
+opponent. It was also stopped at update 50.
+
+- best intermediate signal at update 30: `0W/0L/50D`, score `0.00/0.00`,
+  kills `20.0/0.0`, Team A hit/fire `0.0700`, Team A majority `38.60s`,
+  Team A uncontested `0.70s`, cap gain `97`.
+- update 50 regressed: `0W/50L/0D`, score `0.00/25.00`, kills `5.0/0.0`,
+  Team A hit/fire `0.0333`, Team A majority `8.50s`, Team A uncontested
+  `0.50s`, cap gain `57`.
+- Checkpoints: `runs/phase4_mappo_conversion_v1_lr3e6/mappo/ckpt_0010.pt`
+  through `ckpt_0050.pt`.
+
+**Decision:** lowering LR preserved combat/majority briefly but did not teach
+the hold/conversion step. Do not spend more scalar PPO-tuning runs on this
+exact bridge checkpoint.
+
+### objective-conversion bridge preflight
+
+Implemented an opt-in closed-loop objective-conversion bridge under the existing
+`run.multi_enemy_supervised_bridge` path:
+
+- New teacher mode `multi_enemy_conversion_hold` remains actor-observation-side
+  and action-space-compatible.
+- Closed-loop bridge samples policy-induced states against `weak_basic_v2`.
+- Conversion-relevant actor-visible states (self on point, near objective, or
+  cap progress visible in the objective token) receive supervised sample
+  weighting.
+- The pre-PPO gate now writes explicit conversion diagnostics from the existing
+  evaluator: Team A/B uncontested seconds, majority seconds, cap-progress
+  gain/loss, first alive-edge-to-score seconds, and majority-to-uncontested
+  transition fraction.
+- No sim-rule, tick-pipeline, reward, observation/action schema, replay-format,
+  phase-gate threshold, or existing W&B schema changes were made.
+
+Config:
+`experiments/configs/phase4/probe/phase4_mappo_objective_conversion_bridge_v1.yaml`.
+Output:
+`runs/phase4_mappo_objective_conversion_bridge_v1/`.
+Gate artifact:
+`runs/phase4_mappo_objective_conversion_bridge_v1/mappo/objective_conversion_bridge_gate.json`.
+Checkpoint:
+`runs/phase4_mappo_objective_conversion_bridge_v1/mappo/ckpt_multi_enemy_supervised_bridge.pt`.
+
+The bridge completed 20 closed-loop rounds with finite supervised losses and
+conversion-state sample fractions around `0.69`. The pre-PPO gate failed and
+correctly skipped PPO:
+
+- status `NOT_REACHED`
+- Team A visible-fire rate `1.0 >= 0.01`
+- Team A hit/fire `0.0533333333 >= 0.04`
+- objective_on_point `0.525 >= 0.25`
+- mean score A/B `0.0/0.0333333333`
+- losses `50 > 49`
+- Team A/B majority seconds `31.5/13.3`
+- Team A/B uncontested seconds `0.5/8.5`
+- Team A cap-progress gain/loss `238/238`
+- first Team A alive-edge-to-score seconds `-1.0`
+- majority-to-uncontested-within-window fraction A `0.0`
+
+Post-training matrix artifacts were written, but the gate status is
+`evidence_insufficient`: vs `noop` the final checkpoint drew `50/50` with
+score `0.00/0.00`; vs `weak_basic_v2` it lost `50/50`, score `0.00/0.03`,
+kills `10.0/0.0`; vs `basic` it lost `50/50`, score `0.00/26.20`.
+
+Verification:
+
+- `cd python && .venv/bin/python -m pytest tests/test_full_env_rehearsal.py tests/test_phase4_multi_enemy_actor_obs.py -q`
+  -> `22 passed`.
+- `cd python && .venv/bin/python -m scripts.check_import_boundaries` -> PASS.
+- `git diff --check` -> clean.
+
+**Decision:** the sharper conversion bridge did not solve Phase 4. The learned
+policy can fight and can accumulate almost exactly one full capture's worth of
+gross progress, but it loses all of it (`cap_gain=238`, `cap_loss=238`) and
+never produces a Team A uncontested window beyond `0.5s`. The missing behavior
+is now narrower: not reach, fire, hit, or majority presence, but finish and
+retain uncontested control after capture progress starts. The next design move
+should focus directly on conversion retention, not more PPO scalar tuning or
+generic movement/aim/fire cloning.

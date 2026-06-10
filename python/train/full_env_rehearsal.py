@@ -57,6 +57,7 @@ class PolicyStateBatch:
     target_binary: torch.Tensor
     policy_cont: torch.Tensor
     policy_binary: torch.Tensor
+    conversion_weight: torch.Tensor | None = None
 
 
 def _wrap_angle(angle: torch.Tensor) -> torch.Tensor:
@@ -193,6 +194,7 @@ def full_env_rehearsal_loss(
     config: dict[str, Any] | None = None,
     target_cont: torch.Tensor | None = None,
     target_binary: torch.Tensor | None = None,
+    sample_weight: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     cfg = model.cfg
     options = dict(config or {})
@@ -203,24 +205,39 @@ def full_env_rehearsal_loss(
     else:
         target_cont = target_cont.to(device=device, dtype=torch.float32)
         target_binary = target_binary.to(device=device, dtype=torch.float32)
+    weights = None
+    if sample_weight is not None:
+        weights = sample_weight.to(device=device, dtype=torch.float32).view(-1)
+        if weights.shape[0] != obs.shape[0]:
+            raise ValueError(
+                f"sample_weight length {weights.shape[0]} does not match batch {obs.shape[0]}"
+            )
+        weights = weights / weights.mean().clamp(min=1.0e-6)
     h = model.init_hidden(obs.shape[0]).to(device)
     features, _h_next = model.actor_head_features(obs, h)
     mean, logits, target_selection_logits = model.policy_heads_from_features(obs, features)
     logits = model.masked_binary_logits(obs, logits)
     pred_cont = torch.tanh(mean)
 
-    move_loss = torch.nn.functional.mse_loss(
-        pred_cont[:, list(_MOVE_ACTION_INDICES)],
-        target_cont[:, list(_MOVE_ACTION_INDICES)],
+    move_per_row = torch.mean(
+        (pred_cont[:, list(_MOVE_ACTION_INDICES)] - target_cont[:, list(_MOVE_ACTION_INDICES)])
+        ** 2,
+        dim=-1,
     )
-    aim_loss = torch.nn.functional.mse_loss(
-        pred_cont[:, _AIM_ACTION_INDEX],
-        target_cont[:, _AIM_ACTION_INDEX],
-    )
-    fire_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+    aim_per_row = (pred_cont[:, _AIM_ACTION_INDEX] - target_cont[:, _AIM_ACTION_INDEX]) ** 2
+    fire_per_row = torch.nn.functional.binary_cross_entropy_with_logits(
         logits[:, _PRIMARY_FIRE_BINARY_INDEX],
         target_binary[:, _PRIMARY_FIRE_BINARY_INDEX],
+        reduction="none",
     )
+    if weights is None:
+        move_loss = move_per_row.mean()
+        aim_loss = aim_per_row.mean()
+        fire_loss = fire_per_row.mean()
+    else:
+        move_loss = torch.mean(move_per_row * weights)
+        aim_loss = torch.mean(aim_per_row * weights)
+        fire_loss = torch.mean(fire_per_row * weights)
     target_loss = obs.new_tensor(0.0)
     target_acc = obs.new_tensor(0.0)
     target_count = obs.new_tensor(0.0)
@@ -355,9 +372,15 @@ def _collect_policy_state_batch(
     batch_size: int,
     seed: int,
     teacher: str = "multi_enemy_visible",
+    conversion_weight_coef: float = 0.0,
+    conversion_cap_progress_floor: float = 0.01,
+    conversion_objective_radius: float = 0.12,
 ) -> PolicyStateBatch:
-    if teacher != "multi_enemy_visible":
-        raise ValueError("closed-loop bridge only supports teacher='multi_enemy_visible'")
+    if teacher not in ("multi_enemy_visible", "multi_enemy_conversion_hold"):
+        raise ValueError(
+            "closed-loop bridge only supports teacher='multi_enemy_visible' or "
+            "'multi_enemy_conversion_hold'"
+        )
     cfg = model.cfg
     rows: list[np.ndarray] = []
     target_cont_rows: list[np.ndarray] = []
@@ -377,7 +400,8 @@ def _collect_policy_state_batch(
                 1, cfg.n_agents, cfg.obs_dim
             )
             flat_obs = obs.reshape(cfg.n_agents, cfg.obs_dim)
-            cont, binary = _targets_for_teacher(env, flat_obs.cpu(), cfg, teacher)
+            target_teacher = "multi_enemy_visible" if teacher == "multi_enemy_conversion_hold" else teacher
+            cont, binary = _targets_for_teacher(env, flat_obs.cpu(), cfg, target_teacher)
             action_3d, h_next, policy_action = _policy_action_without_state_update(model, obs, h)
             action_np = action_3d.cpu().numpy()[0]
             rows.append(obs_np.astype(np.float32, copy=True))
@@ -410,13 +434,47 @@ def _collect_policy_state_batch(
     flat_binary = np.concatenate(target_binary_rows, axis=0)[: int(batch_size)]
     flat_policy_cont = np.concatenate(policy_cont_rows, axis=0)[: int(batch_size)]
     flat_policy_binary = np.concatenate(policy_binary_rows, axis=0)[: int(batch_size)]
+    conversion_weight = None
+    if conversion_weight_coef > 0.0:
+        conversion_weight = _conversion_sample_weights(
+            torch.as_tensor(flat, dtype=torch.float32),
+            cfg,
+            coef=float(conversion_weight_coef),
+            cap_progress_floor=float(conversion_cap_progress_floor),
+            objective_radius=float(conversion_objective_radius),
+        )
     return PolicyStateBatch(
         obs=torch.as_tensor(flat, dtype=torch.float32),
         target_cont=torch.as_tensor(flat_cont, dtype=torch.float32),
         target_binary=torch.as_tensor(flat_binary, dtype=torch.float32),
         policy_cont=torch.as_tensor(flat_policy_cont, dtype=torch.float32),
         policy_binary=torch.as_tensor(flat_policy_binary, dtype=torch.float32),
+        conversion_weight=conversion_weight,
     )
+
+
+def _conversion_sample_weights(
+    actor_obs: torch.Tensor,
+    cfg: MappoConfig,
+    *,
+    coef: float,
+    cap_progress_floor: float,
+    objective_radius: float,
+) -> torch.Tensor:
+    if cfg.obs_encoder != "entity_attention_grid":
+        return torch.ones(actor_obs.shape[0], dtype=actor_obs.dtype, device=actor_obs.device)
+    token_width = cfg.entity_token_count * cfg.entity_token_dim
+    if cfg.entity_token_dim != ENTITY_TOKEN_DIM or actor_obs.shape[-1] < token_width:
+        return torch.ones(actor_obs.shape[0], dtype=actor_obs.dtype, device=actor_obs.device)
+    tokens = actor_obs[:, :token_width].view(
+        actor_obs.shape[0], cfg.entity_token_count, cfg.entity_token_dim
+    )
+    self_on_point = tokens[:, _SELF_TOKEN, _ENTITY_AUX] > 0.5
+    cap_progress = tokens[:, _OBJECTIVE_TOKEN, _ENTITY_AUX] >= float(cap_progress_floor)
+    objective_rel = tokens[:, _OBJECTIVE_TOKEN, _ENTITY_POSITION]
+    near_objective = torch.linalg.vector_norm(objective_rel, dim=-1) <= float(objective_radius)
+    conversion_state = self_on_point | cap_progress | near_objective
+    return 1.0 + float(coef) * conversion_state.to(actor_obs.dtype)
 
 
 def policy_state_agreement_metrics(batch: PolicyStateBatch) -> dict[str, float]:
@@ -432,7 +490,7 @@ def policy_state_agreement_metrics(batch: PolicyStateBatch) -> dict[str, float]:
     fire_positive_agreement = (target_fire & policy_fire).to(torch.float32).sum() / target_fire.to(
         torch.float32
     ).sum().clamp(min=1.0)
-    return {
+    metrics = {
         "move_mse": float(move_mse.item()),
         "aim_abs_error": float(aim_abs_error.item()),
         "fire_accuracy": float(fire_agreement.item()),
@@ -440,6 +498,13 @@ def policy_state_agreement_metrics(batch: PolicyStateBatch) -> dict[str, float]:
         "policy_fire_rate": float(policy_fire.to(torch.float32).mean().item()),
         "teacher_fire_rate": float(target_fire.to(torch.float32).mean().item()),
     }
+    if batch.conversion_weight is not None:
+        conversion_mask = batch.conversion_weight > 1.0
+        metrics["conversion_sample_fraction"] = float(
+            conversion_mask.to(torch.float32).mean().item()
+        )
+        metrics["conversion_weight_mean"] = float(batch.conversion_weight.mean().item())
+    return metrics
 
 
 def full_env_rehearsal_pretrain(
@@ -510,8 +575,11 @@ def closed_loop_supervised_bridge_pretrain(
     if not bool(closed_cfg.get("enabled", False)):
         return {}
     teacher = str(config.get("teacher", "multi_enemy_visible"))
-    if teacher != "multi_enemy_visible":
-        raise ValueError("closed-loop supervised bridge only supports multi_enemy_visible teacher")
+    if teacher not in ("multi_enemy_visible", "multi_enemy_conversion_hold"):
+        raise ValueError(
+            "closed-loop supervised bridge only supports multi_enemy_visible or "
+            "multi_enemy_conversion_hold teacher"
+        )
     rounds = int(closed_cfg.get("rounds", 0))
     updates_per_round = int(closed_cfg.get("updates_per_round", 0))
     if rounds <= 0 or updates_per_round <= 0:
@@ -536,12 +604,22 @@ def closed_loop_supervised_bridge_pretrain(
             batch_size=batch_size,
             seed=seed + round_idx,
             teacher=teacher,
+            conversion_weight_coef=float(closed_cfg.get("conversion_sample_weight", 0.0)),
+            conversion_cap_progress_floor=float(
+                closed_cfg.get("conversion_cap_progress_floor", 0.01)
+            ),
+            conversion_objective_radius=float(closed_cfg.get("conversion_objective_radius", 0.12)),
         )
         agreement = policy_state_agreement_metrics(batch)
         diagnostics.append({"round": float(round_idx), **agreement})
         obs = batch.obs.to(device=device)
         target_cont = batch.target_cont.to(device=device)
         target_binary = batch.target_binary.to(device=device)
+        sample_weight = (
+            batch.conversion_weight.to(device=device)
+            if batch.conversion_weight is not None
+            else None
+        )
         for update_idx in range(1, updates_per_round + 1):
             loss, parts = full_env_rehearsal_loss(
                 model,
@@ -549,6 +627,7 @@ def closed_loop_supervised_bridge_pretrain(
                 config,
                 target_cont=target_cont,
                 target_binary=target_binary,
+                sample_weight=sample_weight,
             )
             if not torch.isfinite(loss):
                 raise RuntimeError(
@@ -578,7 +657,8 @@ def closed_loop_supervised_bridge_pretrain(
             f"aim={last['aim_loss']:.4f} fire={last['fire_loss']:.4f} "
             f"fire_acc={agreement['fire_accuracy']:.3f} "
             f"policy_fire={agreement['policy_fire_rate']:.3f} "
-            f"teacher_fire={agreement['teacher_fire_rate']:.3f}",
+            f"teacher_fire={agreement['teacher_fire_rate']:.3f} "
+            f"conv_frac={agreement.get('conversion_sample_fraction', 0.0):.3f}",
             flush=True,
         )
     if diagnostics:
@@ -604,6 +684,9 @@ def run_full_env_rehearsal_gate(
     min_visible_fire_rate = float(gate_cfg.get("min_team_a_visible_fire_rate", 0.0))
     min_on_point = float(gate_cfg.get("min_objective_on_point", 0.25))
     min_score_a = float(gate_cfg.get("min_mean_score_a", 0.0))
+    min_uncontested_a = float(gate_cfg.get("min_uncontested_on_point_seconds_a", 0.0))
+    min_cap_gain = float(gate_cfg.get("min_cap_progress_gain_ticks", 0.0))
+    max_cap_loss = float(gate_cfg.get("max_cap_progress_loss_ticks", 1.0e12))
     max_losses = int(gate_cfg.get("max_losses", 49))
     output_name = str(gate_cfg.get("output", "full_env_rehearsal_gate.json"))
     stats = evaluate_mappo(model, env_fn, episodes=episodes, seed=int(seed))
@@ -615,6 +698,9 @@ def run_full_env_rehearsal_gate(
         and float(stats.team_a_visible_fire_rate) >= min_visible_fire_rate
         and objective_on_point >= min_on_point
         and float(stats.mean_team_a_score) >= min_score_a
+        and float(stats.mean_uncontested_on_point_seconds_a) >= min_uncontested_a
+        and float(stats.mean_cap_progress_gain_ticks) >= min_cap_gain
+        and float(stats.mean_cap_progress_loss_ticks) <= max_cap_loss
         and int(stats.losses) <= max_losses
     )
     metrics = {
@@ -625,12 +711,31 @@ def run_full_env_rehearsal_gate(
         "wins": float(stats.wins),
         "mean_score_a": float(stats.mean_team_a_score),
         "mean_score_b": float(stats.mean_team_b_score),
+        "mean_uncontested_on_point_seconds_a": float(
+            stats.mean_uncontested_on_point_seconds_a
+        ),
+        "mean_uncontested_on_point_seconds_b": float(
+            stats.mean_uncontested_on_point_seconds_b
+        ),
+        "mean_majority_on_point_seconds_a": float(stats.mean_majority_on_point_seconds_a),
+        "mean_majority_on_point_seconds_b": float(stats.mean_majority_on_point_seconds_b),
+        "mean_cap_progress_gain_ticks": float(stats.mean_cap_progress_gain_ticks),
+        "mean_cap_progress_loss_ticks": float(stats.mean_cap_progress_loss_ticks),
+        "mean_first_team_a_alive_edge_to_score_seconds": float(
+            stats.mean_first_team_a_alive_edge_to_score_seconds
+        ),
+        "majority_to_uncontested_within_n_fraction_a": float(
+            stats.majority_to_uncontested_within_n_fraction_a
+        ),
     }
     thresholds = {
         "min_team_a_hit_fire": min_hit_fire,
         "min_team_a_visible_fire_rate": min_visible_fire_rate,
         "min_objective_on_point": min_on_point,
         "min_mean_score_a": min_score_a,
+        "min_uncontested_on_point_seconds_a": min_uncontested_a,
+        "min_cap_progress_gain_ticks": min_cap_gain,
+        "max_cap_progress_loss_ticks": max_cap_loss,
         "max_losses": float(max_losses),
     }
     path = output_dir / output_name

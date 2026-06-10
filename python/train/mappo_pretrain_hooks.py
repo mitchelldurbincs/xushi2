@@ -250,9 +250,10 @@ def maybe_run_multi_enemy_supervised_bridge(
     if not bool(bridge_cfg.get("enabled", False)):
         return True
     teacher = str(bridge_cfg.get("teacher", "multi_enemy_visible"))
-    if teacher != "multi_enemy_visible":
+    if teacher not in ("multi_enemy_visible", "multi_enemy_conversion_hold"):
         raise ValueError(
-            "run.multi_enemy_supervised_bridge.teacher must be 'multi_enemy_visible'"
+            "run.multi_enemy_supervised_bridge.teacher must be 'multi_enemy_visible' "
+            "or 'multi_enemy_conversion_hold'"
         )
     if context.cfg.obs_encoder != "entity_attention_grid":
         raise ValueError("multi_enemy_supervised_bridge requires entity_attention_grid obs")

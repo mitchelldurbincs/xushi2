@@ -269,3 +269,32 @@ def test_phase4_multi_enemy_closed_loop_bridge_config_is_bounded_opt_in() -> Non
     assert closed_loop["batch_size"] <= 384
     assert bridge_cfg["gate"]["min_team_a_hit_fire"] == 0.04
     assert bridge_cfg["gate"]["min_objective_on_point"] == 0.25
+
+
+def test_phase4_objective_conversion_bridge_config_is_bounded_opt_in() -> None:
+    path = (
+        "../experiments/configs/phase4/probe/"
+        "phase4_mappo_objective_conversion_bridge_v1.yaml"
+    )
+    config = yaml.safe_load(open(path, encoding="utf-8"))
+    runtime = resolve_runtime_spec(config)
+    bridge_cfg = config["run"]["multi_enemy_supervised_bridge"]
+    closed_loop = bridge_cfg["closed_loop"]
+    gate = bridge_cfg["gate"]
+
+    assert config["wandb"]["enabled"] is False
+    assert runtime.env.actor_obs == "multi_enemy_entity_grid"
+    assert runtime.shapes.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+    assert runtime.shapes.action_dim == 6
+    assert runtime.shapes.target_action_dim == 0
+    assert bridge_cfg["enabled"] is True
+    assert bridge_cfg["teacher"] == "multi_enemy_conversion_hold"
+    assert closed_loop["enabled"] is True
+    assert 0 < closed_loop["rounds"] <= 20
+    assert 0 < closed_loop["updates_per_round"] <= 50
+    assert closed_loop["batch_size"] <= 384
+    assert closed_loop["conversion_sample_weight"] > 0.0
+    assert gate["min_team_a_hit_fire"] == 0.04
+    assert gate["min_mean_score_a"] >= 1.0
+    assert gate["min_uncontested_on_point_seconds_a"] >= 8.0
+    assert gate["min_cap_progress_gain_ticks"] >= 240.0

@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from train.full_env_rehearsal import (
+    _conversion_sample_weights,
     _collect_scripted_batch,
     _cpp_bot_targets,
     full_env_rehearsal_pretrain,
@@ -263,6 +264,26 @@ def test_multi_enemy_visible_teacher_uses_masks_and_nearest_visible_enemy() -> N
     assert torch.isfinite(cont).all()
 
 
+def test_conversion_sample_weights_use_actor_visible_tokens_only() -> None:
+    cfg = _multi_enemy_cfg()
+    obs = _multi_enemy_obs(cfg)
+    token_width = cfg.entity_token_count * cfg.entity_token_dim
+    tokens = obs[:, :token_width].view(3, cfg.entity_token_count, cfg.entity_token_dim)
+    tokens[0, _SELF_TOKEN, _ENTITY_AUX] = 1.0
+    tokens[1, _OBJECTIVE_TOKEN, _ENTITY_AUX] = 0.25
+    tokens[2, _OBJECTIVE_TOKEN, _ENTITY_POSITION] = torch.tensor([0.5, 0.0])
+
+    weights = _conversion_sample_weights(
+        obs,
+        cfg,
+        coef=6.0,
+        cap_progress_floor=0.01,
+        objective_radius=0.16,
+    )
+
+    assert weights.tolist() == pytest.approx([7.0, 7.0, 1.0])
+
+
 def test_collect_scripted_batch_can_use_multi_enemy_visible_teacher() -> None:
     cfg = _multi_enemy_cfg()
 
@@ -336,6 +357,13 @@ def test_full_env_rehearsal_gate_writes_not_reached_and_blocks_ppo(
             team_a_hit_fire=0.0,
             team_a_visible_fire_rate=0.0,
             mean_majority_on_point_seconds_a=0.0,
+            mean_majority_on_point_seconds_b=37.0,
+            mean_uncontested_on_point_seconds_a=0.0,
+            mean_uncontested_on_point_seconds_b=37.0,
+            mean_cap_progress_gain_ticks=0.0,
+            mean_cap_progress_loss_ticks=0.0,
+            mean_first_team_a_alive_edge_to_score_seconds=-1.0,
+            majority_to_uncontested_within_n_fraction_a=0.0,
             mean_final_tick=1800.0,
             losses=50,
             wins=0,
