@@ -87,6 +87,21 @@ class MappoConfig:
     target_selection_objective_proximity_coef: float = 0.1
     mode_gated_combat: bool = False
     mode_aux_coef: float = 0.3
+    # PPO warm-start stabilization (2026-07). All default OFF for back-compat.
+    # critic_warmup_updates: train ONLY the value head for the first N updates
+    #   (actor frozen) so GAE advantages stop being computed against a critic
+    #   that is stale for the current reward before the policy is allowed to
+    #   move. reference_anchor_*: an annealed imitation penalty toward a frozen
+    #   reference policy (typically the warm-start checkpoint) evaluated on the
+    #   live rollout states, bounding how far early PPO can drift from a
+    #   known-good policy while the dense reward gradient takes over.
+    critic_warmup_updates: int = 0
+    reference_anchor_coef: float = 0.0
+    reference_anchor_anneal_updates: int = 0
+    reference_anchor_aim_coef: float = 1.0
+    reference_anchor_fire_coef: float = 1.0
+    reference_anchor_move_coef: float = 1.0
+    reference_anchor_checkpoint: str | None = None
     # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
     # else CPU). Resolved to ``torch.device`` once in the trainer.
     device: str = "cpu"

@@ -10,9 +10,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import gymnasium as gym
+
     from train.cap_duel_distill import CapDuelDistillAnchor, CapDuelDistillBatch
 
 from train.device import resolve_device
+from train.losses import (
+    _masked_mean,
+    action_logprob_and_entropy_parts,
+)
 from train.mappo_advantage import compute_gae
 from train.mappo_model import (
     _OWN_POSITION_SLICE,
@@ -24,16 +29,16 @@ from train.mappo_model import (
     target_selection_aux_metrics,
 )
 from train.mappo_rollout import collect_rollout, step_loss_mask
-from train.losses import (
-    _masked_mean,
-    action_logprob_and_entropy_parts,
-)
 from train.recurrent_common import (
     apply_global_seeds,
     get_optimizer_learning_rate,
     grad_group_norm,
     next_update_sampling_state,
     set_optimizer_learning_rate,
+)
+from train.reference_policy_anchor import (
+    build_reference_policy_anchor,
+    reference_anchor_step_losses,
 )
 from train.runtime_specs import resolve_runtime_spec
 from xushi2.multi_enemy_obs import entity_obs_self_position
@@ -131,6 +136,21 @@ class MappoTrainer:
                 self._critic_params.append(p)
             else:
                 self._trunk_params.append(p)
+        self.reference_anchor = build_reference_policy_anchor(cfg)
+        if self.reference_anchor is not None:
+            self.reference_anchor.to(self.device)
+            print(
+                "[mappo] reference_anchor enabled "
+                f"checkpoint={cfg.reference_anchor_checkpoint} "
+                f"coef={cfg.reference_anchor_coef:.4f} "
+                f"anneal_updates={cfg.reference_anchor_anneal_updates}",
+                flush=True,
+            )
+        if cfg.critic_warmup_updates > 0:
+            print(
+                f"[mappo] critic_warmup enabled updates={cfg.critic_warmup_updates}",
+                flush=True,
+            )
 
     def close(self) -> None:
         self.vec_env.close()
@@ -205,9 +225,24 @@ class MappoTrainer:
         else:
             ret_mean, ret_std = 0.0, 1.0
 
+        # Critic-only warmup: for the first ``critic_warmup_updates`` updates,
+        # train just the value head so advantages stop being computed against a
+        # critic that is stale for the current reward before the actor moves.
+        in_critic_warmup = (
+            cfg.critic_warmup_updates > 0
+            and self._active_update_idx <= cfg.critic_warmup_updates
+        )
+        anchor_coef = (
+            self.reference_anchor.coef_for_update(self._active_update_idx)
+            if self.reference_anchor is not None and not in_critic_warmup
+            else 0.0
+        )
+
         distill_batch: CapDuelDistillBatch | None = None
-        if self.cap_duel_distill_anchor is not None and self.cap_duel_distill_anchor.should_run(
-            self._active_update_idx
+        if (
+            not in_critic_warmup
+            and self.cap_duel_distill_anchor is not None
+            and self.cap_duel_distill_anchor.should_run(self._active_update_idx)
         ):
             distill_batch = self.cap_duel_distill_anchor.collect_batch(
                 update_idx=self._active_update_idx,
@@ -222,6 +257,8 @@ class MappoTrainer:
                     ret_mean,
                     ret_std,
                     distill_batch=distill_batch,
+                    in_critic_warmup=in_critic_warmup,
+                    anchor_coef=anchor_coef,
                 )
             )
         self._update_counter = next_update_sampling_state(
@@ -258,8 +295,24 @@ class MappoTrainer:
             self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
         distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
 
+        # Explained variance of the rollout critic vs realized returns:
+        # 1 - Var(returns - values) / Var(returns). Near/below 0 means the
+        # value baseline used to compute advantages was uninformative — the
+        # signature of a stale warm-start critic destroying the policy.
+        value_pred = rollout.value
+        if cfg.value_per_agent:
+            ev_mask = rollout.agent_loss_mask.expand_as(returns)
+        else:
+            ev_mask = torch.ones_like(returns)
+        ev_resid_mean = _masked_mean(returns - value_pred, ev_mask)
+        ev_resid_var = _masked_mean((returns - value_pred - ev_resid_mean) ** 2, ev_mask)
+        ev_ret_mean = _masked_mean(returns, ev_mask)
+        ev_ret_var = _masked_mean((returns - ev_ret_mean) ** 2, ev_mask)
+        explained_variance = float((1.0 - ev_resid_var / ev_ret_var.clamp(min=1e-8)).item())
+
         out = {
             "active_agent_fraction": float(agent_mask.mean().item()),
+            "explained_variance": explained_variance,
             "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
             "rollout_reward_std": float(
                 _masked_mean(
@@ -390,10 +443,19 @@ class MappoTrainer:
         return_std: float,
         *,
         distill_batch: CapDuelDistillBatch | None = None,
+        in_critic_warmup: bool = False,
+        anchor_coef: float = 0.0,
     ) -> dict[str, float]:
         cfg = self.cfg
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
+        anchor_active = anchor_coef > 0.0 and self.reference_anchor is not None
+        anchor_aim_parts: list[torch.Tensor] = []
+        anchor_move_parts: list[torch.Tensor] = []
+        anchor_fire_parts: list[torch.Tensor] = []
+        h_ref = (
+            self.reference_anchor.init_hidden(N * A, self.device) if anchor_active else None
+        )
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
@@ -437,6 +499,15 @@ class MappoTrainer:
             aim_entropies.append(aim_ent.view(N, A))
             binary_entropies.append(binary_ent.view(N, A))
             flat_mask = rollout.agent_loss_mask[:, :, t].reshape(N * A)
+            if anchor_active:
+                ref_cont, ref_fire_prob, h_ref = self.reference_anchor.targets(obs_t, h_ref)
+                student_cont = torch.tanh(mean)
+                a_aim, a_move, a_fire = reference_anchor_step_losses(
+                    student_cont, logits, ref_cont, ref_fire_prob
+                )
+                anchor_aim_parts.append(_masked_mean(a_aim, flat_mask))
+                anchor_move_parts.append(_masked_mean(a_move, flat_mask))
+                anchor_fire_parts.append(_masked_mean(a_fire, flat_mask))
             aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
                 aim_pred, obs_t, cfg, mask=flat_mask
             )
@@ -462,6 +533,9 @@ class MappoTrainer:
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
+            if anchor_active:
+                done_ref = rollout.done[:, t].view(N, 1).expand(N, A).reshape(N * A, 1)
+                h_ref = h_ref * (1.0 - done_ref)
         new_logprob = torch.stack(logprobs, dim=2)
         entropy = torch.stack(entropies, dim=2)
         move_entropy = torch.stack(move_entropies, dim=2)
@@ -550,14 +624,35 @@ class MappoTrainer:
             entropy=entropy,
             valid_agent=valid_agent,
         )
-        total_loss = (
-            policy_loss
-            + cfg.value_coef * value_loss
-            - entropy_bonus
-            + cfg.aim_aux_coef * aim_aux_loss
-            + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
-            + cfg.target_selection_aux_coef * target_aux_loss
-        )
+        zero = rollout.actor_obs.new_tensor(0.0)
+        if anchor_active and anchor_aim_parts:
+            anchor_aim = torch.stack(anchor_aim_parts).mean()
+            anchor_move = torch.stack(anchor_move_parts).mean()
+            anchor_fire = torch.stack(anchor_fire_parts).mean()
+            anchor_loss = anchor_coef * (
+                self.reference_anchor.aim_coef * anchor_aim
+                + self.reference_anchor.fire_coef * anchor_fire
+                + self.reference_anchor.move_coef * anchor_move
+            )
+        else:
+            anchor_aim = anchor_move = anchor_fire = anchor_loss = zero
+
+        if in_critic_warmup:
+            # Value-only loss: gradients flow only to ``self.critic`` params
+            # (the critic is a separate module), so the actor is frozen while
+            # the value baseline recalibrates to the current reward.
+            total_loss = cfg.value_coef * value_loss
+        else:
+            total_loss = (
+                policy_loss
+                + cfg.value_coef * value_loss
+                - entropy_bonus
+                + cfg.aim_aux_coef * aim_aux_loss
+                + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
+                + cfg.target_selection_aux_coef * target_aux_loss
+            )
+            if anchor_active:
+                total_loss = total_loss + anchor_loss
         distill_metric_tensors: dict[str, torch.Tensor] = {}
         if distill_batch is not None:
             if self.cap_duel_distill_anchor is None:
@@ -615,6 +710,12 @@ class MappoTrainer:
             "critic_grad_norm": critic_grad_norm,
             "trunk_grad_norm": trunk_grad_norm,
             "lr": self.current_learning_rate,
+            "critic_warmup": 1.0 if in_critic_warmup else 0.0,
+            "reference_anchor_coef": float(anchor_coef),
+            "reference_anchor_loss": float(anchor_loss.item()),
+            "reference_anchor_aim": float(anchor_aim.item()),
+            "reference_anchor_fire": float(anchor_fire.item()),
+            "reference_anchor_move": float(anchor_move.item()),
         }
         for key, value in distill_metric_tensors.items():
             metrics[f"distill/{key}"] = float(value.item())
@@ -648,6 +749,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
     if not any(v > 0.0 for v in agent_loss_mask):
         raise ValueError("ppo.agent_loss_mask must leave at least one active agent")
     _validate_mappo_hyperparameters(ppo_cfg)
+    reference_anchor_cfg = dict(ppo_cfg.get("reference_anchor", {}))
     return MappoConfig(
         num_envs=int(ppo_cfg["num_envs"]),
         n_agents=n_agents,
@@ -713,6 +815,17 @@ def make_mappo_config(config: dict) -> MappoConfig:
         target_selection_objective_proximity_coef=float(
             ppo_cfg.get("target_selection_objective_proximity_coef", 0.1)
         ),
+        critic_warmup_updates=int(ppo_cfg.get("critic_warmup_updates", 0)),
+        reference_anchor_coef=float(reference_anchor_cfg.get("coef", 0.0)),
+        reference_anchor_anneal_updates=int(reference_anchor_cfg.get("anneal_updates", 0)),
+        reference_anchor_aim_coef=float(reference_anchor_cfg.get("aim_coef", 1.0)),
+        reference_anchor_fire_coef=float(reference_anchor_cfg.get("fire_coef", 1.0)),
+        reference_anchor_move_coef=float(reference_anchor_cfg.get("move_coef", 1.0)),
+        reference_anchor_checkpoint=(
+            str(reference_anchor_cfg["checkpoint"])
+            if reference_anchor_cfg.get("checkpoint")
+            else None
+        ),
         device=device,
     )
 
@@ -750,4 +863,28 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
         raise ValueError(
             "ppo.team_spirit_ramp_fraction must satisfy 0 <= team_spirit_ramp_fraction <= 1, "
             f"got {team_spirit_ramp_fraction!r}"
+        )
+
+    critic_warmup_updates = int(ppo_cfg.get("critic_warmup_updates", 0))
+    if critic_warmup_updates < 0:
+        raise ValueError(
+            f"ppo.critic_warmup_updates must be >= 0, got {critic_warmup_updates!r}"
+        )
+
+    reference_anchor_cfg = dict(ppo_cfg.get("reference_anchor", {}))
+    ref_coef = float(reference_anchor_cfg.get("coef", 0.0))
+    if ref_coef < 0.0:
+        raise ValueError(f"ppo.reference_anchor.coef must be >= 0, got {ref_coef!r}")
+    ref_anneal = int(reference_anchor_cfg.get("anneal_updates", 0))
+    if ref_anneal < 0:
+        raise ValueError(
+            f"ppo.reference_anchor.anneal_updates must be >= 0, got {ref_anneal!r}"
+        )
+    for key in ("aim_coef", "fire_coef", "move_coef"):
+        value = float(reference_anchor_cfg.get(key, 1.0))
+        if value < 0.0:
+            raise ValueError(f"ppo.reference_anchor.{key} must be >= 0, got {value!r}")
+    if ref_coef > 0.0 and not reference_anchor_cfg.get("checkpoint"):
+        raise ValueError(
+            "ppo.reference_anchor.checkpoint is required when reference_anchor.coef > 0"
         )

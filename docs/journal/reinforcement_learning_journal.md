@@ -2694,3 +2694,66 @@ is now narrower: not reach, fire, hit, or majority presence, but finish and
 retain uncontested control after capture progress starts. The next design move
 should focus directly on conversion retention, not more PPO scalar tuning or
 generic movement/aim/fire cloning.
+
+## 2026-07-07 — Phase 4 PPO warm-start stabilization (implementation + smoke)
+
+**Status:** implementation + smoke complete; the long
+`phase4_mappo_conversion_v2_stabilized` run is not launched in this entry.
+Review doc: `docs/reports/2026-07-07-phase4-getting-unstuck-review.md`.
+
+**Diagnosis behind this change:** a full re-read of the journal plus the trainer
+found that the 2026-06-10 `conversion_v1` collapses (bridge policy erased by
+update 25-50 at both LR `1e-5` and `3e-6`) match the most-repeated failure in
+the journal — warm-started PPO destroying a good policy within tens of updates —
+and have a specific unaddressed cause. The bridge checkpoint's critic was never
+trained on the conversion reward (the supervised bridge only touches the actor),
+so GAE advantages are computed against a value baseline that is stale for the
+current reward. `mappo_rollout_trainer.py` builds one Adam over all params with
+no critic warmup, no reference anchor, and `warmup_updates: 0`; lowering LR only
+slowed the destruction (the `3e-6` run improved to update 30 then collapsed the
+same way). Note: value normalization here is recomputed per-batch, so there was
+no persistent normalizer to "reset" — that part of the original recommendation
+was moot.
+
+**Implementation (additive, config-gated, all OFF by default):**
+- `ppo.critic_warmup_updates`: train only the value head for the first N
+  updates. Because `self.critic` is a separate module, a value-only loss
+  produces gradients only for critic params (actor/trunk grad-norms read exactly
+  `0.0`), so the actor is frozen while the baseline recalibrates.
+- `ppo.reference_anchor` (`checkpoint`, `coef`, `anneal_updates`,
+  `aim/fire/move_coef`): new `python/train/reference_policy_anchor.py` loads a
+  frozen reference policy (the warm-start checkpoint) and adds an annealed
+  aim-MSE + fire-BCE + move-MSE penalty toward it, evaluated on the *live rollout
+  states* (OpenAI-Five-style KL anchor). Suppressed during critic warmup; coef
+  anneals linearly to 0.
+- `train/explained_variance` metric (`1 - Var(returns-values)/Var(returns)`) so
+  the stale-critic failure mode is visible at a glance.
+- No C++, sim-rule, reward-formula, obs/action, replay-format, existing-metric,
+  or phase-gate changes.
+
+**New configs:** `experiments/configs/phase4/probe/phase4_mappo_conversion_v2_stabilized.yaml`
+(identical to `conversion_v1` except `critic_warmup_updates: 30`,
+`warmup_updates: 50`, and `reference_anchor` coef `0.05` anneal `100` from the
+bridge checkpoint — the trainer stabilization is the only new lever) and
+`experiments/configs/phase4/smoke/phase4_mappo_conversion_v2_stabilized_smoke.yaml`.
+
+**Verification:** new `tests/test_mappo_ppo_stabilization.py` (10 passed) asserts
+critic warmup freezes actor/trains critic, anchor anneal + frozen teacher +
+zero-drift gradient, EV present, and config parsing. Trainer-adjacent regression
+suites pass (aux-aim/loss-mask/cap-duel-distill/bc-freeze/pretrain-hooks/
+team-spirit = 59; phase4-env/multi-enemy/full-env-rehearsal/matrix-eval = 57).
+`ruff` clean, `check_import_boundaries` PASS. End-to-end smoke through
+`train.train` with the real bridge checkpoint: warm start loads, updates 1-2
+show `gn=0.00/…/0.00` actor/trunk (critic-only) with `value_loss` 1.455 -> 0.093,
+updates 3-4 show nonzero actor grad after unfreeze, LR ramps `3.33e-6 -> 1e-5`,
+eval + checkpoints written, no errors.
+
+**Decision:** run `phase4_mappo_conversion_v2_stabilized.yaml` from repo root as
+the next experiment. Judge on the leading indicators in the review doc:
+`train/explained_variance` should climb above 0 across the critic warmup before
+the actor unfreezes; then the conversion funnel (uncontested seconds from the
+`4.9s` bridge baseline, captures, cap-progress retention) rather than score by
+update 50. This tests whether stabilizing the warm-start lets the exact
+`conversion_v1` reward/curriculum hold instead of collapsing. Falls back to the
+curriculum fixes (ease capture only, keep unlock 15s; performance-gated anneal)
+and scenario-reset drills if holds still fragment.
