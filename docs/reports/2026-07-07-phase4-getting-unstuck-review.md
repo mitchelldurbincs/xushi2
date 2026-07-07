@@ -83,10 +83,13 @@ value head + value normalizer on the new reward. The policy stays exactly the
 bridge policy while the critic learns what that policy is worth *under the
 conversion reward*. Only then let the actor move.
 
-**(b) Reset value-normalization statistics at warm start** whenever the reward
-config differs from the checkpoint's (or unconditionally under a flag). Stale
-running mean/var from a `shaping_clip 3.0` era is another silent advantage
-distorter under `shaping_clip 30.0`.
+**(b) ~~Reset value-normalization statistics at warm start~~ — CORRECTION (2026-07-07,
+during implementation):** this turned out to be moot. Value normalization in
+`mappo_rollout_trainer.py` is recomputed per-rollout-batch (`ret_mean`/`ret_std`
+from the current batch's returns), not carried as a running statistic across
+updates, so there is nothing stale to reset. The stale-baseline problem lives in
+the critic *weights*, which (a) already fixes. No value-norm change was
+implemented; see the 2026-07-07 journal entry.
 
 **(c) Reference-policy anchor during early PPO.** You already built exactly the
 right machinery in `python/train/cap_duel_distill.py` — it just anchored the

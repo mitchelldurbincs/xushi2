@@ -93,9 +93,7 @@ def _make_trainer(cfg_dict: dict) -> tuple[MappoTrainer, object]:
     def env_fn():
         import envs
 
-        return envs.Phase4MappoEnv(
-            env_sim, opponent_bot="noop", learner_team="A", reward_cfg={}
-        )
+        return envs.Phase4MappoEnv(env_sim, opponent_bot="noop", learner_team="A", reward_cfg={})
 
     return MappoTrainer(env_fn, cfg, seed=0), cfg
 
@@ -134,9 +132,7 @@ def test_make_mappo_config_parses_stabilization_fields(tmp_path: Path) -> None:
 
 def test_reference_anchor_coef_without_checkpoint_raises(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="checkpoint is required"):
-        make_mappo_config(
-            _phase4_cfg(tmp_path, reference_anchor={"coef": 0.05})
-        )
+        make_mappo_config(_phase4_cfg(tmp_path, reference_anchor={"coef": 0.05}))
 
 
 def test_stabilization_defaults_off(tmp_path: Path) -> None:
@@ -152,9 +148,7 @@ def test_stabilization_defaults_off(tmp_path: Path) -> None:
 def _tiny_anchor(tmp_path: Path, **kwargs) -> ReferencePolicyAnchor:
     cfg = make_mappo_config(_phase4_cfg(tmp_path))
     teacher = MappoActorCritic(cfg)
-    defaults = dict(
-        coef=0.05, anneal_updates=100, aim_coef=1.0, fire_coef=1.0, move_coef=1.0
-    )
+    defaults = dict(coef=0.05, anneal_updates=100, aim_coef=1.0, fire_coef=1.0, move_coef=1.0)
     defaults.update(kwargs)
     return ReferencePolicyAnchor(teacher=teacher, **defaults)
 
@@ -262,9 +256,7 @@ def test_reference_anchor_active_in_update(tmp_path: Path) -> None:
     )
     try:
         assert trainer.reference_anchor is not None
-        assert all(
-            not p.requires_grad for p in trainer.reference_anchor.teacher.parameters()
-        )
+        assert all(not p.requires_grad for p in trainer.reference_anchor.teacher.parameters())
         trainer.set_update_index(1)
         m = trainer.update(trainer.collect_rollout())
         # coef at update 1 = 0.1 * (1 - 1/100)

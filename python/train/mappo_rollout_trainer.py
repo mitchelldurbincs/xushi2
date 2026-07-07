@@ -229,8 +229,7 @@ class MappoTrainer:
         # train just the value head so advantages stop being computed against a
         # critic that is stale for the current reward before the actor moves.
         in_critic_warmup = (
-            cfg.critic_warmup_updates > 0
-            and self._active_update_idx <= cfg.critic_warmup_updates
+            cfg.critic_warmup_updates > 0 and self._active_update_idx <= cfg.critic_warmup_updates
         )
         anchor_coef = (
             self.reference_anchor.coef_for_update(self._active_update_idx)
@@ -453,9 +452,7 @@ class MappoTrainer:
         anchor_aim_parts: list[torch.Tensor] = []
         anchor_move_parts: list[torch.Tensor] = []
         anchor_fire_parts: list[torch.Tensor] = []
-        h_ref = (
-            self.reference_anchor.init_hidden(N * A, self.device) if anchor_active else None
-        )
+        h_ref = self.reference_anchor.init_hidden(N * A, self.device) if anchor_active else None
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
@@ -867,9 +864,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
 
     critic_warmup_updates = int(ppo_cfg.get("critic_warmup_updates", 0))
     if critic_warmup_updates < 0:
-        raise ValueError(
-            f"ppo.critic_warmup_updates must be >= 0, got {critic_warmup_updates!r}"
-        )
+        raise ValueError(f"ppo.critic_warmup_updates must be >= 0, got {critic_warmup_updates!r}")
 
     reference_anchor_cfg = dict(ppo_cfg.get("reference_anchor", {}))
     ref_coef = float(reference_anchor_cfg.get("coef", 0.0))
@@ -877,9 +872,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
         raise ValueError(f"ppo.reference_anchor.coef must be >= 0, got {ref_coef!r}")
     ref_anneal = int(reference_anchor_cfg.get("anneal_updates", 0))
     if ref_anneal < 0:
-        raise ValueError(
-            f"ppo.reference_anchor.anneal_updates must be >= 0, got {ref_anneal!r}"
-        )
+        raise ValueError(f"ppo.reference_anchor.anneal_updates must be >= 0, got {ref_anneal!r}")
     for key in ("aim_coef", "fire_coef", "move_coef"):
         value = float(reference_anchor_cfg.get(key, 1.0))
         if value < 0.0:
