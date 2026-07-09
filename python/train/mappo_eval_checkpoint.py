@@ -94,6 +94,17 @@ def train_mappo_from_config(config: dict) -> dict[str, float]:
                 total_updates = 0
         hooks.total_updates = total_updates
 
+        # Anchor-KL reference: freeze the policy as it stands at PPO start
+        # (after warm start and any BC/bridge pretrain stage), so PPO is
+        # penalized for drifting away from the behavior it inherited.
+        if cfg.anchor_kl_coef > 0.0 and total_updates > 0:
+            trainer.init_anchor_from_current_model()
+            print(
+                f"[{phase_label}/mappo] anchor_kl: froze PPO-start policy as anchor "
+                f"(coef={cfg.anchor_kl_coef}, anneal_updates={cfg.anchor_kl_anneal_updates})",
+                flush=True,
+            )
+
         run_training_loop(
             LoopConfig(
                 total_updates=total_updates,

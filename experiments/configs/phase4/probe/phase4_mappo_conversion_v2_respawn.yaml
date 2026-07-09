@@ -1,0 +1,229 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: conversion_v2_respawn
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+    - phase4_anchor_transfer
+  hypothesis: >
+    Three blockers stacked on conversion_v1: (1) the respawn treadmill —
+    respawn 8s vs capture 8s means killing enemies one at a time never opens
+    an uncontested capture window, and respawn_ticks was never varied in any
+    prior run; (2) PPO from a warm start had no trust anchor and a critic fit
+    to a different reward scheme, so every LR either froze (1e-6) or destroyed
+    the bridge behavior within 25-50 updates (>=2e-6); (3) the multi-enemy
+    wrapper silently dropped all runtime curriculum setters, so conversion_v1
+    never actually annealed objective timing. This run combines the fixes:
+    respawn curriculum 2400->240 ticks (kills convert directly into
+    uncontested windows from update 1), critic warmup (25 value-only updates),
+    an annealed KL anchor to the PPO-start policy, kill_bonus demoted to 0.1,
+    and the wrapper setter fix. See
+    docs/reports/2026-07-09-phase4-3v3-review-recommendations.md.
+  falsification_criteria: >
+    Judge the conversion funnel stage by stage, not score-by-50. Falsified if
+    by update 75 (respawn still >= ~1600t, capture ~4s) eval shows zero
+    captures_a / zero mean_score_a; or if by update 300 (respawn annealed to
+    240t, timing to 15s/8s) mean_score_a has returned to 0; or if objective
+    contact collapses (rollout onpt < 0.10) or hit/fire < 0.015 for two
+    consecutive evals after warmup ends. Expect NO eval improvement during
+    updates 1-25 (critic warmup, actor frozen).
+  leading_indicators: >
+    Funnel order: kill edge -> team wipes -> uncontested seconds -> captures
+    (reward_metrics/captures_a) -> score. Early evals run at eased respawn;
+    the canonical eval (every 25 updates) is the transfer signal at 240t/15s/8s.
+  lineage: >
+    Warm-starts data/checkpoints/phase4_multi_enemy_closed_loop_bridge_v1.pt,
+    same as conversion_v1. conversion_v1 and conversion_v1_lr3e6 (2026-06-10)
+    are the direct predecessors; both were stopped at update 50 after PPO
+    erased the bridge behavior — without an anchor, without critic warmup,
+    and (setter bug) without the timing anneal ever applying.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994490
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 5.0
+    initial_capture_seconds: 2.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 150
+    eval_canonical_every: 25
+  # Respawn-time curriculum (2026-07-09): start with no respawn inside a 60s
+  # round so the existing kill skill produces team wipes -> uncontested
+  # windows -> captures -> score from update 1, then anneal back to the
+  # canonical 8s respawn so the policy must learn to defend/zone on top of an
+  # established scoring behavior. Applies at each env's next reset (there is
+  # no live-sim respawn setter).
+  respawn_curriculum:
+    enabled: true
+    initial_ticks: 2400
+    final_ticks: 240
+    anneal_updates: 200
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    # Demoted further vs conversion_v1 (0.5): a kill must never locally
+    # out-pay holding the point. Kills stay instrumentally valuable (dead
+    # enemies stop contesting) and the KL anchor protects fire behavior.
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 5.0
+    objective_capture_seconds: 2.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994490
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      # Base value = curriculum initial so episode 1 already runs eased;
+      # the curriculum anneals this down to 240 over 200 updates.
+      respawn_ticks: 2400
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  # Warm-start stabilizers (2026-07-09): fit the critic to the new reward
+  # scheme before any policy gradient, then hold the policy near the bridge
+  # behavior while the conversion gradient accumulates.
+  critic_warmup_updates: 25
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 250
+
+run:
+  total_updates: 500
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_conversion_v2_respawn
+  init_from_checkpoint: data/checkpoints/phase4_multi_enemy_closed_loop_bridge_v1.pt
+  matrix_eval:
+    episodes: 50
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_conversion_v2_respawn
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: weak_basic_v2_score
+      metric: eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: weak_basic_v2_wins
+      metric: eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 5
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: anchor_vs_weak_basic_v2_score
+      metric: matrix/anchor/weak_basic_v2/mean_score_a
+      source: local
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 3.0
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
+  subjective_checks:
+    required: true
+    trigger_if_objective_passed: true
+    approval_rule: all_yes
+    questions:
+      - id: replay_conversion_v2_3v3
+        prompt: >
+          In a greedy 3v3 replay vs weak_basic_v2 at canonical timing and
+          respawn (15s/8s, 240t), does Team A fight near the point, stay on
+          the point after clearing it, complete captures, and score — rather
+          than exploiting the shaping (e.g. cycling capture progress without
+          ever scoring)?

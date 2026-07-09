@@ -135,6 +135,7 @@ def evaluate_mappo(
     num_envs: int | None = None,
     backend: str = "sync",
     objective_timing_seconds: tuple[float, float] | None = None,
+    respawn_ticks: int | None = None,
 ) -> MappoEvalStats:
     episodes = int(episodes)
     if episodes <= 0:
@@ -185,6 +186,10 @@ def evaluate_mappo(
                 float(objective_timing_seconds[0]),
                 float(objective_timing_seconds[1]),
             )
+        if respawn_ticks is not None:
+            # Applied on the reset below: the respawn setter is reset-time
+            # only (no live-sim setter).
+            vec_env.set_respawn_ticks(int(respawn_ticks))
         obs_np, _critic_obs, _infos = vec_env.reset(seed=int(seed))
         if objective_timing_seconds is not None:
             eval_unlock_seconds = float(objective_timing_seconds[0])

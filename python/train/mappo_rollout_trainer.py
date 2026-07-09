@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -19,6 +21,7 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    compute_anchor_kl_coef,
     mode_aux_loss_and_accuracy,
     target_selection_aux_loss_and_accuracy,
     target_selection_aux_metrics,
@@ -107,6 +110,10 @@ class MappoTrainer:
         self._update_counter = 0
         self._active_update_idx = 0
         self.cap_duel_distill_anchor: CapDuelDistillAnchor | None = None
+        # Frozen copy of the policy at PPO start, used by the anchor-KL
+        # penalty (cfg.anchor_kl_coef). Set via init_anchor_from_current_model
+        # by the orchestration layer after warm start + pretrain stages.
+        self.anchor_model: MappoActorCritic | None = None
         self._actor_params: list[torch.nn.Parameter] = []
         self._critic_params: list[torch.nn.Parameter] = []
         self._trunk_params: list[torch.nn.Parameter] = []
@@ -160,6 +167,17 @@ class MappoTrainer:
 
     def set_objective_timing_seconds(self, unlock_seconds: float, capture_seconds: float) -> None:
         self.vec_env.set_objective_timing_seconds(float(unlock_seconds), float(capture_seconds))
+
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        self.vec_env.set_respawn_ticks(int(respawn_ticks))
+
+    def init_anchor_from_current_model(self) -> None:
+        """Freeze a copy of the current policy as the anchor-KL reference."""
+        anchor = copy.deepcopy(self.model)
+        anchor.eval()
+        for param in anchor.parameters():
+            param.requires_grad_(False)
+        self.anchor_model = anchor
 
     @property
     def current_learning_rate(self) -> float:
@@ -394,6 +412,17 @@ class MappoTrainer:
         cfg = self.cfg
         N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
+        critic_warmup_active = self._active_update_idx <= cfg.critic_warmup_updates
+        anchor_coef = compute_anchor_kl_coef(
+            update=self._active_update_idx,
+            initial=cfg.anchor_kl_coef,
+            anneal_updates=cfg.anchor_kl_anneal_updates,
+        )
+        anchor_active = (
+            self.anchor_model is not None and anchor_coef > 0.0 and not critic_warmup_active
+        )
+        anchor_kls: list[torch.Tensor] = []
+        h_anchor = flat_h
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
@@ -431,6 +460,35 @@ class MappoTrainer:
             logp, ent, move_ent, aim_ent, binary_ent = self._action_logprob_and_entropy(
                 mean, log_std, logits, target_logits, action_t
             )
+            if anchor_active:
+                anchor = self.anchor_model
+                assert anchor is not None
+                with torch.no_grad():
+                    anchor_features, h_anchor = anchor.actor_head_features(obs_t, h_anchor)
+                    anchor_mean, anchor_logits, _anchor_sel = anchor.policy_heads_from_features(
+                        obs_t, anchor_features
+                    )
+                    anchor_logits = anchor.masked_binary_logits(obs_t, anchor_logits)
+                    anchor_target_logits = (
+                        anchor.actor_target_head(anchor_features)
+                        if anchor.actor_target_head is not None
+                        else None
+                    )
+                    anchor_target_logits = anchor._masked_target_logits(
+                        anchor_target_logits, anchor._target_mask(obs_t)
+                    )
+                anchor_kls.append(
+                    _anchor_action_kl(
+                        mean=mean,
+                        log_std=log_std,
+                        binary_logits=logits,
+                        target_logits=target_logits,
+                        anchor_mean=anchor_mean,
+                        anchor_log_std=anchor.log_std,
+                        anchor_binary_logits=anchor_logits,
+                        anchor_target_logits=anchor_target_logits,
+                    ).view(N, A)
+                )
             logprobs.append(logp.view(N, A))
             entropies.append(ent.view(N, A))
             move_entropies.append(move_ent.view(N, A))
@@ -462,6 +520,9 @@ class MappoTrainer:
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
             h = h.view(N, A, cfg.gru_hidden)
             h = (h * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
+            if anchor_active:
+                h_anchor = h_anchor.view(N, A, cfg.gru_hidden)
+                h_anchor = (h_anchor * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
         new_logprob = torch.stack(logprobs, dim=2)
         entropy = torch.stack(entropies, dim=2)
         move_entropy = torch.stack(move_entropies, dim=2)
@@ -550,16 +611,28 @@ class MappoTrainer:
             entropy=entropy,
             valid_agent=valid_agent,
         )
-        total_loss = (
-            policy_loss
-            + cfg.value_coef * value_loss
-            - entropy_bonus
-            + cfg.aim_aux_coef * aim_aux_loss
-            + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
-            + cfg.target_selection_aux_coef * target_aux_loss
-        )
+        anchor_kl_mean = rollout.actor_obs.new_tensor(0.0)
+        if anchor_active and anchor_kls:
+            anchor_kl_mean = _masked_mean(torch.stack(anchor_kls, dim=2), valid_agent)
+        if critic_warmup_active:
+            # Critic warmup: fit the value function to the (frozen) warm-start
+            # policy's returns before any policy gradient is applied. The
+            # actor terms are excluded from the loss, so actor/trunk params
+            # receive no gradient during warmup.
+            total_loss = cfg.value_coef * value_loss
+        else:
+            total_loss = (
+                policy_loss
+                + cfg.value_coef * value_loss
+                - entropy_bonus
+                + cfg.aim_aux_coef * aim_aux_loss
+                + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
+                + cfg.target_selection_aux_coef * target_aux_loss
+            )
+            if anchor_active:
+                total_loss = total_loss + anchor_coef * anchor_kl_mean
         distill_metric_tensors: dict[str, torch.Tensor] = {}
-        if distill_batch is not None:
+        if distill_batch is not None and not critic_warmup_active:
             if self.cap_duel_distill_anchor is None:
                 raise RuntimeError("distill_batch provided without configured anchor")
             distill_scaled_loss, distill_metric_tensors = (
@@ -616,9 +689,59 @@ class MappoTrainer:
             "trunk_grad_norm": trunk_grad_norm,
             "lr": self.current_learning_rate,
         }
+        # Only emit the stabilizer metrics when the features are configured so
+        # legacy runs keep their existing W&B schema unchanged.
+        if cfg.critic_warmup_updates > 0:
+            metrics["critic_warmup_active"] = 1.0 if critic_warmup_active else 0.0
+        if cfg.anchor_kl_coef > 0.0:
+            metrics["anchor_kl"] = float(anchor_kl_mean.item())
+            metrics["anchor_kl_coef"] = float(anchor_coef)
         for key, value in distill_metric_tensors.items():
             metrics[f"distill/{key}"] = float(value.item())
         return metrics
+
+
+def _anchor_action_kl(
+    *,
+    mean: torch.Tensor,
+    log_std: torch.Tensor,
+    binary_logits: torch.Tensor,
+    target_logits: torch.Tensor | None,
+    anchor_mean: torch.Tensor,
+    anchor_log_std: torch.Tensor,
+    anchor_binary_logits: torch.Tensor,
+    anchor_target_logits: torch.Tensor | None,
+) -> torch.Tensor:
+    """Analytic per-sample KL(pi_current || pi_anchor) over the action heads.
+
+    The continuous heads are tanh-squashed Gaussians; KL is invariant under
+    the shared invertible tanh transform, so the pre-squash Normal KL is
+    exact. Binary heads use the Bernoulli KL with probabilities clamped away
+    from 0/1 so fire-masked (-inf) logits stay finite. The optional target
+    head uses the categorical KL with the same clamping rationale.
+    """
+    kl = mean.new_zeros(mean.shape[0])
+    if mean.shape[-1] > 0:
+        var = (2.0 * log_std).exp()
+        anchor_var = (2.0 * anchor_log_std).exp()
+        gauss = (
+            anchor_log_std
+            - log_std
+            + (var + (mean - anchor_mean) ** 2) / (2.0 * anchor_var)
+            - 0.5
+        )
+        kl = kl + gauss.sum(-1)
+    if binary_logits.shape[-1] > 0:
+        eps = 1e-6
+        p = torch.sigmoid(binary_logits).clamp(eps, 1.0 - eps)
+        q = torch.sigmoid(anchor_binary_logits).clamp(eps, 1.0 - eps)
+        bern = p * (p / q).log() + (1.0 - p) * ((1.0 - p) / (1.0 - q)).log()
+        kl = kl + bern.sum(-1)
+    if target_logits is not None and anchor_target_logits is not None:
+        logp = F.log_softmax(target_logits, dim=-1).clamp(min=-30.0)
+        logq = F.log_softmax(anchor_target_logits, dim=-1).clamp(min=-30.0)
+        kl = kl + (logp.exp() * (logp - logq)).sum(-1)
+    return kl
 
 
 def make_mappo_config(config: dict) -> MappoConfig:
@@ -706,6 +829,9 @@ def make_mappo_config(config: dict) -> MappoConfig:
         aim_aux_coef=float(ppo_cfg.get("aim_aux_coef", 0.0)),
         mode_gated_combat=bool(ppo_cfg.get("mode_gated_combat", False)),
         mode_aux_coef=float(ppo_cfg.get("mode_aux_coef", 0.3)),
+        critic_warmup_updates=int(ppo_cfg.get("critic_warmup_updates", 0)),
+        anchor_kl_coef=float(ppo_cfg.get("anchor_kl_coef", 0.0)),
+        anchor_kl_anneal_updates=int(ppo_cfg.get("anchor_kl_anneal_updates", 0)),
         target_selection_dim=int(ppo_cfg.get("target_selection_dim", 0)),
         target_conditioned_combat=bool(ppo_cfg.get("target_conditioned_combat", False)),
         target_selection_aux_coef=float(ppo_cfg.get("target_selection_aux_coef", 0.0)),
@@ -740,10 +866,22 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
         "aim_aux_coef",
         "mode_aux_coef",
         "target_selection_aux_coef",
+        "anchor_kl_coef",
     ):
         value = float(ppo_cfg.get(key, 0.0))
         if value < 0.0:
             raise ValueError(f"ppo.{key} must be non-negative, got {value!r}")
+
+    critic_warmup_updates = int(ppo_cfg.get("critic_warmup_updates", 0))
+    if critic_warmup_updates < 0:
+        raise ValueError(
+            f"ppo.critic_warmup_updates must be non-negative, got {critic_warmup_updates!r}"
+        )
+    anchor_kl_anneal_updates = int(ppo_cfg.get("anchor_kl_anneal_updates", 0))
+    if anchor_kl_anneal_updates < 0:
+        raise ValueError(
+            f"ppo.anchor_kl_anneal_updates must be non-negative, got {anchor_kl_anneal_updates!r}"
+        )
 
     team_spirit_ramp_fraction = float(ppo_cfg.get("team_spirit_ramp_fraction", 0.3))
     if not (0.0 <= team_spirit_ramp_fraction <= 1.0):

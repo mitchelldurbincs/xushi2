@@ -74,6 +74,32 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
     def build_critic_obs(self, out: np.ndarray) -> None:
         self._base.build_critic_obs(out)
 
+    # Runtime curriculum / reward setters must be forwarded explicitly: the
+    # vector env discovers them with getattr() and silently skips envs that
+    # lack them. Before these delegations existed, every multi-enemy run
+    # (including the 2026-06-10 conversion_v1 runs) trained with the
+    # objective-timing anneal, team_spirit ramp, and eval alpha/timing
+    # overrides silently dropped.
+    def set_team_spirit(self, value: float) -> None:
+        self._base.set_team_spirit(value)
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        self._base.set_majority_on_point_alpha(value)
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        self._base.set_uncontested_on_point_alpha(value)
+
+    def set_objective_timing_ticks(self, unlock_ticks: int, capture_ticks: int) -> None:
+        self._base.set_objective_timing_ticks(unlock_ticks, capture_ticks)
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        self._base.set_objective_timing_seconds(unlock_seconds, capture_seconds)
+
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        self._base.set_respawn_ticks(respawn_ticks)
+
     def close(self) -> None:
         self._base.close()
 
