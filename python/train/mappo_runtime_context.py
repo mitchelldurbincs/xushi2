@@ -36,6 +36,10 @@ class RuntimeContext:
     majority_on_point_anneal_updates: int
     uncontested_on_point_initial: float
     uncontested_on_point_anneal_updates: int
+    respawn_curriculum_enabled: bool
+    respawn_initial_ticks: int
+    respawn_final_ticks: int
+    respawn_anneal_updates: int
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
@@ -102,6 +106,22 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
     uncontested_on_point_anneal_updates = int(
         reward_cfg.get("uncontested_on_point_anneal_updates", 0)
     )
+    respawn_curriculum_cfg = dict(env_cfg.get("respawn_curriculum", {}))
+    respawn_curriculum_enabled = bool(respawn_curriculum_cfg.get("enabled", False))
+    sim_mechanics_cfg = dict(sim_cfg.get("mechanics", {}))
+    respawn_default_ticks = int(sim_mechanics_cfg.get("respawn_ticks", 240))
+    respawn_initial_ticks = int(
+        respawn_curriculum_cfg.get("initial_ticks", respawn_default_ticks)
+    )
+    respawn_final_ticks = int(
+        respawn_curriculum_cfg.get("final_ticks", respawn_default_ticks)
+    )
+    respawn_anneal_updates = int(respawn_curriculum_cfg.get("anneal_updates", 0))
+    if respawn_curriculum_enabled and min(respawn_initial_ticks, respawn_final_ticks) <= 0:
+        raise ValueError(
+            "env.respawn_curriculum initial_ticks/final_ticks must be > 0, got "
+            f"initial={respawn_initial_ticks} final={respawn_final_ticks}"
+        )
     total_updates = int(run_cfg.get("total_updates"))
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
     eval_episodes = int(run_cfg.get("eval_episodes", 10))
@@ -157,4 +177,8 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         majority_on_point_anneal_updates=majority_on_point_anneal_updates,
         uncontested_on_point_initial=uncontested_on_point_initial,
         uncontested_on_point_anneal_updates=uncontested_on_point_anneal_updates,
+        respawn_curriculum_enabled=respawn_curriculum_enabled,
+        respawn_initial_ticks=respawn_initial_ticks,
+        respawn_final_ticks=respawn_final_ticks,
+        respawn_anneal_updates=respawn_anneal_updates,
     )

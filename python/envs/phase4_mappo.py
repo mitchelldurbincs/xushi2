@@ -82,6 +82,7 @@ class Phase4MappoEnv(gym.Env):
         self._enemy_slots: tuple[int, int, int] = (3, 4, 5) if learner_team == "A" else (0, 1, 2)
 
         self._sim: _cpp.Sim | None = None
+        self._applied_respawn_ticks: int | None = None
         self._opponent_policy = opponent_policy
         self._reward_cfg = dict(reward_cfg or {})
         # Phase 4 always emits per-agent rewards so MAPPO can use individual
@@ -129,6 +130,7 @@ class Phase4MappoEnv(gym.Env):
         cfg = _build_config(self._sim_cfg, seed_override=seed)
         cfg.team_size = 3
         self._sim = _cpp.Sim(cfg)
+        self._applied_respawn_ticks = int(cfg.mechanics.respawn_ticks)
         if self._opponent_policy is not None:
             self._opponent_policy.reset()
         self._reward_calc.reset(self._sim)
@@ -310,6 +312,18 @@ class Phase4MappoEnv(gym.Env):
         capture_ticks = int(round(float(capture_seconds) * float(_cpp.TICK_HZ)))
         self.set_objective_timing_ticks(unlock_ticks, capture_ticks)
 
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        """Respawn-time curriculum knob. Unlike the objective-timing setter
+        there is no live-sim setter (respawn_tick is stamped at death), so the
+        new value applies from the next reset() onward; the in-flight episode
+        keeps the respawn time it was built with."""
+        ticks = int(respawn_ticks)
+        if ticks <= 0:
+            raise ValueError(f"respawn ticks must be >0, got {ticks}")
+        mechanics = dict(self._sim_cfg.get("mechanics", {}))
+        mechanics["respawn_ticks"] = ticks
+        self._sim_cfg["mechanics"] = mechanics
+
     def close(self) -> None:
         self._sim = None
 
@@ -488,6 +502,7 @@ class Phase4MappoEnv(gym.Env):
             / float(_cpp.TICK_HZ),
             "objective_capture_seconds": float(s.objective_capture_ticks)
             / float(_cpp.TICK_HZ),
+            "respawn_ticks": int(self._applied_respawn_ticks or 0),
         }
 
     @staticmethod

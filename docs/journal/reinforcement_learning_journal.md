@@ -2694,3 +2694,127 @@ is now narrower: not reach, fire, hit, or majority presence, but finish and
 retain uncontested control after capture progress starts. The next design move
 should focus directly on conversion retention, not more PPO scalar tuning or
 generic movement/aim/fire cloning.
+
+## 2026-07-09 — Phase 4 plateau review: respawn treadmill + warm-start stabilizers
+
+**Status:** review + implementation + Step 0 diagnostic complete; the
+`conversion_v2_respawn` long run is ready to launch on the user's machine.
+Review doc: `docs/reports/2026-07-09-phase4-3v3-review-recommendations.md`.
+Branch: `claude/3v3-rl-training-review-rpir5f`.
+
+### Bug found: the multi-enemy wrapper silently dropped every runtime setter
+
+`Phase4MultiEnemyMappoEnv` never delegated `set_team_spirit`,
+`set_majority_on_point_alpha`, `set_uncontested_on_point_alpha`, or
+`set_objective_timing_seconds` to its wrapped `Phase4MappoEnv`, and the sync
+vector env discovers setters with `getattr(..., None)` and silently skips
+envs that lack them. **Every multi-enemy run to date trained with the
+objective-timing anneal, team_spirit ramp, and eval alpha/timing overrides
+silently dropped.** Concretely: the 2026-06-10 `conversion_v1` and
+`conversion_v1_lr3e6` runs never annealed timing (envs stayed at the yaml
+base 5s/2s), their "canonical" evals actually ran at 5s/2s, and eval
+`mean_reward` included the uncontested shaping that evaluation is supposed to
+zero out. The eased-timing interpretation of those runs is therefore wrong —
+they failed at *eased* timing, which strengthens the "PPO destroys the warm
+start" diagnosis. Fixed by explicit delegation; a new regression test fails
+if `Phase4MappoEnv` ever grows a `set_*` runtime setter the wrapper doesn't
+forward.
+
+### Step 0 diagnostic: the respawn treadmill hypothesis is CONFIRMED
+
+`mechanics.respawn_ticks: 240` (8s, equal to the capture requirement) has
+been identical in every config in the project's history. With three enemies
+respawning every 8s and walking back, killing them one at a time never opens
+an 8s uncontested window — the June bridge checkpoint's
+`cap_gain=238/cap_loss=238, uncontested=0.5s` signature.
+
+New script `python/scripts/respawn_ablation_eval.py` evaluates a checkpoint
+across `respawn_ticks` values with no training. Result for the tracked bridge
+checkpoint (`data/checkpoints/phase4_multi_enemy_closed_loop_bridge_v1.pt`)
+vs `weak_basic_v2` at CANONICAL objective timing (15s unlock / 8s capture —
+the checkpoint env cfg carries no timing overrides):
+
+- respawn 240t (canonical): `0W/0L/50D, score 0.00/0.00, uncontested 3.1s`
+  — the historical scoreless draw, reproduced.
+- respawn 720t (24s): `0W/50L/0D, score 2.20/7.03, uncontested 14.5/16.2s,
+  cap_gain 570` — the checkpoint SCORES for the first time at canonical
+  timing with respawns on, but weak_basic_v2 out-converts it and wins. The
+  mid-curriculum regime is a live contest, exactly the gradient PPO needs.
+- respawn 2400t (no respawn inside a 60s round): **50/50 WINS, score
+  2.70/0.00, uncontested 15.0s, kills 8/0** — a clean sweep from the same
+  checkpoint that has never won a canonical eval episode.
+
+Artifact: `runs/respawn_ablation/respawn_ablation.json` (50 episodes/cell,
+seed 0x9E5F0A47). The progression 240→720→2400 is monotone in Team A score,
+so the annealed curriculum has signal at every stage rather than a cliff.
+
+The blocking factor was never combat, aim, observation, or imitation quality
+— at canonical rules minus respawn pressure, the June checkpoint already
+scores. The lever is a respawn curriculum, which is config-side mechanics in
+the same class as the (already-allowed) objective-timing curriculum.
+
+### Implemented (additive, config-gated, off by default)
+
+1. **Respawn curriculum** — `env.respawn_curriculum: {enabled, initial_ticks,
+   final_ticks, anneal_updates}`; linear anneal pushed per update via new
+   `set_respawn_ticks` plumbing (env → wrapper → sync/async vector env →
+   trainer → hooks). Reset-time-only application (no live-sim setter;
+   respawn_tick is stamped at death). `info["respawn_ticks"]` reports the
+   value the running episode was built with; W&B gets `train/respawn_ticks`.
+   Canonical eval (every `eval_canonical_every`) runs at `final_ticks` +
+   15s/8s timing, so the transfer signal is always visible.
+2. **Critic warmup** — `ppo.critic_warmup_updates: N`: for updates 1..N only
+   the value loss is optimized; actor/trunk receive zero gradient. Rationale:
+   warm starts pair a competent policy with a critic that is random or fit to
+   a different reward scheme, so early advantages are noise and PPO's first
+   steps destroy the policy — the empirical smoke showed value_loss 21.9 →
+   1.5 after a single warmup update, confirming how wrong the cold critic was.
+3. **Anchor KL** — `ppo.anchor_kl_coef` + `ppo.anchor_kl_anneal_updates`:
+   at PPO start (after warm start + any pretrain stage) the trainer freezes a
+   copy of the policy and adds `coef * KL(pi_current || pi_anchor)` on rollout
+   states, annealed linearly to zero. Analytic KL over the action heads
+   (tanh-squashed Gaussian KL is exact via transform invariance; clamped
+   Bernoulli; optional categorical). This is the missing trust region behind
+   the 1e-6-freezes / 2e-6-collapses dichotomy documented across ~10 runs.
+   Metrics: `train/anchor_kl`, `train/anchor_kl_coef` (emitted only when
+   configured, so legacy W&B schemas are unchanged).
+
+### The combined run (queued)
+
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v2_respawn.yaml`:
+bridge warm start + multi-enemy obs + conversion_v1 rewards with
+`kill_bonus: 0.1` (a kill must not locally out-pay holding; PBRS pays ~0.004
+per progress tick, so 0.5 was ~6x the hold gradient for a 2s chase) +
+respawn curriculum 2400→240 over 200 updates + timing curriculum 5s/2s→15s/8s
+over 150 + `critic_warmup_updates: 25` + `anchor_kl_coef: 1.0` annealed over
+250 + LR 1e-5, 500 updates. Launch from repo root:
+
+    python/.venv/bin/xushi2-train --config experiments/configs/phase4/probe/phase4_mappo_conversion_v2_respawn.yaml
+
+Judge on the funnel (kill edge → wipes → uncontested seconds → captures →
+score), expect nothing from eval during updates 1-25 (warmup), and use the
+canonical eval rows as the transfer signal. Falsification criteria are in the
+config metadata.
+
+### Verification
+
+3-update pipeline smoke (`experiments/configs/phase4/smoke/
+phase4_mappo_conversion_v2_respawn_smoke.yaml`, W&B disabled): warm start
+loads, anchor freezes, update 1 shows `policy_loss=0.000`,
+actor/trunk grad norms exactly 0 and critic grad only; updates 2-3 train the
+actor with the anchor term; `obj_t` anneals 10/5 → 15/8 in the training envs
+(the wrapper fix working); eval keeps the bridge kill edge (14/0 kills,
+hit/fire 0.058). Tests: new `tests/test_phase4_respawn_curriculum.py` (13) +
+`tests/test_mappo_critic_warmup_anchor.py` (13) plus focused suites
+`test_mappo_team_spirit_ramp` / `test_phase4_mappo_env` /
+`test_phase4_multi_enemy_actor_obs` / `test_mappo_public_api` /
+`test_mappo_aux_aim` / `test_cap_duel_distill` / `test_reward` /
+`test_full_env_rehearsal` — 172 passed total. Import boundary check PASS.
+Ruff delta vs HEAD is zero on touched files.
+
+**Behavior/schema changes to flag:** the wrapper setter fix changes
+multi-enemy training behavior (curriculum anneals now actually apply — this
+is the bug fix, not a new mechanic); additive W&B metrics
+`train/respawn_ticks`, `train/anchor_kl`, `train/anchor_kl_coef`,
+`train/critic_warmup_active` and additive env info key `respawn_ticks`; no
+sim-rule, reward-formula, action, observation, or replay-format changes.

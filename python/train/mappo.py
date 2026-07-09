@@ -9,8 +9,10 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     MappoEvalStats,
+    compute_anchor_kl_coef,
     compute_majority_on_point_alpha,
     compute_objective_timing_seconds,
+    compute_respawn_ticks,
     compute_team_spirit,
 )
 from train.mappo_rollout_trainer import MappoRollout, MappoTrainer, make_mappo_config
@@ -22,8 +24,10 @@ __all__ = [
     "MappoRollout",
     "MappoTrainer",
     "bc_pretrain_walk_to_objective",
+    "compute_anchor_kl_coef",
     "compute_majority_on_point_alpha",
     "compute_objective_timing_seconds",
+    "compute_respawn_ticks",
     "compute_team_spirit",
     "evaluate_mappo",
     "make_mappo_config",

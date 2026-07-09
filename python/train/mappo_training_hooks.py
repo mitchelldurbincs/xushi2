@@ -10,6 +10,7 @@ from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
 from train.mappo_model import (
     compute_majority_on_point_alpha,
     compute_objective_timing_seconds,
+    compute_respawn_ticks,
     compute_team_spirit,
 )
 from train.mappo_rollout_trainer import MappoTrainer
@@ -40,6 +41,7 @@ class MappoTrainingHooks:
         self._last_majority_on_point_alpha = 0.0
         self._last_uncontested_on_point_alpha = 0.0
         self._last_objective_timing_seconds: tuple[float, float] | None = None
+        self._last_respawn_ticks: int | None = None
         self._last_canonical_eval_stats = None
 
     def set_learning_rate(self, lr: float) -> None:
@@ -55,6 +57,16 @@ class MappoTrainingHooks:
             initial_capture_seconds=self.context.objective_initial_capture_seconds,
             final_capture_seconds=self.context.objective_final_capture_seconds,
             anneal_updates=self.context.objective_timing_anneal_updates,
+        )
+
+    def _respawn_ticks_for_update(self, update_idx: int) -> int | None:
+        if not self.context.respawn_curriculum_enabled:
+            return None
+        return compute_respawn_ticks(
+            update=update_idx,
+            initial_ticks=self.context.respawn_initial_ticks,
+            final_ticks=self.context.respawn_final_ticks,
+            anneal_updates=self.context.respawn_anneal_updates,
         )
 
     def collect_rollout(self, update_idx: int):
@@ -82,10 +94,14 @@ class MappoTrainingHooks:
         timing = self._objective_timing_for_update(update_idx)
         if timing is not None:
             self.trainer.set_objective_timing_seconds(timing[0], timing[1])
+        respawn_ticks = self._respawn_ticks_for_update(update_idx)
+        if respawn_ticks is not None:
+            self.trainer.set_respawn_ticks(respawn_ticks)
         self._last_team_spirit = tau
         self._last_majority_on_point_alpha = alpha
         self._last_uncontested_on_point_alpha = uncontested_alpha
         self._last_objective_timing_seconds = timing
+        self._last_respawn_ticks = respawn_ticks
         return self.trainer.collect_rollout()
 
     def update_step(self, update_idx: int, rollout, lr: float):
@@ -97,20 +113,24 @@ class MappoTrainingHooks:
         if self._last_objective_timing_seconds is not None:
             metrics["objective_unlock_seconds"] = self._last_objective_timing_seconds[0]
             metrics["objective_capture_seconds"] = self._last_objective_timing_seconds[1]
+        if self._last_respawn_ticks is not None:
+            metrics["respawn_ticks"] = float(self._last_respawn_ticks)
         return metrics
 
     def evaluate_step(self, update_idx: int, lr: float):
         timing = self._objective_timing_for_update(update_idx)
+        respawn_ticks = self._respawn_ticks_for_update(update_idx)
         eval_stats = evaluate_mappo(
             self.trainer.model,
             self.context.env_fn,
             episodes=self.context.eval_episodes,
             seed=self.context.seed_base + 100_000 + update_idx,
             objective_timing_seconds=timing,
+            respawn_ticks=respawn_ticks,
         )
         self._last_canonical_eval_stats = None
         if (
-            self.context.objective_timing_enabled
+            (self.context.objective_timing_enabled or self.context.respawn_curriculum_enabled)
             and self.context.objective_eval_canonical_every > 0
             and update_idx % self.context.objective_eval_canonical_every == 0
         ):
@@ -120,6 +140,11 @@ class MappoTrainingHooks:
                 episodes=self.context.eval_episodes,
                 seed=self.context.seed_base + 200_000 + update_idx,
                 objective_timing_seconds=(15.0, 8.0),
+                respawn_ticks=(
+                    self.context.respawn_final_ticks
+                    if self.context.respawn_curriculum_enabled
+                    else None
+                ),
             )
         return eval_stats
 

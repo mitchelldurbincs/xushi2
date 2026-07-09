@@ -87,6 +87,19 @@ class MappoConfig:
     target_selection_objective_proximity_coef: float = 0.1
     mode_gated_combat: bool = False
     mode_aux_coef: float = 0.3
+    # Warm-start stabilizers (2026-07-09, see
+    # docs/reports/2026-07-09-phase4-3v3-review-recommendations.md).
+    # ``critic_warmup_updates``: for the first N updates only the value loss
+    # is optimized (the actor receives no gradient), so a critic that is
+    # random or fit to a different reward scheme cannot wreck a warm-started
+    # policy through garbage advantages.
+    critic_warmup_updates: int = 0
+    # ``anchor_kl_coef``: weight of an analytic KL(pi_current || pi_anchor)
+    # penalty toward a frozen copy of the policy taken at PPO start (after
+    # warm start + any BC/bridge pretrain). Annealed linearly to zero over
+    # ``anchor_kl_anneal_updates`` (<=0 holds it constant). Zero disables.
+    anchor_kl_coef: float = 0.0
+    anchor_kl_anneal_updates: int = 0
     # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
     # else CPU). Resolved to ``torch.device`` once in the trainer.
     device: str = "cpu"
@@ -194,6 +207,48 @@ def compute_majority_on_point_alpha(
         return 0.0
     progress = max(0.0, float(update) / float(anneal_updates))
     return float(initial) * (1.0 - progress)
+
+
+def compute_respawn_ticks(
+    *,
+    update: int,
+    initial_ticks: int,
+    final_ticks: int,
+    anneal_updates: int,
+) -> int:
+    """Linear respawn-time curriculum in ticks.
+
+    Mirrors ``compute_objective_timing_seconds``: ``anneal_updates <= 0``
+    holds the initial value for fixed-easy diagnostic runs. Values are
+    rounded to whole ticks.
+    """
+    initial = int(initial_ticks)
+    final = int(final_ticks)
+    if min(initial, final) <= 0:
+        raise ValueError("respawn ticks must be > 0")
+    if anneal_updates <= 0:
+        return initial
+    if update >= anneal_updates:
+        return final
+    progress = max(0.0, float(update) / float(anneal_updates))
+    return round(initial + progress * (final - initial))
+
+
+def compute_anchor_kl_coef(
+    *,
+    update: int,
+    initial: float,
+    anneal_updates: int,
+) -> float:
+    """Linear anneal of the anchor-KL coefficient from ``initial`` to zero.
+
+    ``anneal_updates <= 0`` holds the coefficient constant. Same semantics as
+    ``compute_majority_on_point_alpha``; kept separate for a legible name at
+    call sites.
+    """
+    return compute_majority_on_point_alpha(
+        update=update, initial=initial, anneal_updates=anneal_updates
+    )
 
 
 def compute_objective_timing_seconds(

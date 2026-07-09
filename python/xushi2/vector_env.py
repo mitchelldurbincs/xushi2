@@ -109,6 +109,11 @@ def _async_worker(
                 if setter is not None:
                     setter(float(unlock_seconds), float(capture_seconds))
                 conn.send(None)
+            elif cmd == "set_respawn_ticks":
+                setter = getattr(env, "set_respawn_ticks", None)
+                if setter is not None:
+                    setter(int(payload))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -289,6 +294,13 @@ class XushiVectorEnv:
             setter = getattr(env, "set_objective_timing_seconds", None)
             if setter is not None:
                 setter(float(unlock_seconds), float(capture_seconds))
+
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        """Push respawn curriculum ticks to envs that support the setter."""
+        for env in self.envs:
+            setter = getattr(env, "set_respawn_ticks", None)
+            if setter is not None:
+                setter(int(respawn_ticks))
 
     def close(self) -> None:
         for env in self.envs:
@@ -494,6 +506,16 @@ class XushiAsyncVectorEnv:
         payload = (float(unlock_seconds), float(capture_seconds))
         for conn in self._conns:
             conn.send(("set_objective_timing_seconds", payload))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        """Push respawn curriculum ticks to every worker that supports it."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        ticks = int(respawn_ticks)
+        for conn in self._conns:
+            conn.send(("set_respawn_ticks", ticks))
         for i in range(self.num_envs):
             self._recv(i)
 

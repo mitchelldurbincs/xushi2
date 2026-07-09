@@ -154,3 +154,22 @@ exists) and climb the opponent ladder toward `basic`.
   conversion path for three weeks).
 - **Classify `respawn_ticks` annealing as curriculum** in the
   GOAL_INSTRUCTIONS non-negotiables, alongside objective timing.
+
+## Implementation status (2026-07-09, same day)
+
+Steps 0 and 1 are implemented and verified on this branch; see the journal
+entry of the same date for details. Headlines:
+
+- **Step 0 CONFIRMED the respawn hypothesis** at canonical 15s/8s timing
+  (50 episodes/cell, `docs/reports/2026-07-09-respawn-ablation.json`):
+  respawn 240t → 0W/50D score 0.00/0.00; 720t → 0W/50L score 2.20/7.03
+  (first canonical-timing score from this checkpoint); 2400t →
+  **50/50 wins, score 2.70/0.00**.
+- Found and fixed a bug that changes the interpretation of the June 10 runs:
+  the multi-enemy wrapper silently dropped ALL runtime setters (timing
+  anneal, team_spirit, eval alpha/timing overrides) — `conversion_v1` never
+  actually annealed timing.
+- New trainer features: `env.respawn_curriculum` anneal,
+  `ppo.critic_warmup_updates`, `ppo.anchor_kl_coef` (+ anneal), all additive
+  and off by default. The combined run is
+  `experiments/configs/phase4/probe/phase4_mappo_conversion_v2_respawn.yaml`.
