@@ -171,6 +171,9 @@ class MappoTrainer:
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
         self.vec_env.set_respawn_ticks(int(respawn_ticks))
 
+    def set_opponent_bots(self, opponent_bots) -> None:
+        self.vec_env.set_opponent_bots([str(bot) for bot in opponent_bots])
+
     def init_anchor_from_current_model(self) -> None:
         """Freeze a copy of the current policy as the anchor-KL reference."""
         anchor = copy.deepcopy(self.model)

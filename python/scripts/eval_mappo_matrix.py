@@ -24,6 +24,8 @@ from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
 from train.mappo_evaluate import eval_stats_dict
 from train.mappo_matrix_eval import (
+    CANONICAL_OBJECTIVE_TIMING_SECONDS,
+    CANONICAL_RESPAWN_TICKS,
     CheckpointEnvConfig,
     _native_bot_env_cfg,
     _snapshot_env_cfg,
@@ -127,7 +129,14 @@ def evaluate_matrix(
     episodes: int,
     seed: int,
     learner_team: str = "A",
+    canonical: bool = True,
+    stochastic: bool = False,
 ) -> list[dict[str, Any]]:
+    # Checkpoints embed the curriculum's initial (eased) sim settings, so
+    # `canonical` (the default) overrides timing/respawn to the Phase 4 gate
+    # values; pass canonical=False to evaluate at as-trained settings.
+    timing = CANONICAL_OBJECTIVE_TIMING_SECONDS if canonical else None
+    respawn = CANONICAL_RESPAWN_TICKS if canonical else None
     rows: list[dict[str, Any]] = []
     for learner_idx, checkpoint in enumerate(checkpoints):
         model, ckpt_config = _load_checkpoint(checkpoint)
@@ -140,6 +149,9 @@ def evaluate_matrix(
                 env_fn,
                 episodes=int(episodes),
                 seed=int(seed) + 10_000 * learner_idx + 100 * bot_idx,
+                objective_timing_seconds=timing,
+                respawn_ticks=respawn,
+                stochastic=stochastic,
             )
             rows.append(
                 _result_row(
@@ -162,6 +174,9 @@ def evaluate_matrix(
                 env_fn,
                 episodes=int(episodes),
                 seed=int(seed) + 10_000 * learner_idx + 1_000 + 100 * opp_idx,
+                objective_timing_seconds=timing,
+                respawn_ticks=respawn,
+                stochastic=stochastic,
             )
             rows.append(
                 _result_row(
@@ -184,6 +199,18 @@ def main() -> int:
     parser.add_argument("--seed", type=lambda s: int(s, 0), default=0xE0A17)
     parser.add_argument("--learner-team", choices=["A", "B"], default="A")
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--as-trained",
+        action="store_true",
+        help="evaluate at the checkpoint's embedded (possibly eased curriculum) "
+        "sim settings instead of the canonical Phase 4 gate settings",
+    )
+    parser.add_argument(
+        "--stochastic",
+        action="store_true",
+        help="sample actions from the policy (seeded) instead of greedy; "
+        "greedy on the fixed map yields one identical trajectory per cell",
+    )
     args = parser.parse_args()
 
     rows = evaluate_matrix(
@@ -193,6 +220,8 @@ def main() -> int:
         episodes=int(args.episodes),
         seed=int(args.seed),
         learner_team=str(args.learner_team),
+        canonical=not bool(args.as_trained),
+        stochastic=bool(args.stochastic),
     )
     if not rows:
         raise ValueError("no matchups requested; pass --anchor-bot or --opponent-checkpoint")

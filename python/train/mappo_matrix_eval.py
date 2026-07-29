@@ -18,6 +18,17 @@ _CURRENT_SELFPLAY_SEED_OFFSET = 720_000
 _ANCHOR_BOT_SEED_OFFSET = 700_000
 _SNAPSHOT_SEED_OFFSET = 710_000
 _MATCHUP_SEED_STRIDE = 100
+
+# Canonical Phase 4 gate settings. Checkpoints from curriculum runs embed the
+# curriculum's *initial* (eased) sim values in their env config, so an env
+# rebuilt from checkpoint config silently evaluates on easy mode — the
+# 2026-07-11 conversion_v2_respawn transfer summary was measured at unlock 5s /
+# capture 2s / respawn 2400t without saying so. Matrix eval therefore forces
+# these overrides by default (matrix_eval.canonical: false restores
+# as-trained settings). Values mirror the in-training canonical eval in
+# mappo_training_hooks.py.
+CANONICAL_OBJECTIVE_TIMING_SECONDS: tuple[float, float] = (15.0, 8.0)
+CANONICAL_RESPAWN_TICKS: int = 240
 _SELFPLAY_FIELDS = (
     "self_play",
     "match_type",
@@ -41,6 +52,8 @@ class MatrixEvalConfig:
     output: str = "matrix_eval.json"
     gate: dict = field(default_factory=dict)
     gate_output: str = "matrix_gate.json"
+    canonical: bool = True
+    stochastic: bool = False
 
     @classmethod
     def from_dict(cls, payload: dict) -> MatrixEvalConfig:
@@ -54,6 +67,8 @@ class MatrixEvalConfig:
             output=str(payload.get("output", "matrix_eval.json")),
             gate=dict(payload.get("gate", {})),
             gate_output=str(payload.get("gate_output", "matrix_gate.json")),
+            canonical=bool(payload.get("canonical", True)),
+            stochastic=bool(payload.get("stochastic", False)),
         )
 
 
@@ -227,12 +242,19 @@ def _evaluate_matrix_row(
     learner: str,
     opponent: str,
     opponent_type: str,
+    canonical: bool = True,
+    stochastic: bool = False,
 ) -> dict:
     stats = evaluate_mappo(
         model,
         env_fn,
         episodes=episodes,
         seed=seed,
+        objective_timing_seconds=(
+            CANONICAL_OBJECTIVE_TIMING_SECONDS if canonical else None
+        ),
+        respawn_ticks=(CANONICAL_RESPAWN_TICKS if canonical else None),
+        stochastic=stochastic,
     )
     return mappo_matrix_row(
         learner=learner,
@@ -283,6 +305,8 @@ def run_mappo_matrix_eval(
                 learner="ckpt_final.pt",
                 opponent="current",
                 opponent_type="selfplay",
+                canonical=matrix_cfg.canonical,
+                stochastic=matrix_cfg.stochastic,
             )
         )
 
@@ -296,6 +320,8 @@ def run_mappo_matrix_eval(
                 learner="ckpt_final.pt",
                 opponent=bot,
                 opponent_type="bot",
+                canonical=matrix_cfg.canonical,
+                stochastic=matrix_cfg.stochastic,
             )
         )
 
@@ -313,6 +339,8 @@ def run_mappo_matrix_eval(
                 learner="ckpt_final.pt",
                 opponent=Path(opponent_checkpoint).name,
                 opponent_type="snapshot",
+                canonical=matrix_cfg.canonical,
+                stochastic=matrix_cfg.stochastic,
             )
         )
 

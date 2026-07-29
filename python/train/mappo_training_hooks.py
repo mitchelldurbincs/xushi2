@@ -15,6 +15,7 @@ from train.mappo_model import (
 )
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
+from train.opponent_mix import opponent_mix_assignment
 
 
 class MappoTrainingHooks:
@@ -43,6 +44,7 @@ class MappoTrainingHooks:
         self._last_objective_timing_seconds: tuple[float, float] | None = None
         self._last_respawn_ticks: int | None = None
         self._last_canonical_eval_stats = None
+        self._opponent_mix_applied = False
 
     def set_learning_rate(self, lr: float) -> None:
         self.trainer.set_learning_rate(lr)
@@ -97,6 +99,15 @@ class MappoTrainingHooks:
         respawn_ticks = self._respawn_ticks_for_update(update_idx)
         if respawn_ticks is not None:
             self.trainer.set_respawn_ticks(respawn_ticks)
+        if self.context.opponent_bot_mix and not self._opponent_mix_applied:
+            # Static per-env assignment; each env picks up its bot at the
+            # next reset (same reset-time contract as the respawn setter).
+            self.trainer.set_opponent_bots(
+                opponent_mix_assignment(
+                    self.context.opponent_bot_mix, cfg.num_envs
+                )
+            )
+            self._opponent_mix_applied = True
         self._last_team_spirit = tau
         self._last_majority_on_point_alpha = alpha
         self._last_uncontested_on_point_alpha = uncontested_alpha

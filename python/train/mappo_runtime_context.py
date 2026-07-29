@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from train.mappo_rollout_trainer import make_mappo_config
+from train.opponent_mix import parse_opponent_bot_mix
 from train.runtime_adapter import resolve_runtime_env_factory
 from xushi2.snapshot_retention import SnapshotRetention
 
@@ -40,6 +41,7 @@ class RuntimeContext:
     respawn_initial_ticks: int
     respawn_final_ticks: int
     respawn_anneal_updates: int
+    opponent_bot_mix: dict[str, float]
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
@@ -122,6 +124,7 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
             "env.respawn_curriculum initial_ticks/final_ticks must be > 0, got "
             f"initial={respawn_initial_ticks} final={respawn_final_ticks}"
         )
+    opponent_bot_mix = parse_opponent_bot_mix(env_cfg.get("opponent_bot_mix"))
     total_updates = int(run_cfg.get("total_updates"))
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
     eval_episodes = int(run_cfg.get("eval_episodes", 10))
@@ -181,4 +184,5 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         respawn_initial_ticks=respawn_initial_ticks,
         respawn_final_ticks=respawn_final_ticks,
         respawn_anneal_updates=respawn_anneal_updates,
+        opponent_bot_mix=opponent_bot_mix,
     )

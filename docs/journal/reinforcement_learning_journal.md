@@ -2882,3 +2882,31 @@ Critic warmup provably froze the actor (bridge == ckpt_0025 behavior
 bit-for-bit); in-training best-eval selection (upd 100, score 8.07 at
 mid-anneal ~1320t respawn) ran at a third difficulty level, incomparable to
 both sweeps, but still picked the canonical-best checkpoint.
+
+### Addendum (same day) — eval contract + opponent mix implemented
+
+Three follow-ups from the post-hoc report, all additive:
+
+1. **Canonical eval is now the matrix default.** `MatrixEvalConfig` gained
+   `canonical: true` (default) and `stochastic: false`; matrix rows and
+   `scripts/eval_mappo_matrix.py` force unlock 15s / capture 8s / respawn 240t
+   through the existing `evaluate_mappo` overrides unless `--as-trained` /
+   `matrix_eval.canonical: false`. Rows now also record `respawn_ticks` and
+   `std_score_a/b`, so an eased eval can no longer pass as canonical silently.
+2. **Stochastic eval** (`evaluate_mappo(stochastic=True)`, seeded torch
+   Generator through `sample_action`). First use immediately paid for itself:
+   at canonical settings, `ckpt_best_eval` under *sampled* actions goes
+   **0W/2L/10D vs weak_basic_v2 with score 0.00** (12 eps) — the canonical
+   50/0/1.30 exists only in the greedy mode of the policy. The conversion
+   behavior is a knife-edge trajectory, not a robust policy property. Gate
+   criteria for the next run should demand stochastic score > 0, not greedy.
+3. **Opponent-mix curriculum** (`env.opponent_bot_mix: {weak_basic_v2: 0.9,
+   noop: 0.1}`): deterministic largest-deficit per-env assignment
+   (`train/opponent_mix.py`), new reset-time `set_opponent_bot` on
+   `Phase4MappoEnv` (delegated by the multi-enemy wrapper, propagated by both
+   vector backends per-env), applied once by the training hooks. Off by
+   default. Targets the noop blindspot: some episodes must contain zero enemy
+   contact for "walk on point and stand" to have a gradient at all.
+
+Tests: 453 passed (12 new in `tests/test_opponent_mix.py`); trainer smoke
+with the mix enabled runs end-to-end.

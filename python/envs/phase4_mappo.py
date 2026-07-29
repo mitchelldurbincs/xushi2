@@ -76,6 +76,7 @@ class Phase4MappoEnv(gym.Env):
 
         self._sim_cfg = dict(sim_cfg)
         self._opponent_bot = opponent_bot
+        self._pending_opponent_bot: str | None = None
         self._learner_team_str = learner_team
         self._learner_team = _cpp.Team.A if learner_team == "A" else _cpp.Team.B
         self._own_slots: tuple[int, int, int] = (0, 1, 2) if learner_team == "A" else (3, 4, 5)
@@ -126,6 +127,10 @@ class Phase4MappoEnv(gym.Env):
 
         if "team_size" in self._sim_cfg:
             raise ValueError("sim_cfg must not carry 'team_size'; the env owns this knob")
+
+        if self._pending_opponent_bot is not None:
+            self._opponent_bot = self._pending_opponent_bot
+            self._pending_opponent_bot = None
 
         cfg = _build_config(self._sim_cfg, seed_override=seed)
         cfg.team_size = 3
@@ -323,6 +328,17 @@ class Phase4MappoEnv(gym.Env):
         mechanics = dict(self._sim_cfg.get("mechanics", {}))
         mechanics["respawn_ticks"] = ticks
         self._sim_cfg["mechanics"] = mechanics
+
+    def set_opponent_bot(self, opponent_bot: str) -> None:
+        """Opponent-mix curriculum knob. The scripted bot is consulted every
+        step, so the new opponent applies from the next reset() onward — the
+        in-flight episode keeps the opponent it started with."""
+        bot = str(opponent_bot)
+        if bot not in VALID_OPPONENT_BOTS:
+            raise ValueError(
+                f"unknown opponent_bot {bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
+            )
+        self._pending_opponent_bot = bot
 
     def close(self) -> None:
         self._sim = None

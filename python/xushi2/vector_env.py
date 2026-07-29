@@ -114,6 +114,11 @@ def _async_worker(
                 if setter is not None:
                     setter(int(payload))
                 conn.send(None)
+            elif cmd == "set_opponent_bot":
+                setter = getattr(env, "set_opponent_bot", None)
+                if setter is not None:
+                    setter(str(payload))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -301,6 +306,19 @@ class XushiVectorEnv:
             setter = getattr(env, "set_respawn_ticks", None)
             if setter is not None:
                 setter(int(respawn_ticks))
+
+    def set_opponent_bots(self, opponent_bots: Sequence[str]) -> None:
+        """Push a per-env opponent assignment (opponent-mix curriculum)."""
+        bots = [str(bot) for bot in opponent_bots]
+        if len(bots) != len(self.envs):
+            raise ValueError(
+                f"opponent_bots must have one entry per env; got {len(bots)} "
+                f"for {len(self.envs)} envs"
+            )
+        for env, bot in zip(self.envs, bots):
+            setter = getattr(env, "set_opponent_bot", None)
+            if setter is not None:
+                setter(bot)
 
     def close(self) -> None:
         for env in self.envs:
@@ -516,6 +534,21 @@ class XushiAsyncVectorEnv:
         ticks = int(respawn_ticks)
         for conn in self._conns:
             conn.send(("set_respawn_ticks", ticks))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_opponent_bots(self, opponent_bots: Sequence[str]) -> None:
+        """Push a per-env opponent assignment (opponent-mix curriculum)."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        bots = [str(bot) for bot in opponent_bots]
+        if len(bots) != self.num_envs:
+            raise ValueError(
+                f"opponent_bots must have one entry per env; got {len(bots)} "
+                f"for {self.num_envs} envs"
+            )
+        for conn, bot in zip(self._conns, bots):
+            conn.send(("set_opponent_bot", bot))
         for i in range(self.num_envs):
             self._recv(i)
 

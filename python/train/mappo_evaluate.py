@@ -136,6 +136,7 @@ def evaluate_mappo(
     backend: str = "sync",
     objective_timing_seconds: tuple[float, float] | None = None,
     respawn_ticks: int | None = None,
+    stochastic: bool = False,
 ) -> MappoEvalStats:
     episodes = int(episodes)
     if episodes <= 0:
@@ -200,6 +201,19 @@ def evaluate_mappo(
         else:
             eval_unlock_seconds = 0.0
             eval_capture_seconds = 0.0
+        if respawn_ticks is not None:
+            eval_respawn_ticks = int(respawn_ticks)
+        elif _infos:
+            eval_respawn_ticks = int(_infos[0].get("respawn_ticks", 0))
+        else:
+            eval_respawn_ticks = 0
+        # Greedy on a fixed map is one deterministic trajectory regardless of
+        # seed; stochastic sampling (seeded here for reproducibility) is what
+        # makes the `episodes` count carry independent evidence.
+        action_generator: torch.Generator | None = None
+        if stochastic:
+            action_generator = torch.Generator(device=device)
+            action_generator.manual_seed(int(seed))
         obs = torch.as_tensor(obs_np, dtype=torch.float32, device=device)
         h = model.init_hidden(num_envs * cfg.n_agents).view(
             num_envs, cfg.n_agents, cfg.gru_hidden
@@ -259,7 +273,12 @@ def evaluate_mappo(
                                 ).sum().item()
                             )
                             p_combat_sum += float(p_combat[valid].sum().item())
-                action, h_next = model.greedy_action(flat_obs, flat_h)
+                if stochastic:
+                    action, _logprob, h_next = model.sample_action(
+                        flat_obs, flat_h, generator=action_generator
+                    )
+                else:
+                    action, h_next = model.greedy_action(flat_obs, flat_h)
                 if cfg.mode_gated_combat:
                     mode_logits = model.mode_logits_from_features(
                         model.actor_head_features(flat_obs, flat_h)[0]
@@ -398,6 +417,9 @@ def evaluate_mappo(
         mean_final_tick=float(np.mean(final_ticks)) if final_ticks else 0.0,
         mean_team_a_score=float(np.mean(team_a_scores)) if team_a_scores else 0.0,
         mean_team_b_score=float(np.mean(team_b_scores)) if team_b_scores else 0.0,
+        std_team_a_score=float(np.std(team_a_scores)) if team_a_scores else 0.0,
+        std_team_b_score=float(np.std(team_b_scores)) if team_b_scores else 0.0,
+        respawn_ticks=eval_respawn_ticks,
         mean_team_a_kills=float(np.mean(team_a_kills)) if team_a_kills else 0.0,
         mean_team_b_kills=float(np.mean(team_b_kills)) if team_b_kills else 0.0,
         team_a_hit_fire=float(combat_a["hit_fire"]),
@@ -583,4 +605,7 @@ def eval_stats_dict(stats: MappoEvalStats) -> dict[str, float | int]:
         ),
         "objective_unlock_seconds": float(stats.objective_unlock_seconds),
         "objective_capture_seconds": float(stats.objective_capture_seconds),
+        "respawn_ticks": int(stats.respawn_ticks),
+        "std_score_a": float(stats.std_team_a_score),
+        "std_score_b": float(stats.std_team_b_score),
     }

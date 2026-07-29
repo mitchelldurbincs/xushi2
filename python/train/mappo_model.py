@@ -166,6 +166,9 @@ class MappoEvalStats:
     contested_majority_damage_per_fire_b: float = 0.0
     objective_unlock_seconds: float = 0.0
     objective_capture_seconds: float = 0.0
+    respawn_ticks: int = 0
+    std_team_a_score: float = 0.0
+    std_team_b_score: float = 0.0
 
 
 def compute_team_spirit(

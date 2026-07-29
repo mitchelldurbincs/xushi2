@@ -100,6 +100,9 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
         self._base.set_respawn_ticks(respawn_ticks)
 
+    def set_opponent_bot(self, opponent_bot: str) -> None:
+        self._base.set_opponent_bot(opponent_bot)
+
     def close(self) -> None:
         self._base.close()
 
