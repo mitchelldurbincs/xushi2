@@ -1,0 +1,192 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: conversion_v3b_timingfreeze
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    One knob at a time. v2 and v3 both annealed objective timing and respawn
+    simultaneously, and both degraded precisely as timing passed ~14s/7.3s
+    (v3 at update 125: first losing annealed eval, opponent score monotone
+    0 -> 2.17 -> 6.00 -> 7.17 across evals 25-125, canonical majority eroding).
+    v2's update-100 checkpoint proves canonical 15s/8s timing is achievable
+    with eased respawn, so timing is not intrinsically the blocker — ramping
+    it WHILE respawn tightens is. This leg freezes timing at 13s/6.67s (the
+    v3 update-50 level, where the annealed margin peaked at +5.7) and spends
+    the entire leg descending respawn 1080 -> 240. A later leg ramps timing
+    to 15s/8s with respawn already canonical and everything else frozen.
+  falsification_criteria: >
+    Falsified if the annealed eval margin (mean_score_a - mean_score_b at
+    training settings) declines monotonically over three consecutive evals
+    despite frozen timing (then respawn descent alone breaks the policy and
+    the stepped-hold respawn design is required); or if canonical_eval
+    mean_score_a is still 0 at every eval after respawn reaches 400t
+    (~update 250); or if hit/fire < 0.015 for two consecutive evals.
+  leading_indicators: >
+    Annealed-eval margin stabilizing or widening while respawn descends is
+    the leg working. canonical_eval/mean_score_a should turn nonzero as
+    training respawn approaches 240t, since from there the only train/eval
+    gap left is timing (13/6.67 vs 15/8). Rollout maj_sec trending up under
+    sampling remains the stochastic-gate precursor.
+  lineage: >
+    Warm-starts runs/phase4_mappo_conversion_v3_slowanneal/mappo/ckpt_0050.pt
+    (v3 leg 1, update 50: annealed eval 50/0, score 7.90 vs 2.17, the margin
+    peak before the timing ramp eroded it). v3 leg 1 (2026-07-29) is the
+    direct predecessor; the timing ramp past ~14s is its suspected failure
+    cause. Anchor KL references the same warm-start checkpoint.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994492
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  opponent_bot_mix:
+    weak_basic_v2: 0.9
+    noop: 0.1
+  # Timing FROZEN for this whole leg: initial == final pins 13s/6.67s (v3's
+  # update-50 difficulty) for all 400 updates. The block stays enabled only
+  # because eval_canonical_every lives here — the canonical eval (every 25
+  # updates) still measures 15s/8s/240t transfer.
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 13.0
+    initial_capture_seconds: 6.67
+    final_unlock_seconds: 13.0
+    final_capture_seconds: 6.67
+    anneal_updates: 1
+    eval_canonical_every: 25
+  respawn_curriculum:
+    enabled: true
+    initial_ticks: 1080
+    final_ticks: 240
+    anneal_updates: 350
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 13.0
+    objective_capture_seconds: 6.67
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994492
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 1080
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 250
+
+run:
+  total_updates: 400
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_conversion_v3b_timingfreeze
+  init_from_checkpoint: runs/phase4_mappo_conversion_v3_slowanneal/mappo/ckpt_0050.pt
+  matrix_eval:
+    episodes: 50
+    stochastic: true
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_conversion_v3b_timingfreeze
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_wins
+      metric: canonical_eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 25
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT

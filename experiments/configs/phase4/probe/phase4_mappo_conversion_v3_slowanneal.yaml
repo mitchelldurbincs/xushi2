@@ -1,0 +1,212 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: conversion_v3_slowanneal
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    The 2026-07-29 post-hoc eval of conversion_v2_respawn (see
+    docs/reports/2026-07-29-conversion-v2-posthoc-eval.md) showed the recipe
+    works but the 200-update respawn anneal was too fast: canonical conversion
+    existed at update 100 (50/0 greedy, score 1.30 vs weak_basic_v2 — first
+    ever) and was gone by update 125; by the anneal tail the policy reverted
+    to kill-chasing (16-21 kills, zero conversion). It also showed the
+    conversion is greedy-only (stochastic eval: 0W/2L/10D, score 0.00) and
+    that no checkpoint ever captures against a passive opponent. This run
+    warm-starts from the update-100 checkpoint at its own training
+    difficulty (respawn ~1200t, timing ~12s/6s), anneals 4.5x slower than v2
+    (respawn 1200->240 over 400 updates), holds the KL anchor longer (300
+    updates, anchored on the warm start itself), and mixes 10% noop
+    opponents so unconditional point-standing has a gradient.
+  falsification_criteria: >
+    Judge on canonical_eval/* (greedy, 240t/15s/8s, every 25 updates) and the
+    post-training stochastic matrix. Falsified if canonical_eval/mean_score_a
+    is 0 for three consecutive canonical evals after update 100 (the slow
+    anneal failed to consolidate what the warm start already had); or if the
+    noop matrix row still shows mean_score_a == 0 at the end (the mix did
+    not install point-standing); or if hit/fire < 0.015 for two consecutive
+    evals (anchor failed, combat unlearned). The run gate is the stochastic
+    matrix: this run counts as progress only if stochastic canonical
+    mean_score_a > 0 vs weak_basic_v2 — greedy-only conversion is the
+    failure mode this run exists to fix.
+  leading_indicators: >
+    canonical_eval/mean_score_a staying > 0 as respawn anneals below ~600t is
+    the run working. Funnel order unchanged: uncontested seconds -> captures
+    -> score. Expect the noop-mix envs to show on-point time within the
+    first ~50 updates (on_point shaping is the only signal there).
+  lineage: >
+    Warm-starts data/checkpoints/phase4_conversion_v2_respawn_upd100_first_canonical_score.pt
+    (= conversion_v2_respawn ckpt_0100/ckpt_best_eval, the first checkpoint
+    with nonzero canonical score; state-dict hash a5fc6e98). Direct successor
+    to phase4_mappo_conversion_v2_respawn (2026-07-11). Anchor KL references
+    the same warm-start checkpoint, not the June bridge.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994491
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  # 10% of envs run vs noop so "walk onto the unlocked point and stand"
+  # exists as a behavior at all — the post-hoc eval showed every v2
+  # checkpoint parks at the enemy spawn and never captures vs a passive
+  # opponent, which anchor-mixed self-play would exploit.
+  opponent_bot_mix:
+    weak_basic_v2: 0.9
+    noop: 0.1
+  objective_timing_curriculum:
+    enabled: true
+    # Start where the warm start trained (update 100 of v2's 150-update
+    # anneal: ~11.7s/6s), finish canonical.
+    initial_unlock_seconds: 12.0
+    initial_capture_seconds: 6.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 150
+    eval_canonical_every: 25
+  # 4.5x slower than v2 (2400->240 over 200): v2's canonical conversion
+  # peaked at update 100 (~respawn 1320t in its training env) and died as
+  # the treadmill returned. Resume near that difficulty and descend slowly.
+  respawn_curriculum:
+    enabled: true
+    initial_ticks: 1200
+    final_ticks: 240
+    anneal_updates: 400
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 12.0
+    objective_capture_seconds: 6.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994491
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      # Base value = curriculum initial so episode 1 already runs at the
+      # warm start's difficulty; the curriculum anneals this to 240.
+      respawn_ticks: 1200
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 0.3
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.3
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  # Short critic warmup: the warm start trained under this exact reward
+  # scheme, so the value head is nearly fit already. The anchor holds
+  # longer than v2 (300 vs 250) because the danger window here is the whole
+  # slow anneal, not just the first 50 updates.
+  critic_warmup_updates: 10
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 300
+
+run:
+  total_updates: 500
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_conversion_v3_slowanneal
+  init_from_checkpoint: data/checkpoints/phase4_conversion_v2_respawn_upd100_first_canonical_score.pt
+  matrix_eval:
+    episodes: 50
+    # Stochastic + canonical (both defaults post-2026-07-29): the transfer
+    # verdict is sampled-policy performance at 240t/15s/8s, not the greedy
+    # knife-edge trajectory that flattered v2.
+    stochastic: true
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_conversion_v3_slowanneal
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_wins
+      metric: canonical_eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 25
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT

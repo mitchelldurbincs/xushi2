@@ -2910,3 +2910,76 @@ Three follow-ups from the post-hoc report, all additive:
 
 Tests: 453 passed (12 new in `tests/test_opponent_mix.py`); trainer smoke
 with the mix enabled runs end-to-end.
+
+## 2026-07-29 — conversion_v3_slowanneal: record canonical peak, the ~550t wall, and the entropy diagnosis
+
+**Status:** run complete (500 updates, ~2h), analyzed same day. Config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v3_slowanneal.yaml`,
+seed 3519994491, W&B `mn0boi3v`, artifacts
+`runs/phase4_mappo_conversion_v3_slowanneal/`. Warm start: v2 ckpt_0100;
+respawn 1200->240 over 400 updates (4.5x slower than v2), timing 12/6 -> 15/8
+by update 150, 10% noop mix, anchor 300, critic warmup 10.
+
+### Canonical greedy curve (in-training canonical_eval + post-hoc sweep agree)
+
+Zero through update 200, then **2.87 / 50-0 at update 225** (project record;
+uncontested 11.4s) and 1.13 at 250 — then zero from 275 to the end while
+kills climbed 13 -> 24. Training respawn at those updates: 660t (225), 600t
+(250), 540t (275). The timing ramp finished at 150 and the collapse happened
+under frozen timing, so v3b's timing hypothesis is dead. The wall is now
+precisely located: **canonical conversion survives while the training env
+respawn is >= ~600t and is destroyed once training drops below ~550t —
+independent of anneal speed.** The 125-dip/175-recovery around the timing
+ramp's end was real but transient; the terminal failure is the respawn
+destination, not the approach. Endgame fingerprint at 500: majority 44.9s,
+kills 20-0, uncontested 0.9s, cap_gain 51 — the kill treadmill, again.
+
+Corollary: update 225 proves 600t training transfers to 240t greedy eval.
+Nobody has ever needed to *train* at 240t to score at 240t.
+
+### Stochastic sweep: the greedy/sampled gap is total
+
+All 20 checkpoints at canonical, 24 sampled episodes each: no checkpoint
+scores (best 0.09; ckpt_0225 itself: 0W/4L/20D, 0.00, out-scored by the
+bot). Sampled uncontested never exceeds 1.7s vs the 8s requirement, at every
+checkpoint, all run. Entropy sat at ~3.10 for 500 updates (fixed
+entropy_coef 0.02, log_std_init -1.0, never annealed).
+
+### Step-0 temperature ablation: noise is the blocker, monotonically
+
+ckpt_0225, canonical, stochastic, 24 eps, policy std scaled at eval:
+
+| std scale | W/L/D | score A/B | uncontested s |
+|---:|---:|---:|---:|
+| 1.0 | 0/1/23 | 0.00/0.13 | 0.9 |
+| 0.5 | 2/1/21 | 0.03/0.07 | 3.8 |
+| 0.25 | 3/0/21 | 0.16/0.00 | 4.4 |
+| 0.1 | 5/0/19 | 0.22/0.00 | 4.6 |
+
+Monotone: wins appear and the bot is shut out as noise drops. The policy's
+mean already converts; its sampling distribution cannot hold still for 8s.
+(Residual gap at 0.1x = binary-action sampling noise + a mean tuned under
+high-noise rollouts.)
+
+### Noop mix: no measurable effect at 10%
+
+vs noop, every v3 checkpoint brushes the point for ~1.9s and never captures —
+and re-measuring v2's checkpoints with fixed funnel stats shows the identical
+~1.5s brush, so the mix changed nothing (the earlier "v2 = 0.00 contact"
+readings were the blind-stats bug). Likely suppressed by the KL anchor
+(pinning the walk-past warm start for 250 updates) and 0.02 on-point shaping
+being noise-level. Verdict: 10% mix + anchor is insufficient; revisit with
+anchor-free noop episodes or a stronger stand-on-point signal.
+
+### Leg 2 design (evidence-driven, one knob)
+
+Warm-start + anchor ckpt_0225. Respawn FIXED at 600t (the proven zone — no
+descent). Timing fixed canonical 15/8. The one new knob: **anneal the
+entropy bonus to ~0** (and let log_std shrink) over the leg, so the sampled
+policy sharpens toward its converting mean. Gate on the stochastic canonical
+matrix (score > 0 vs weak_basic_v2), which is now the honest bar. Requires a
+small additive trainer feature (entropy-coef anneal schedule, off by
+default) — not yet implemented.
+
+Replays: `runs/phase4_mappo_conversion_v3_slowanneal/replays/`
+(ckpt0225 vs ckpt0450 at canonical — the conversion and the treadmill).
