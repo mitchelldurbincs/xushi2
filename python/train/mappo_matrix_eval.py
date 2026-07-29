@@ -10,7 +10,7 @@ from train.checkpoint_runtime import checkpoint_runtime
 from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo_eval_gate_io import read_json_artifact as read_json_artifact
 from train.mappo_eval_gate_io import write_json_artifact
-from train.mappo_evaluate import evaluate_mappo
+from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
 from train.mappo_model import MappoActorCritic, MappoEvalStats
 from xushi2.mappo_matrix_gate import check_matrix_gate
 
@@ -166,22 +166,16 @@ def mappo_matrix_row(
     opponent_type: str,
     stats: MappoEvalStats,
 ) -> dict:
-    episodes = int(stats.episodes)
-    episode_denominator = max(1, episodes)
+    # The post-training transfer summary reads the objective funnel fields
+    # (mean_majority_on_point_seconds_*, mean_uncontested_on_point_seconds_*,
+    # mean_cap_progress_gain_ticks) from these rows via .get with a 0.0
+    # default, so the row must carry the full stats dict — a hand-picked
+    # subset silently zeroes the funnel and the transfer gate goes blind.
     return {
         "learner": learner,
         "opponent": opponent,
         "opponent_type": opponent_type,
-        "episodes": episodes,
-        "win_rate": float(stats.wins) / episode_denominator,
-        "loss_rate": float(stats.losses) / episode_denominator,
-        "draw_rate": float(stats.draws) / episode_denominator,
-        "mean_reward": float(stats.mean_reward),
-        "mean_score_a": float(stats.mean_team_a_score),
-        "mean_score_b": float(stats.mean_team_b_score),
-        "mean_kills_a": float(stats.mean_team_a_kills),
-        "mean_kills_b": float(stats.mean_team_b_kills),
-        "mean_final_tick": float(stats.mean_final_tick),
+        **eval_stats_dict(stats),
     }
 
 

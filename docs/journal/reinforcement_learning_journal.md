@@ -2818,3 +2818,67 @@ is the bug fix, not a new mechanic); additive W&B metrics
 `train/respawn_ticks`, `train/anchor_kl`, `train/anchor_kl_coef`,
 `train/critic_warmup_active` and additive env info key `respawn_ticks`; no
 sim-rule, reward-formula, action, observation, or replay-format changes.
+
+## 2026-07-29 — conversion_v2_respawn post-hoc: first canonical score, two eval bugs, noop blindspot
+
+**Status:** analysis of the 2026-07-11 `conversion_v2_respawn` run (which was
+never journaled). Full report:
+`docs/reports/2026-07-29-conversion-v2-posthoc-eval.md`. Config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v2_respawn.yaml`,
+seed_base 3519994490, artifacts `runs/phase4_mappo_conversion_v2_respawn/`.
+
+### Headline
+
+`ckpt_0100` (= `ckpt_best_eval` by state-dict hash) is the **first checkpoint
+ever to beat `weak_basic_v2` with nonzero objective score at canonical
+settings** (15s/8s/240t): 50/0/0, score 1.30, ~10s uncontested, one full
+capture per round. The June bridge baseline at the same settings: 0-0 draw,
+cap 284 gained / 246 lost, score 0.00. The July 9 respawn-treadmill +
+critic-warmup + KL-anchor recipe is validated — but only checkpoints 100
+(1.30), 275 (0.97) and 350 (0.10) score at canonical; by the anneal tail the
+policy reverts to kill-chasing (16–21 kills, conversion dead). The 200-update
+respawn anneal was too fast to consolidate defend-and-hold.
+
+### Eval bug 1: checkpoints bake eased sim settings; all post-training evals inherited them
+
+`ckpt["config"]["env"]["sim"]` holds curriculum *initial* values (unlock 5s,
+capture 2s, respawn 2400t). Post-training matrix eval, eval_mappo_matrix.py,
+and dump_replay.py rebuild envs from checkpoint config → the run's
+transfer_summary (50/0/0, 3.70 vs weak) was measured with respawns off and 2s
+captures. Same class of failure as the 07-09 setter drop: no explicit
+canonical-eval contract. Decision needed: trainer writes curriculum-final
+values into the checkpoint, or matrix eval applies canonical overrides.
+
+### Eval bug 2 (fixed): matrix rows dropped every funnel stat
+
+`mappo_matrix_row()` emitted a hand-picked subset; the transfer summary read
+majority/uncontested/cap-gain via `.get(..., 0.0)` → all-zero funnel in every
+transfer summary ever written (self-evidently impossible: team B logged 45.07
+score with "0.0s majority"). Fixed: rows now spread the full
+`eval_stats_dict`. `evidence_insufficient` on 07-11 was the blind gate, not
+the policy.
+
+### The noop result is a real behavioral hole, not an eval artifact
+
+At every checkpoint and both difficulty settings, vs `noop` the squad walks
+past the objective, parks at the enemy spawn, fires zero shots, captures
+nothing (behavior probe with flat-obs capture; replays in
+`runs/phase4_mappo_conversion_v2_respawn/replays/`). All point play is cued
+by enemy contact. A contact-refusing opponent zeroes our offense — this will
+bite anchor-mixed self-play. Candidate fix: small curriculum mix vs
+noop/passive bots so unconditional point-standing exists.
+
+### Eval hygiene: greedy + fixed map = n=1
+
+Reset seeds produce bit-identical episodes (fixed spawns, deterministic bots,
+greedy policy). Every 50-episode cell is one sample repeated; all W/L columns
+are 50/0 / 0/50 / 0/0/50, and adjacent-checkpoint gate flips are single
+trajectories bifurcating. Before the next run: stochastic eval or spawn
+randomization, and report spread over distinct episodes.
+
+### Also verified today
+
+Critic warmup provably froze the actor (bridge == ckpt_0025 behavior
+bit-for-bit); in-training best-eval selection (upd 100, score 8.07 at
+mid-anneal ~1320t respawn) ran at a third difficulty level, incomparable to
+both sweeps, but still picked the canonical-best checkpoint.
