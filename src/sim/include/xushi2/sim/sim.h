@@ -108,6 +108,14 @@ struct ObjectiveState {
     std::uint32_t team_a_score_ticks = 0;       // 0..kWinTicks
     std::uint32_t team_b_score_ticks = 0;
     bool unlocked = false;                      // true after the 15s lock window
+    // Both teams have a living hero inside the objective circle. Public HUD
+    // state (observation_spec.md §"Never exposed to actor" explicitly permits
+    // the contested flag), recomputed every tick by objective_tick_update.
+    //
+    // This lives on ObjectiveState rather than being derived inside
+    // actor_obs.cpp so the actor observation builder never has to iterate
+    // hero state — see the structural invariant in observation_spec.md.
+    bool contested = false;
 };
 
 // Phase-1 mechanic values not pinned by docs — must be supplied by the
