@@ -215,6 +215,16 @@ class RewardCalculator:
     def set_team_spirit(self, value: float) -> None:
         if not 0.0 <= value <= 1.0:
             raise ValueError(f"team_spirit must be in [0, 1], got {value}")
+        if value > 0.0 and not self._per_agent:
+            # team_spirit blends per-agent rewards toward the team mean, which
+            # only the per-agent step path computes. Accepting a non-zero value
+            # on the scalar path would silently discard a configured ramp.
+            # Zero is still accepted: the trainer pushes it every update
+            # regardless of whether a ramp is configured.
+            raise ValueError(
+                "team_spirit > 0 requires per_agent_rewards=True; the scalar "
+                "reward path has no per-agent rewards to blend."
+            )
         self._team_spirit = float(value)
 
     def set_majority_on_point_alpha(self, value: float) -> None:

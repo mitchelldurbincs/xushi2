@@ -32,6 +32,15 @@ class Phase4AimOnlyMappoEnv(gym.Env):
 
     metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
+    # See xushi2.env_capabilities. Aim-only is a stationary shooting drill: no
+    # C++ Sim, no RewardCalculator, no objective, and no deaths to respawn from.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_majority_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_uncontested_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_objective_timing_seconds": "no objective in this mini-game",
+        "set_respawn_ticks": "no respawn in this mini-game",
+    }
+
     n_agents: int = 3
     actor_obs_dim: int = ACTOR_PHASE1_DIM
     critic_obs_dim: int = CRITIC_DIM

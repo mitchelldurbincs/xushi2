@@ -149,6 +149,10 @@ class MappoTrainer:
     def set_cap_duel_distill_anchor(self, anchor: CapDuelDistillAnchor | None) -> None:
         self.cap_duel_distill_anchor = anchor
 
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Curriculum knobs the underlying envs can actually apply."""
+        return self.vec_env.supported_curriculum_setters()
+
     def set_team_spirit(self, value: float) -> None:
         """Push team_spirit value to every wrapped env via the vector wrapper.
 

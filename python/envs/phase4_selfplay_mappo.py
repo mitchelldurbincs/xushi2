@@ -41,6 +41,18 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
     critic_obs_dim: int = CRITIC_DIM
     action_dim: int = 6
 
+    # See xushi2.env_capabilities. This env inherits Phase4MappoEnv's
+    # set_team_spirit, but builds its RewardCalculator without
+    # per_agent_rewards, and team_spirit only shapes the per-agent step path.
+    # The inherited setter would therefore accept a ramp and change nothing, so
+    # declare it unsupported and let a configured ramp fail at startup instead.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_team_spirit": (
+            "reward is computed on the scalar path (per_agent_rewards=False), "
+            "which team_spirit does not shape"
+        ),
+    }
+
     def __init__(
         self,
         sim_cfg: dict,

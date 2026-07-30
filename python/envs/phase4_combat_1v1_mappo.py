@@ -31,6 +31,15 @@ class Phase4Combat1v1MappoEnv(gym.Env):
 
     metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
+    # See xushi2.env_capabilities. Synthetic duel with no C++ Sim, no
+    # RewardCalculator, and no objective at all, so these knobs have no target.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_majority_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_uncontested_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_objective_timing_seconds": "no objective in this mini-game",
+        "set_respawn_ticks": "no C++ Sim; target respawn comes from mini_game_config",
+    }
+
     n_agents: int = 3
     actor_obs_dim: int = ACTOR_PHASE1_DIM
     critic_obs_dim: int = CRITIC_DIM

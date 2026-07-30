@@ -41,6 +41,17 @@ class Phase4CapDuelMappoEnv(gym.Env):
 
     metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
 
+    # See xushi2.env_capabilities. This mini-game is a self-contained NumPy
+    # model: it has no C++ Sim and no RewardCalculator, so the knobs that act
+    # on those have nothing to act on here. Its objective timing and respawn
+    # behavior are set by its own mini_game_config instead.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_majority_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_uncontested_on_point_alpha": "no RewardCalculator; reward is computed in-env",
+        "set_objective_timing_seconds": "no C++ Sim; cap timing comes from mini_game_config",
+        "set_respawn_ticks": "no C++ Sim; respawn timing comes from mini_game_config",
+    }
+
     n_agents: int = 3
     actor_obs_dim: int = ACTOR_PHASE1_DIM
     critic_obs_dim: int = CRITIC_DIM

@@ -49,6 +49,16 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
     critic_obs_dim: int = CRITIC_DIM
     action_dim: int = 6
 
+    # See xushi2.env_capabilities. Every curriculum knob must be implemented or
+    # declared here; silently lacking one drops the curriculum for a whole run.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_team_spirit": (
+            "team_spirit only shapes the per-agent reward path, and this env "
+            "pins per_agent_rewards=False because step() duplicates team-scalar "
+            "rewards across each team's three rows"
+        ),
+    }
+
     def __init__(
         self,
         sim_cfg: dict,
@@ -113,6 +123,57 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
             shape=(_AGENTS_PER_MATCH, 6),
             dtype=np.float32,
         )
+
+    def set_majority_on_point_alpha(self, value: float) -> None:
+        self._reward_calc.set_majority_on_point_alpha(float(value))
+
+    def set_uncontested_on_point_alpha(self, value: float) -> None:
+        self._reward_calc.set_uncontested_on_point_alpha(float(value))
+
+    def set_objective_timing_ticks(self, unlock_ticks: int, capture_ticks: int) -> None:
+        """Objective-timing curriculum knob.
+
+        Mirrors Phase4MappoEnv: the new timing is written into the base sim
+        config so future resets pick it up, and pushed into the live sim so the
+        in-flight episode also honors it.
+        """
+        unlock = int(unlock_ticks)
+        capture = int(capture_ticks)
+        if unlock <= 0 or capture <= 0:
+            raise ValueError(
+                f"objective timing ticks must be >0, got unlock={unlock} capture={capture}"
+            )
+        self._base_sim_cfg.pop("objective_unlock_seconds", None)
+        self._base_sim_cfg.pop("objective_capture_seconds", None)
+        nested = self._base_sim_cfg.get("objective_timing")
+        if isinstance(nested, dict):
+            nested.pop("unlock_seconds", None)
+            nested.pop("capture_seconds", None)
+        self._base_sim_cfg["objective_unlock_ticks"] = unlock
+        self._base_sim_cfg["objective_capture_ticks"] = capture
+        if self._sim is not None:
+            self._sim.set_objective_timing_ticks(unlock, capture)
+
+    def set_objective_timing_seconds(
+        self, unlock_seconds: float, capture_seconds: float
+    ) -> None:
+        self.set_objective_timing_ticks(
+            round(float(unlock_seconds) * float(_cpp.TICK_HZ)),
+            round(float(capture_seconds) * float(_cpp.TICK_HZ)),
+        )
+
+    def set_respawn_ticks(self, respawn_ticks: int) -> None:
+        """Respawn-time curriculum knob.
+
+        As in Phase4MappoEnv there is no live-sim setter (respawn_tick is
+        stamped at death), so the new value applies from the next reset onward.
+        """
+        ticks = int(respawn_ticks)
+        if ticks <= 0:
+            raise ValueError(f"respawn ticks must be >0, got {ticks}")
+        mechanics = dict(self._base_sim_cfg.get("mechanics", {}))
+        mechanics["respawn_ticks"] = ticks
+        self._base_sim_cfg["mechanics"] = mechanics
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)

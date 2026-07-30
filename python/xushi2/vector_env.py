@@ -10,6 +10,12 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 
+from .env_capabilities import (
+    CURRICULUM_SETTERS,
+    resolve_curriculum_setter,
+    supported_curriculum_setters,
+)
+
 
 def _worker_critic_obs(env: gym.Env, critic_obs_dim: int) -> np.ndarray:
     out = np.zeros(critic_obs_dim, dtype=np.float32)
@@ -90,29 +96,14 @@ def _async_worker(
                 )
             elif cmd == "critic_obs":
                 conn.send(_worker_critic_obs(env, critic_obs_dim))
-            elif cmd == "set_team_spirit":
-                env.set_team_spirit(float(payload))
-                conn.send(None)
-            elif cmd == "set_majority_on_point_alpha":
-                setter = getattr(env, "set_majority_on_point_alpha", None)
+            elif cmd == "supported_curriculum_setters":
+                conn.send(supported_curriculum_setters(env))
+            elif cmd in CURRICULUM_SETTERS:
+                # Generic dispatch: payload is always the argument tuple, so
+                # adding a curriculum knob does not mean adding a branch here.
+                setter = resolve_curriculum_setter(env, cmd)
                 if setter is not None:
-                    setter(float(payload))
-                conn.send(None)
-            elif cmd == "set_uncontested_on_point_alpha":
-                setter = getattr(env, "set_uncontested_on_point_alpha", None)
-                if setter is not None:
-                    setter(float(payload))
-                conn.send(None)
-            elif cmd == "set_objective_timing_seconds":
-                unlock_seconds, capture_seconds = payload
-                setter = getattr(env, "set_objective_timing_seconds", None)
-                if setter is not None:
-                    setter(float(unlock_seconds), float(capture_seconds))
-                conn.send(None)
-            elif cmd == "set_respawn_ticks":
-                setter = getattr(env, "set_respawn_ticks", None)
-                if setter is not None:
-                    setter(int(payload))
+                    setter(*payload)
                 conn.send(None)
             elif cmd == "close":
                 conn.send(None)
@@ -189,6 +180,13 @@ class XushiVectorEnv:
             ),
             dtype=first.action_space.dtype,
         )
+        # Validate capability declarations up front: an env that neither
+        # implements nor declares a curriculum setter fails here, at
+        # construction, instead of silently dropping the curriculum later.
+        # Runs after the space checks so their more specific errors win.
+        self._supported_setters = frozenset.intersection(
+            *(supported_curriculum_setters(env) for env in self.envs)
+        )
         self._last_obs: np.ndarray | None = None
 
     def reset(
@@ -264,43 +262,38 @@ class XushiVectorEnv:
         self._last_obs = obs_batch
         return obs_batch, reward_batch, terminated, truncated, self.critic_obs(), infos
 
-    def set_team_spirit(self, value: float) -> None:
-        """Push team_spirit value to every wrapped env. Envs that don't
-        define ``set_team_spirit`` (scalar-reward envs) are skipped."""
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Setter names every wrapped env can apply.
+
+        Intersected across envs so a caller that checks this cannot be told a
+        knob is available when only some envs would honor it.
+        """
+        return self._supported_setters
+
+    def _apply_setter(self, name: str, *args: Any) -> None:
         for env in self.envs:
-            setter = getattr(env, "set_team_spirit", None)
+            setter = resolve_curriculum_setter(env, name)
             if setter is not None:
-                setter(float(value))
+                setter(*args)
+
+    def set_team_spirit(self, value: float) -> None:
+        self._apply_setter("set_team_spirit", float(value))
 
     def set_majority_on_point_alpha(self, value: float) -> None:
-        """Push majority-on-point reward alpha to envs that support it."""
-        for env in self.envs:
-            setter = getattr(env, "set_majority_on_point_alpha", None)
-            if setter is not None:
-                setter(float(value))
+        self._apply_setter("set_majority_on_point_alpha", float(value))
 
     def set_uncontested_on_point_alpha(self, value: float) -> None:
-        """Push uncontested-on-point reward alpha to envs that support it."""
-        for env in self.envs:
-            setter = getattr(env, "set_uncontested_on_point_alpha", None)
-            if setter is not None:
-                setter(float(value))
+        self._apply_setter("set_uncontested_on_point_alpha", float(value))
 
     def set_objective_timing_seconds(
         self, unlock_seconds: float, capture_seconds: float
     ) -> None:
-        """Push objective timing to envs that support timing curricula."""
-        for env in self.envs:
-            setter = getattr(env, "set_objective_timing_seconds", None)
-            if setter is not None:
-                setter(float(unlock_seconds), float(capture_seconds))
+        self._apply_setter(
+            "set_objective_timing_seconds", float(unlock_seconds), float(capture_seconds)
+        )
 
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
-        """Push respawn curriculum ticks to envs that support the setter."""
-        for env in self.envs:
-            setter = getattr(env, "set_respawn_ticks", None)
-            if setter is not None:
-                setter(int(respawn_ticks))
+        self._apply_setter("set_respawn_ticks", int(respawn_ticks))
 
     def close(self) -> None:
         for env in self.envs:
@@ -385,6 +378,15 @@ class XushiAsyncVectorEnv:
             self._conns.append(parent_conn)
             self._procs.append(proc)
         self._last_critic_obs = np.zeros((self.num_envs, self.critic_obs_dim), dtype=np.float32)
+        # Ask each worker what its env can apply. This also runs the capability
+        # validation inside the worker, so an env that neither implements nor
+        # declares a curriculum setter surfaces here rather than dropping the
+        # curriculum silently for the whole run.
+        for conn in self._conns:
+            conn.send(("supported_curriculum_setters", ()))
+        self._supported_setters = frozenset.intersection(
+            *(frozenset(self._recv(i)) for i in range(self.num_envs))
+        )
 
     def _recv(self, idx: int):
         msg = self._conns[idx].recv()
@@ -467,57 +469,41 @@ class XushiAsyncVectorEnv:
             infos,
         )
 
-    def set_team_spirit(self, value: float) -> None:
-        """Push team_spirit value to every worker. Awaits per-worker ack."""
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Setter names every worker's env can apply.
+
+        Queried once at construction; the workers' envs are built there and do
+        not change identity afterwards.
+        """
+        return self._supported_setters
+
+    def _broadcast_setter(self, name: str, *args: Any) -> None:
+        """Send a curriculum setter to every worker and await each ack."""
         if self._closed:
             raise RuntimeError("vector env is closed")
-        value = float(value)
         for conn in self._conns:
-            conn.send(("set_team_spirit", value))
+            conn.send((name, args))
         for i in range(self.num_envs):
             self._recv(i)
+
+    def set_team_spirit(self, value: float) -> None:
+        self._broadcast_setter("set_team_spirit", float(value))
 
     def set_majority_on_point_alpha(self, value: float) -> None:
-        """Push majority-on-point reward alpha to every worker."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        value = float(value)
-        for conn in self._conns:
-            conn.send(("set_majority_on_point_alpha", value))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_majority_on_point_alpha", float(value))
 
     def set_uncontested_on_point_alpha(self, value: float) -> None:
-        """Push uncontested-on-point reward alpha to every worker."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        value = float(value)
-        for conn in self._conns:
-            conn.send(("set_uncontested_on_point_alpha", value))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_uncontested_on_point_alpha", float(value))
 
     def set_objective_timing_seconds(
         self, unlock_seconds: float, capture_seconds: float
     ) -> None:
-        """Push objective timing to every worker that supports it."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        payload = (float(unlock_seconds), float(capture_seconds))
-        for conn in self._conns:
-            conn.send(("set_objective_timing_seconds", payload))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter(
+            "set_objective_timing_seconds", float(unlock_seconds), float(capture_seconds)
+        )
 
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
-        """Push respawn curriculum ticks to every worker that supports it."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        ticks = int(respawn_ticks)
-        for conn in self._conns:
-            conn.send(("set_respawn_ticks", ticks))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_respawn_ticks", int(respawn_ticks))
 
     def close(self) -> None:
         if self._closed:

@@ -15,6 +15,7 @@ from train.mappo_model import (
 )
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
+from xushi2.env_capabilities import require_curriculum_setters
 
 
 class MappoTrainingHooks:
@@ -43,6 +44,40 @@ class MappoTrainingHooks:
         self._last_objective_timing_seconds: tuple[float, float] | None = None
         self._last_respawn_ticks: int | None = None
         self._last_canonical_eval_stats = None
+
+        self._require_supported_curricula()
+
+    def _require_supported_curricula(self) -> None:
+        """Fail at startup if a configured curriculum cannot reach the envs.
+
+        The trainer pushes curriculum values down to the vector env on every
+        update. Envs declare which knobs they can apply (see
+        xushi2.env_capabilities); values pushed to an env that declared a knob
+        unsupported are dropped by design. That is only safe when the knob is
+        inert -- if the config actually turns a curriculum on and no env can
+        apply it, the run would silently train against a curriculum that never
+        happened, which is exactly what the 2026-06-10 multi-enemy runs did.
+        """
+        context = self.context
+        cfg = context.cfg
+        required: list[str] = []
+        if cfg.team_spirit_initial != 0.0 or cfg.team_spirit_final != 0.0:
+            required.append("set_team_spirit")
+        if context.majority_on_point_initial > 0.0:
+            required.append("set_majority_on_point_alpha")
+        if context.uncontested_on_point_initial > 0.0:
+            required.append("set_uncontested_on_point_alpha")
+        if context.objective_timing_enabled:
+            required.append("set_objective_timing_seconds")
+        if context.respawn_curriculum_enabled:
+            required.append("set_respawn_ticks")
+        if not required:
+            return
+        require_curriculum_setters(
+            self.trainer.supported_curriculum_setters(),
+            required,
+            context="training config",
+        )
 
     def set_learning_rate(self, lr: float) -> None:
         self.trainer.set_learning_rate(lr)
