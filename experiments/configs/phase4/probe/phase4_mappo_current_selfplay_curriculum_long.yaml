@@ -35,7 +35,6 @@ env:
     time_penalty_per_second: 0.05
     death_penalty: 1.0
     kill_bonus: 1.0
-    damage_dealt_coef: 0.01
     distance_shaping_coef: 0.005
     on_point_shaping_coef: 0.0
     majority_on_point_coef: 0.15

@@ -84,6 +84,16 @@ class RewardCalculator:
             raise ValueError(f"team_spirit must be in [0, 1], got {team_spirit}")
         if damage_dealt_coef < 0.0:
             raise ValueError("damage_dealt_coef must be >= 0")
+        if damage_dealt_coef > 0.0 and not per_agent_rewards:
+            # Damage shaping is attributed per slot and is only applied by the
+            # per-agent step path. Silently accepting it on the scalar path
+            # meant several committed self-play configs asked for damage
+            # shaping and got none, with no metric revealing it.
+            raise ValueError(
+                "damage_dealt_coef > 0 requires per_agent_rewards=True; the "
+                "scalar reward path has no per-slot damage attribution. Either "
+                "enable per-agent rewards or remove damage_dealt_coef."
+            )
         if majority_on_point_coef < 0.0:
             raise ValueError("majority_on_point_coef must be >= 0")
         if uncontested_on_point_coef < 0.0:
@@ -321,6 +331,12 @@ class RewardCalculator:
         a_score_seconds, b_score_seconds, a_kills_delta, b_kills_delta = self._extractor.scalar_delta(now, self._prev)
         decision_seconds = self._decision_seconds(sim)
 
+        # Each team's score/kill/death term is computed from ITS OWN counters.
+        # Mirroring Team A's term (raw_b = -raw_a) is only equivalent when
+        # kill_bonus == death_penalty; otherwise Team B ends up being paid
+        # death_penalty per kill and charged kill_bonus per death, i.e. its
+        # opponent's coefficients. That matters most under self-play, where a
+        # single shared policy sees both teams' rewards.
         raw_a = ShapingTerms.score_kill_death_scalar(
             a_score_seconds,
             b_score_seconds,
@@ -330,9 +346,22 @@ class RewardCalculator:
             kill_bonus=self._kill_bonus,
             death_penalty=self._death_penalty,
         )
-        raw_a += self._obs.distance_term(sim, self._distance_shaping_coef)
-        raw_a += self._obs.on_point_term(sim, self._on_point_shaping_coef)
-        raw_b = -raw_a
+        raw_b = ShapingTerms.score_kill_death_scalar(
+            b_score_seconds,
+            a_score_seconds,
+            b_kills_delta,
+            a_kills_delta,
+            score_per_second=self._score_per_second,
+            kill_bonus=self._kill_bonus,
+            death_penalty=self._death_penalty,
+        )
+
+        # Positional shaping is genuinely zero-sum: both terms are already
+        # computed as an A-minus-B difference, so B takes the negation.
+        zero_sum_a = self._obs.distance_term(sim, self._distance_shaping_coef)
+        zero_sum_a += self._obs.on_point_term(sim, self._on_point_shaping_coef)
+        raw_a += zero_sum_a
+        raw_b -= zero_sum_a
 
         majority_a, majority_b = self._majority_on_point_by_team(
             sim, decision_seconds
