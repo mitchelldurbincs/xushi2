@@ -2983,3 +2983,51 @@ default) — not yet implemented.
 
 Replays: `runs/phase4_mappo_conversion_v3_slowanneal/replays/`
 (ckpt0225 vs ckpt0450 at canonical — the conversion and the treadmill).
+
+## 2026-07-30 — conversion_v4_entropy: the anneal that never bit, and the sampling-starvation diagnosis
+
+**Status:** run complete (400 updates at fixed 600t respawn, warm start v3
+ckpt_0225, entropy bonus scaled 1.0->0.1 over 300). Config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v4_entropy.yaml`,
+W&B `pztpotw7`, artifacts `runs/phase4_mappo_conversion_v4_entropy/`.
+(Operational: the Mac slept overnight — caffeinate does not survive a closed
+lid on battery; plug in / lid open for unattended runs.)
+
+### Result: null on the stochastic gate, and the intervention never happened
+
+Stochastic canonical matrix (ckpt_final = best_eval = upd 175): 0W/9L/41D
+vs weak_basic_v2, score 0.00/1.04. Canonical greedy: the warm start's 2.87
+was **gone by update 25** (with the anchor at full strength) and stayed ~0
+apart from flickers (375: 0.63/50-0). At *training* difficulty (600t) the
+policy stayed strong throughout (best 2.93/50-0 at 175) — so 600->240
+transfer is itself fragile and erodes under any continued training; v3's
+ckpt_0225 transfer was a property of the anneal trajectory, not of 600t
+training per se.
+
+**Root cause the run exposed: `log_std` never moved.** std = 0.451 at every
+checkpoint, bit-identical to the warm start. Scaling the entropy *bonus*
+only removes upward pressure on entropy; PPO's surrogate provides almost no
+gradient to a global log_std parameter, so the policy never sharpened. The
+sharpening experiment the temperature ablation motivated was never
+physically run. entropy_anneal_updates as implemented is a no-op knob for
+its intended purpose (kept for bonus-shaping uses; do not expect it to
+reduce std).
+
+### Reward equilibrium is fine; sampling is starved
+
+From the run's own canonical evals: the converting eval (upd 375) accrued
+mean_reward +12.39 vs +2.2/+2.9 for adjacent treadmill evals — conversion
+out-pays the treadmill ~5x *when it happens*. The problem is that under
+std 0.451 an 8s uncontested hold is essentially never sampled, so captures
+never appear in rollouts, so there is no gradient toward them: the
+converting mode is invisible to PPO, not unrewarded. (Consistent with the
+07-29 temperature ablation: eval-time std 0.1x -> sampled wins appear.)
+
+### Next (v5): anneal log_std directly
+
+Implement a scheduled offset applied to `log_std` inside `policy_outputs`
+(affects sampling, logprob, and entropy coherently), annealed 0 ->
+~ln(0.25) over the run, additive and off by default. Train at 600t, warm
+start ckpt_0225 again, anchor short. Gate unchanged: stochastic canonical
+score > 0. Secondary question for v5's canonical evals: does 240t transfer
+survive when the sampled policy actually experiences captures.
