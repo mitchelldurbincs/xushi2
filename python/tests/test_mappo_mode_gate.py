@@ -30,7 +30,6 @@ def _config(output_dir: Path, *, mode_gated_combat: bool = True) -> dict:
             },
         },
         "model": {
-            "use_recurrence": True,
             "embed_dim": 16,
             "gru_hidden": 8,
             "head_hidden": 16,
@@ -40,7 +39,6 @@ def _config(output_dir: Path, *, mode_gated_combat: bool = True) -> dict:
             "num_envs": 1,
             "rollout_len": 4,
             "num_epochs": 1,
-            "minibatch_size": 1,
             "learning_rate": 3.0e-4,
             "value_normalization": True,
             "vector_env": "sync",
@@ -126,7 +124,6 @@ env:
     seed: 0
     action_repeat: 3
 model:
-  use_recurrence: true
   embed_dim: 16
   gru_hidden: 8
   head_hidden: 16
@@ -135,7 +132,6 @@ ppo:
   num_envs: 1
   rollout_len: 4
   num_epochs: 1
-  minibatch_size: 1
   learning_rate: 3.0e-4
   value_normalization: true
   vector_env: sync

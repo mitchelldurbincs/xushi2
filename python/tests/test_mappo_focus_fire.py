@@ -36,7 +36,6 @@ def _cfg(output_dir: Path) -> dict:
             },
         },
         "model": {
-            "use_recurrence": True,
             "embed_dim": 16,
             "gru_hidden": 8,
             "head_hidden": 16,
@@ -46,7 +45,6 @@ def _cfg(output_dir: Path) -> dict:
             "num_envs": 1,
             "rollout_len": 4,
             "num_epochs": 1,
-            "minibatch_size": 1,
             "learning_rate": 3.0e-4,
             "value_normalization": True,
             "vector_env": "sync",

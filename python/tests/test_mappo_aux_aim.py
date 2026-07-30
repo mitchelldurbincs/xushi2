@@ -35,7 +35,6 @@ def _phase4_smoke_cfg(
         "num_envs": 2,
         "rollout_len": 8,
         "num_epochs": 1,
-        "minibatch_size": 1,
         "learning_rate": 3.0e-4,
         "value_normalization": True,
         "vector_env": "sync",
@@ -84,7 +83,6 @@ def _phase4_smoke_cfg(
             },
         },
         "model": {
-            "use_recurrence": True,
             "embed_dim": 16,
             "gru_hidden": 8,
             "head_hidden": 16,

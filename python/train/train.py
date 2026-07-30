@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from train.config_schema import validate_config_keys
+
 if TYPE_CHECKING:
     from xushi2.runner import EpisodeResult
 
@@ -31,6 +33,9 @@ class NormalizedEntryConfig:
 def load_config(path: Path) -> dict:
     with path.open("r", encoding="utf-8") as fh:
         config = yaml.safe_load(fh)
+    # Reject keys nothing reads before anything acts on the config, so a typo
+    # is a startup error rather than a silently-defaulted run.
+    validate_config_keys(config if isinstance(config, dict) else {})
     if isinstance(config, dict):
         run_cfg = config.setdefault("run", {})
         if isinstance(run_cfg, dict):

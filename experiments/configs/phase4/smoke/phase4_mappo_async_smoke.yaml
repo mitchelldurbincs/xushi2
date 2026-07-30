@@ -23,7 +23,6 @@ env:
       revolver_hitbox_radius: 0.75
       respawn_ticks: 240
 model:
-  use_recurrence: true
   embed_dim: 16
   gru_hidden: 8
   head_hidden: 16
@@ -32,7 +31,6 @@ ppo:
   num_envs: 2
   rollout_len: 8
   num_epochs: 1
-  minibatch_size: 1
   learning_rate: 0.0003
   value_normalization: true
   vector_env: async

@@ -782,7 +782,6 @@ def make_mappo_config(config: dict) -> MappoConfig:
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
         num_epochs=int(ppo_cfg["num_epochs"]),
-        minibatch_size=int(ppo_cfg["minibatch_size"]),
         lr_schedule=str(ppo_cfg.get("lr_schedule", "constant")),
         lr_final_ratio=float(ppo_cfg.get("lr_final_ratio", 1.0)),
         warmup_updates=int(ppo_cfg.get("warmup_updates", 0)),

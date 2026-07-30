@@ -37,7 +37,6 @@ def _cfg(
         max_grad_norm=0.5,
         learning_rate=1.0e-4,
         num_epochs=1,
-        minibatch_size=1,
         agent_loss_mask=agent_loss_mask,
         value_per_agent=value_per_agent,
     )

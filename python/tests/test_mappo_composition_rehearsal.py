@@ -80,7 +80,6 @@ def _cfg_dict() -> dict:
             },
         },
         "model": {
-            "use_recurrence": True,
             "embed_dim": 8,
             "gru_hidden": 8,
             "head_hidden": 8,
@@ -90,7 +89,6 @@ def _cfg_dict() -> dict:
             "num_envs": 1,
             "rollout_len": 2,
             "num_epochs": 1,
-            "minibatch_size": 1,
             "learning_rate": 3.0e-4,
             "value_normalization": True,
             "vector_env": "sync",
