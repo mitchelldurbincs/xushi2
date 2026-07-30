@@ -109,6 +109,9 @@ class MappoTrainer:
         self.policy_sampling_generator.manual_seed(self.seed + 20_000)
         self._update_counter = 0
         self._active_update_idx = 0
+        # Multiplicative scale on the entropy bonus, driven per update by the
+        # hooks' entropy-anneal schedule (cfg.entropy_anneal_updates).
+        self._entropy_scale = 1.0
         self.cap_duel_distill_anchor: CapDuelDistillAnchor | None = None
         # Frozen copy of the policy at PPO start, used by the anchor-KL
         # penalty (cfg.anchor_kl_coef). Set via init_anchor_from_current_model
@@ -173,6 +176,12 @@ class MappoTrainer:
 
     def set_opponent_bots(self, opponent_bots) -> None:
         self.vec_env.set_opponent_bots([str(bot) for bot in opponent_bots])
+
+    def set_entropy_scale(self, scale: float) -> None:
+        value = float(scale)
+        if value < 0.0:
+            raise ValueError(f"entropy scale must be >= 0, got {value}")
+        self._entropy_scale = value
 
     def init_anchor_from_current_model(self) -> None:
         """Freeze a copy of the current policy as the anchor-KL reference."""
@@ -390,7 +399,7 @@ class MappoTrainer:
             and cfg.entropy_coef_binary is None
         ):
             bonus = cfg.entropy_coef * _masked_mean(entropy, valid_agent)
-            return bonus, move_mean, aim_mean, binary_mean, other_mean
+            return self._entropy_scale * bonus, move_mean, aim_mean, binary_mean, other_mean
         move_coef = cfg.entropy_coef if cfg.entropy_coef_move is None else cfg.entropy_coef_move
         aim_coef = cfg.entropy_coef if cfg.entropy_coef_aim is None else cfg.entropy_coef_aim
         binary_coef = (
@@ -402,7 +411,7 @@ class MappoTrainer:
             + binary_coef * binary_mean
             + cfg.entropy_coef * other_mean
         )
-        return bonus, move_mean, aim_mean, binary_mean, other_mean
+        return self._entropy_scale * bonus, move_mean, aim_mean, binary_mean, other_mean
 
     def _update_full_rollout(
         self,
@@ -810,6 +819,8 @@ def make_mappo_config(config: dict) -> MappoConfig:
             if ppo_cfg.get("entropy_coef_binary") is None
             else float(ppo_cfg["entropy_coef_binary"])
         ),
+        entropy_anneal_updates=int(ppo_cfg.get("entropy_anneal_updates", 0)),
+        entropy_final_scale=float(ppo_cfg.get("entropy_final_scale", 0.0)),
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
         num_epochs=int(ppo_cfg["num_epochs"]),

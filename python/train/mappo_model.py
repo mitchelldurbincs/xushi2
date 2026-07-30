@@ -52,6 +52,13 @@ class MappoConfig:
     entropy_coef_move: float | None = None
     entropy_coef_aim: float | None = None
     entropy_coef_binary: float | None = None
+    # Entropy-bonus anneal (2026-07-29): multiplicative scale on the whole
+    # entropy bonus, 1.0 -> entropy_final_scale over entropy_anneal_updates.
+    # 0 anneal updates = off (scale pinned at 1.0). Motivated by the v3
+    # temperature ablation: the converting mean is unreachable under the
+    # policy's own sampling noise unless the bonus propping it up decays.
+    entropy_anneal_updates: int = 0
+    entropy_final_scale: float = 0.0
     target_action_dim: int = 0
     value_per_agent: bool = False
     mask_fire_when_no_visible_enemy: bool = False
@@ -189,6 +196,23 @@ def compute_team_spirit(
         return final
     progress = update / ramp_end_update
     return initial + progress * (final - initial)
+
+
+def compute_entropy_scale(
+    *,
+    update: int,
+    anneal_updates: int,
+    final_scale: float,
+) -> float:
+    """Linear anneal of the entropy-bonus scale from 1.0 to ``final_scale``
+    over ``anneal_updates``, then held. ``anneal_updates <= 0`` disables the
+    anneal (scale stays 1.0)."""
+    if anneal_updates <= 0:
+        return 1.0
+    if update >= anneal_updates:
+        return float(final_scale)
+    progress = max(0.0, float(update) / float(anneal_updates))
+    return 1.0 + progress * (float(final_scale) - 1.0)
 
 
 def compute_majority_on_point_alpha(

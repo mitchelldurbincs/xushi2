@@ -7,7 +7,12 @@ from typing import Any
 from train.mappo_checkpoint_outputs import save_mappo_checkpoint
 from train.mappo_eval_gate_io import EvalGateConfig, run_eval_gate
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
+from train.mappo_matrix_eval import (
+    CANONICAL_OBJECTIVE_TIMING_SECONDS,
+    CANONICAL_RESPAWN_TICKS,
+)
 from train.mappo_model import (
+    compute_entropy_scale,
     compute_majority_on_point_alpha,
     compute_objective_timing_seconds,
     compute_respawn_ticks,
@@ -45,6 +50,7 @@ class MappoTrainingHooks:
         self._last_respawn_ticks: int | None = None
         self._last_canonical_eval_stats = None
         self._opponent_mix_applied = False
+        self._last_entropy_scale = 1.0
 
     def set_learning_rate(self, lr: float) -> None:
         self.trainer.set_learning_rate(lr)
@@ -108,6 +114,13 @@ class MappoTrainingHooks:
                 )
             )
             self._opponent_mix_applied = True
+        entropy_scale = compute_entropy_scale(
+            update=update_idx,
+            anneal_updates=cfg.entropy_anneal_updates,
+            final_scale=cfg.entropy_final_scale,
+        )
+        self.trainer.set_entropy_scale(entropy_scale)
+        self._last_entropy_scale = entropy_scale
         self._last_team_spirit = tau
         self._last_majority_on_point_alpha = alpha
         self._last_uncontested_on_point_alpha = uncontested_alpha
@@ -121,6 +134,7 @@ class MappoTrainingHooks:
         metrics["team_spirit"] = self._last_team_spirit
         metrics["majority_on_point_alpha"] = self._last_majority_on_point_alpha
         metrics["uncontested_on_point_alpha"] = self._last_uncontested_on_point_alpha
+        metrics["entropy_scale"] = self._last_entropy_scale
         if self._last_objective_timing_seconds is not None:
             metrics["objective_unlock_seconds"] = self._last_objective_timing_seconds[0]
             metrics["objective_capture_seconds"] = self._last_objective_timing_seconds[1]
@@ -145,17 +159,17 @@ class MappoTrainingHooks:
             and self.context.objective_eval_canonical_every > 0
             and update_idx % self.context.objective_eval_canonical_every == 0
         ):
+            # Canonical means canonical: the same constants the post-training
+            # matrix eval enforces. (Previously respawn fell back to the
+            # curriculum's final ticks, which mislabels runs whose training
+            # respawn never descends to the canonical 240t.)
             self._last_canonical_eval_stats = evaluate_mappo(
                 self.trainer.model,
                 self.context.env_fn,
                 episodes=self.context.eval_episodes,
                 seed=self.context.seed_base + 200_000 + update_idx,
-                objective_timing_seconds=(15.0, 8.0),
-                respawn_ticks=(
-                    self.context.respawn_final_ticks
-                    if self.context.respawn_curriculum_enabled
-                    else None
-                ),
+                objective_timing_seconds=CANONICAL_OBJECTIVE_TIMING_SECONDS,
+                respawn_ticks=CANONICAL_RESPAWN_TICKS,
             )
         return eval_stats
 
