@@ -16,8 +16,8 @@ if TYPE_CHECKING:
 
 from train.device import resolve_device
 from train.mappo_advantage import compute_gae
+from train.mappo_metrics import rollout_metrics
 from train.mappo_model import (
-    _OWN_POSITION_SLICE,
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
@@ -39,8 +39,6 @@ from train.recurrent_common import (
     set_optimizer_learning_rate,
 )
 from train.runtime_specs import resolve_runtime_spec
-from xushi2.multi_enemy_obs import entity_obs_self_position
-from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -250,95 +248,7 @@ class MappoTrainer:
         return metrics
 
     def _rollout_metrics(self, rollout: MappoRollout) -> dict[str, float]:
-        cfg = self.cfg
-        reward = rollout.reward
-        advantages = rollout.advantages
-        returns = rollout.returns
-        action = rollout.action
-        agent_mask = rollout.agent_loss_mask.expand_as(reward)
-        move_mag = torch.linalg.vector_norm(action[:, :, :, 0:2], dim=-1)
-        cont = action[:, :, :, : cfg.continuous_action_dim]
-        binary_start = cfg.continuous_action_dim
-        binary_end = binary_start + cfg.binary_action_dim
-        binary = action[:, :, :, binary_start:binary_end]
-        target = action[:, :, :, binary_end:] if cfg.target_action_dim > 0 else None
-
-        self_on_point_slice = actor_field_slice("self_on_point")
-        if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
-            obs_np = rollout.actor_obs.detach().cpu().numpy()
-            own_pos_np = entity_obs_self_position(obs_np)
-            own_pos = torch.as_tensor(
-                own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device
-            )
-            self_on_point = torch.zeros_like(own_pos[..., :1])
-        else:
-            own_pos = rollout.actor_obs[:, :, :, _OWN_POSITION_SLICE]
-            self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
-        distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
-
-        out = {
-            "active_agent_fraction": float(agent_mask.mean().item()),
-            "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
-            "rollout_reward_std": float(
-                _masked_mean(
-                    (reward - _masked_mean(reward, agent_mask)) ** 2,
-                    agent_mask,
-                )
-                .sqrt()
-                .item()
-            ),
-            "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
-            "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
-            "advantage_mean": float(advantages.mean().item()),
-            "advantage_std": float(advantages.std(unbiased=False).item()),
-            "advantage_min": float(advantages.min().item()),
-            "advantage_max": float(advantages.max().item()),
-            "return_mean": float(returns.mean().item()),
-            "return_std": float(returns.std(unbiased=False).item()),
-            "action_move_mag_mean": float(_masked_mean(move_mag, agent_mask).item()),
-            "action_cont_mean": float(
-                _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont)).item()
-            ),
-            "action_cont_std": float(
-                _masked_mean(
-                    (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
-                    agent_mask.unsqueeze(-1).expand_as(cont),
-                )
-                .sqrt()
-                .item()
-            ),
-            "mean_distance_to_objective": float(
-                _masked_mean(distance_to_objective, agent_mask).item()
-            ),
-            "self_on_point_fraction": float(
-                _masked_mean(
-                    self_on_point, agent_mask.unsqueeze(-1).expand_as(self_on_point)
-                ).item()
-            ),
-        }
-        if binary.numel() > 0:
-            out["action_binary_mean"] = float(
-                _masked_mean(binary, agent_mask.unsqueeze(-1).expand_as(binary)).item()
-            )
-        else:
-            out["action_binary_mean"] = 0.0
-        if target is not None and target.numel() > 0:
-            out["action_target_slot_mean"] = float(
-                _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
-            )
-        if cfg.mask_fire_when_no_visible_enemy:
-            valid = self.model.fire_valid_mask(rollout.actor_obs.reshape(-1, cfg.obs_dim))
-            if valid is not None:
-                out["fire_valid_fraction"] = float(
-                    _masked_mean(valid.to(agent_mask.dtype), agent_mask.reshape(-1)).item()
-                )
-        samples = float(rollout.info_metrics.get("info_metric_samples", 0.0))
-        if samples > 0.0:
-            for key, value in rollout.info_metrics.items():
-                if key == "info_metric_samples":
-                    continue
-                out[f"rollout_{key}_mean"] = float(value) / samples
-        return out
+        return rollout_metrics(self.cfg, rollout, model=self.model)
 
     def _action_logprob_and_entropy(
         self,
