@@ -1,0 +1,202 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: conversion_v5_logstd
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    v4's null result (journal 2026-07-30): scaling the entropy bonus never
+    moved log_std (std 0.451 at every checkpoint) — PPO gives the global
+    log_std parameter no usable gradient, so the sampled policy never
+    sharpened and captures were never sampled. Meanwhile v4's own evals
+    showed converting behavior out-pays the treadmill ~5x when it occurs.
+    v5 pins log_std directly: warm-start base + linear offset annealed to
+    ln(0.25) over 300 updates, so the 8s uncontested hold enters the
+    sampled distribution and PPO can finally reinforce captures. Same 600t
+    fixed respawn, same warm start (v3 ckpt_0225), anchor shortened to 100
+    so the KL penalty is gone before std drops far (a narrowing policy
+    raises KL to the wide anchor and would otherwise distort the mean).
+    Success bar unchanged: post-training STOCHASTIC canonical matrix
+    score > 0 vs weak_basic_v2.
+  falsification_criteria: >
+    Falsified if policy_std_mean (logged per update) does not track the
+    schedule (the overwrite failed); or if rollout captures never appear by
+    update 300 despite std reaching ~0.11 (sampling was not the binding
+    constraint after all — binary-action noise or the mean itself is); or
+    if canonical_eval/mean_score_a is 0 for three consecutive evals after
+    update 200 while eval hit_fire also decays (sharpening is destroying
+    combat rather than crystallizing conversion); or on optimizer
+    instability as std shrinks (logprob magnitudes grow — watch grad norms).
+  leading_indicators: >
+    policy_std_mean falling 0.45 -> ~0.11 on schedule; rollout reward-std
+    spikes (sampled captures) appearing and becoming regular; rollout
+    maj_sec rising; canonical_eval score turning nonzero and SUSTAINING
+    (every previous run managed only transient flickers). The gate is the
+    stochastic matrix at the end.
+  lineage: >
+    Warm-starts data/checkpoints/phase4_conversion_v3_upd225_canonical_peak.pt
+    (same as v4). Direct successor to conversion_v4_entropy (2026-07-30),
+    whose null result (log_std static) motivated the direct anneal. Anchor
+    KL on the same warm start, annealed by 100.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994494
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  self_play:
+    enabled: false
+  # Degenerate (constant) timing curriculum: 15s/8s throughout. The block
+  # exists because eval_canonical_every is parsed from it; the canonical
+  # eval itself now always runs at the canonical constants (240t/15s/8s).
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 15.0
+    initial_capture_seconds: 8.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 1
+    eval_canonical_every: 25
+  # No respawn curriculum: training respawn is FIXED at 600t, the proven
+  # conversion zone. The canonical eval measures 240t transfer every 25
+  # updates; descending training itself to 240t is what killed v2 and v3.
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 15.0
+    objective_capture_seconds: 8.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994494
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 600
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  # Anchor anneals fast (150) so it does not hold entropy up against the
+  # sharpening — its job here is only to protect combat through warmup.
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 100
+  # The one new knob (2026-07-29): entropy bonus 1.0x -> 0.1x over 300
+  # updates, then held. 0.1 floor rather than 0.0 for unattended stability.
+  entropy_anneal_updates: 300
+  entropy_final_scale: 0.1
+  # v5 (2026-07-30): the knob that actually sharpens — log_std pinned to
+  # warm-start base + linear offset, 0 -> ln(0.25) over 300 updates. This
+  # does in training what the temperature ablation did at eval, so 8s holds
+  # get sampled and captures finally appear in rollouts.
+  log_std_anneal_updates: 300
+  log_std_final_offset: -1.386
+
+run:
+  total_updates: 400
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_mappo_conversion_v5_logstd
+  init_from_checkpoint: data/checkpoints/phase4_conversion_v3_upd225_canonical_peak.pt
+  matrix_eval:
+    episodes: 50
+    stochastic: true
+    anchor_bots:
+      - noop
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_conversion_v5_logstd
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_wins
+      metric: canonical_eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 25
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT

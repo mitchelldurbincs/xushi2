@@ -13,6 +13,7 @@ from train.mappo_matrix_eval import (
 )
 from train.mappo_model import (
     compute_entropy_scale,
+    compute_log_std_offset,
     compute_majority_on_point_alpha,
     compute_objective_timing_seconds,
     compute_respawn_ticks,
@@ -51,6 +52,7 @@ class MappoTrainingHooks:
         self._last_canonical_eval_stats = None
         self._opponent_mix_applied = False
         self._last_entropy_scale = 1.0
+        self._last_log_std_offset = 0.0
 
     def set_learning_rate(self, lr: float) -> None:
         self.trainer.set_learning_rate(lr)
@@ -121,6 +123,14 @@ class MappoTrainingHooks:
         )
         self.trainer.set_entropy_scale(entropy_scale)
         self._last_entropy_scale = entropy_scale
+        if cfg.log_std_anneal_updates > 0:
+            log_std_offset = compute_log_std_offset(
+                update=update_idx,
+                anneal_updates=cfg.log_std_anneal_updates,
+                final_offset=cfg.log_std_final_offset,
+            )
+            self.trainer.set_log_std_offset(log_std_offset)
+            self._last_log_std_offset = log_std_offset
         self._last_team_spirit = tau
         self._last_majority_on_point_alpha = alpha
         self._last_uncontested_on_point_alpha = uncontested_alpha
@@ -135,6 +145,10 @@ class MappoTrainingHooks:
         metrics["majority_on_point_alpha"] = self._last_majority_on_point_alpha
         metrics["uncontested_on_point_alpha"] = self._last_uncontested_on_point_alpha
         metrics["entropy_scale"] = self._last_entropy_scale
+        metrics["log_std_offset"] = self._last_log_std_offset
+        metrics["policy_std_mean"] = float(
+            self.trainer.model.log_std.detach().exp().mean().item()
+        )
         if self._last_objective_timing_seconds is not None:
             metrics["objective_unlock_seconds"] = self._last_objective_timing_seconds[0]
             metrics["objective_capture_seconds"] = self._last_objective_timing_seconds[1]

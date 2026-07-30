@@ -112,6 +112,9 @@ class MappoTrainer:
         # Multiplicative scale on the entropy bonus, driven per update by the
         # hooks' entropy-anneal schedule (cfg.entropy_anneal_updates).
         self._entropy_scale = 1.0
+        # Warm-start log_std snapshot for the log_std anneal; captured on the
+        # first set_log_std_offset call (after warm start has loaded).
+        self._base_log_std: torch.Tensor | None = None
         self.cap_duel_distill_anchor: CapDuelDistillAnchor | None = None
         # Frozen copy of the policy at PPO start, used by the anchor-KL
         # penalty (cfg.anchor_kl_coef). Set via init_anchor_from_current_model
@@ -182,6 +185,19 @@ class MappoTrainer:
         if value < 0.0:
             raise ValueError(f"entropy scale must be >= 0, got {value}")
         self._entropy_scale = value
+
+    def set_log_std_offset(self, offset: float) -> None:
+        """Pin log_std to warm-start base + offset (log_std anneal).
+
+        The base is captured on first call — i.e. after any warm start has
+        loaded — and the parameter is overwritten each update thereafter, so
+        the schedule owns std while the anneal is active (v4 showed PPO's
+        own gradient leaves the global log_std effectively static anyway).
+        Checkpoints carry the annealed value."""
+        if self._base_log_std is None:
+            self._base_log_std = self.model.log_std.detach().clone()
+        with torch.no_grad():
+            self.model.log_std.copy_(self._base_log_std + float(offset))
 
     def init_anchor_from_current_model(self) -> None:
         """Freeze a copy of the current policy as the anchor-KL reference."""
@@ -821,6 +837,8 @@ def make_mappo_config(config: dict) -> MappoConfig:
         ),
         entropy_anneal_updates=int(ppo_cfg.get("entropy_anneal_updates", 0)),
         entropy_final_scale=float(ppo_cfg.get("entropy_final_scale", 0.0)),
+        log_std_anneal_updates=int(ppo_cfg.get("log_std_anneal_updates", 0)),
+        log_std_final_offset=float(ppo_cfg.get("log_std_final_offset", 0.0)),
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
         num_epochs=int(ppo_cfg["num_epochs"]),

@@ -57,8 +57,19 @@ class MappoConfig:
     # 0 anneal updates = off (scale pinned at 1.0). Motivated by the v3
     # temperature ablation: the converting mean is unreachable under the
     # policy's own sampling noise unless the bonus propping it up decays.
+    # NOTE (v4 post-mortem, 2026-07-30): this alone does NOT shrink std —
+    # PPO gives the global log_std parameter almost no gradient. Use the
+    # log_std anneal below for actual sharpening.
     entropy_anneal_updates: int = 0
     entropy_final_scale: float = 0.0
+    # Direct log_std anneal (2026-07-30): the trainer overwrites the global
+    # log_std parameter each update with warm-start base + a linear offset
+    # 0 -> log_std_final_offset over log_std_anneal_updates, then holds.
+    # Sampling, logprobs, and entropy all shift coherently, and checkpoints
+    # carry the annealed value. 0 anneal updates = off. ln(0.25) = -1.386
+    # quarters the continuous-action std by the end of the anneal.
+    log_std_anneal_updates: int = 0
+    log_std_final_offset: float = 0.0
     target_action_dim: int = 0
     value_per_agent: bool = False
     mask_fire_when_no_visible_enemy: bool = False
@@ -213,6 +224,22 @@ def compute_entropy_scale(
         return float(final_scale)
     progress = max(0.0, float(update) / float(anneal_updates))
     return 1.0 + progress * (float(final_scale) - 1.0)
+
+
+def compute_log_std_offset(
+    *,
+    update: int,
+    anneal_updates: int,
+    final_offset: float,
+) -> float:
+    """Linear anneal of the log_std offset from 0.0 to ``final_offset`` over
+    ``anneal_updates``, then held. ``anneal_updates <= 0`` disables (0.0)."""
+    if anneal_updates <= 0:
+        return 0.0
+    if update >= anneal_updates:
+        return float(final_offset)
+    progress = max(0.0, float(update) / float(anneal_updates))
+    return progress * float(final_offset)
 
 
 def compute_majority_on_point_alpha(
