@@ -210,8 +210,13 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
         reward_metrics.update(self._reward_calc.uncontested_on_point_metrics())
         reward = np.asarray([r_a, r_a, r_a, r_b, r_b, r_b], dtype=np.float32)
 
-        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
-        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
+        # terminated == the MDP genuinely ended (a team reached the score
+        # threshold); truncated == the round timer cut it off. Deriving
+        # these from `winner` labelled a timeout-with-a-winner as
+        # terminated and a draw as truncated, which inverts the common
+        # case: reaching the score threshold is rare, timing out is not.
+        terminated = bool(self._sim.score_threshold_reached)
+        truncated = bool(self._sim.episode_over) and not terminated
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
             reward += np.asarray([ta, ta, ta, tb, tb, tb], dtype=np.float32)

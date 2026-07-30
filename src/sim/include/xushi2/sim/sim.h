@@ -198,6 +198,17 @@ class Sim {
     const MatchConfig& config() const noexcept { return config_; }
     bool episode_over() const noexcept;
 
+    // Why the episode ended. `episode_over()` is true for two structurally
+    // different reasons and callers need to tell them apart: reaching the
+    // score threshold is a true terminal state, while the round timer expiring
+    // is a time limit cutting off an MDP that would otherwise continue.
+    //
+    // Gymnasium's terminated/truncated split means exactly this distinction,
+    // and RL value bootstrapping depends on it: a time limit must bootstrap
+    // from V(s_T), a real terminal must not.
+    bool score_threshold_reached() const noexcept;
+    bool round_timer_expired() const noexcept;
+
     // Config-gated training curriculum hook. Updates only future objective
     // ticks; it does not reset score or ownership.
     void set_objective_timing_ticks(std::uint32_t unlock_ticks,

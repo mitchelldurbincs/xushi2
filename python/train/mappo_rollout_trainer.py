@@ -65,8 +65,14 @@ class MappoRollout:
         self.logprob = torch.zeros(N, A, L, device=dev)
         self.reward = torch.zeros(N, A, L, device=dev)
         self.done = torch.zeros(N, L, device=dev)
+        # Episode boundaries that are true MDP terminals, tracked apart from
+        # `done` so GAE can bootstrap time-limit truncations correctly.
+        self.terminated = torch.zeros(N, L, device=dev)
+        # V(s_T) for the pre-reset state, filled only on truncated steps.
+        self.truncated_value = torch.zeros_like(self.value)
         self.h_init = torch.zeros(N, A, L, cfg.gru_hidden, device=dev)
         self.last_done = torch.zeros(N, device=dev)
+        self.last_terminated = torch.zeros(N, device=dev)
         self.info_metrics: dict[str, float] = {}
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
         self.agent_loss_mask = (

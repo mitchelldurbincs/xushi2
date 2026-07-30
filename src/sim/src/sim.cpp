@@ -154,6 +154,17 @@ void Sim::set_objective_timing_ticks(std::uint32_t unlock_ticks,
     }
 }
 
+bool Sim::score_threshold_reached() const noexcept {
+    return state_.objective.team_a_score_ticks >= common::kWinTicks ||
+           state_.objective.team_b_score_ticks >= common::kWinTicks;
+}
+
+bool Sim::round_timer_expired() const noexcept {
+    const Tick max_ticks =
+        static_cast<Tick>(config_.round_length_seconds * kTickHz);
+    return state_.tick >= max_ticks;
+}
+
 Team Sim::winner() const noexcept {
     if (state_.objective.team_a_score_ticks >= common::kWinTicks) {
         return Team::A;

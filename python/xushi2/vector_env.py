@@ -34,6 +34,7 @@ def _auto_reset_transition_metadata(
     seed_base: int,
     env_idx: int,
     obs_dtype: np.dtype[Any],
+    final_critic_obs: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], int, int | None, np.ndarray]:
     info_out = dict(info)
     obs_out = np.asarray(obs, dtype=obs_dtype)
@@ -42,6 +43,14 @@ def _auto_reset_transition_metadata(
     if (term or trunc) and auto_reset:
         info_out["final_info"] = dict(info_out)
         info_out["final_observation"] = obs_out
+        # The critic observation of the pre-reset state. Without it the value
+        # of a truncated state is unrecoverable -- critic_obs() below is called
+        # after the auto-reset and therefore describes the NEW episode -- and
+        # MAPPO cannot bootstrap a time-limit cutoff correctly.
+        if final_critic_obs is not None:
+            info_out["final_critic_observation"] = np.asarray(
+                final_critic_obs, dtype=np.float32
+            )
         next_episode_count += 1
         reset_seed = seed_base + 10_000 * next_episode_count + env_idx
     return info_out, next_episode_count, reset_seed, obs_out
@@ -69,6 +78,11 @@ def _async_worker(
                 obs, reward, term, trunc, info = env.step(payload)
                 term = bool(term)
                 trunc = bool(trunc)
+                # Read the terminal state's critic obs before any auto-reset
+                # replaces it with the next episode's.
+                final_critic = (
+                    _worker_critic_obs(env, critic_obs_dim) if (term or trunc) else None
+                )
                 info, episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
                     obs=obs,
                     info=dict(info),
@@ -79,6 +93,7 @@ def _async_worker(
                     seed_base=seed_base,
                     env_idx=env_idx,
                     obs_dtype=env.observation_space.dtype,
+                    final_critic_obs=final_critic,
                 )
                 if reset_seed is not None:
                     obs, reset_info = env.reset(seed=reset_seed)
@@ -235,6 +250,12 @@ class XushiVectorEnv:
             obs, reward, term, trunc, info = env.step(actions[i])
             term = bool(term)
             trunc = bool(trunc)
+            final_critic = None
+            if term or trunc:
+                # Terminal-state critic obs, read before the auto-reset below
+                # swaps in the next episode's.
+                final_critic = np.zeros(self.critic_obs_dim, dtype=np.float32)
+                env.build_critic_obs(final_critic)
             info, next_episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
                 obs=obs,
                 info=dict(info),
@@ -245,6 +266,7 @@ class XushiVectorEnv:
                 seed_base=self.seed_base,
                 env_idx=i,
                 obs_dtype=self.single_observation_space.dtype,
+                final_critic_obs=final_critic,
             )
             terminated[i] = term
             truncated[i] = trunc
