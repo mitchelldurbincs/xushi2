@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -12,9 +12,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import gymnasium as gym
+
     from train.cap_duel_distill import CapDuelDistillAnchor, CapDuelDistillBatch
 
 from train.device import resolve_device
+from train.losses import (
+    _masked_mean,
+    action_logprob_and_entropy_parts,
+)
 from train.mappo_advantage import compute_gae
 from train.mappo_metrics import rollout_metrics
 from train.mappo_model import (
@@ -27,10 +32,6 @@ from train.mappo_model import (
     target_selection_aux_metrics,
 )
 from train.mappo_rollout import collect_rollout, step_loss_mask
-from train.losses import (
-    _masked_mean,
-    action_logprob_and_entropy_parts,
-)
 from train.recurrent_common import (
     apply_global_seeds,
     get_optimizer_learning_rate,
@@ -139,6 +140,57 @@ class MappoTrainer:
 
     def close(self) -> None:
         self.vec_env.close()
+
+    # --- resume ---------------------------------------------------------
+    #
+    # Model weights alone are not enough to continue a run. Restoring from
+    # weights only zeroes the Adam moments and restarts the LR schedule at
+    # update 1, a large silent optimization discontinuity that looks like "the
+    # run got worse after restart". These two methods carry the rest.
+
+    def resume_state(self) -> dict[str, Any]:
+        """Everything besides model weights needed to continue this run."""
+        return {
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "update_idx": int(self._active_update_idx),
+            "update_counter": int(self._update_counter),
+            "hidden_state": self.h.detach().cpu(),
+            "policy_sampling_generator_state": self.policy_sampling_generator.get_state(),
+            "torch_rng_state": torch.get_rng_state(),
+            "numpy_rng_state": np.random.get_state(),
+            "seed": int(self.seed),
+        }
+
+    def load_resume_state(self, state: dict[str, Any]) -> int:
+        """Restore optimizer/RNG/hidden state. Returns the completed update index.
+
+        Shapes are checked rather than trusted: resuming into a differently
+        shaped run would otherwise fail deep inside the first update, or worse,
+        broadcast silently.
+        """
+        expected_h = (self.cfg.num_envs, self.cfg.n_agents, self.cfg.gru_hidden)
+        hidden = state.get("hidden_state")
+        if hidden is not None:
+            if tuple(hidden.shape) != expected_h:
+                raise ValueError(
+                    f"resume hidden_state shape {tuple(hidden.shape)} does not match this "
+                    f"run's {expected_h}; num_envs/n_agents/gru_hidden must match to resume"
+                )
+            self.h = hidden.to(self.device)
+        self.optimizer.load_state_dict(state["optimizer_state_dict"])
+        self._update_counter = int(state.get("update_counter", 0))
+        gen_state = state.get("policy_sampling_generator_state")
+        if gen_state is not None:
+            self.policy_sampling_generator.set_state(gen_state)
+        torch_state = state.get("torch_rng_state")
+        if torch_state is not None:
+            torch.set_rng_state(torch_state)
+        numpy_state = state.get("numpy_rng_state")
+        if numpy_state is not None:
+            np.random.set_state(numpy_state)
+        completed = int(state.get("update_idx", 0))
+        self.set_update_index(completed)
+        return completed
 
     def set_learning_rate(self, lr: float) -> None:
         set_optimizer_learning_rate(self.optimizer, lr)

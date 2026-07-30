@@ -406,6 +406,10 @@ class MappoTrainingHooks:
             phase_label=self.context.phase_label,
             ckpt_env_cfg=self.context.ckpt_env_cfg,
             mappo_cfg=self.context.cfg,
+            # Periodic checkpoints are the ones a preempted or OOM-killed run
+            # restarts from, so they carry the optimizer/RNG/hidden state that
+            # makes `run.resume_from` continue rather than warm-start.
+            resume_state=self.trainer.resume_state(),
         )
         if self.context.retention is None:
             return
