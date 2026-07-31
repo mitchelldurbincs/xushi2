@@ -3031,3 +3031,55 @@ Implement a scheduled offset applied to `log_std` inside `policy_outputs`
 start ckpt_0225 again, anchor short. Gate unchanged: stochastic canonical
 score > 0. Secondary question for v5's canonical evals: does 240t transfer
 survive when the sampled policy actually experiences captures.
+
+## 2026-07-30 — conversion_v5_logstd: sharpening works, moves the funnel, and finds the real ceiling
+
+**Status:** run complete (400 updates, 600t fixed, warm start v3 ckpt_0225,
+log_std pinned 0.451 -> 0.113 over 300 updates). Config:
+`experiments/configs/phase4/probe/phase4_mappo_conversion_v5_logstd.yaml`,
+artifacts `runs/phase4_mappo_conversion_v5_logstd/`.
+
+### The mechanism worked; the funnel moved; the gate still didn't clear
+
+Checkpoint std tracks the schedule exactly. Under sampling at canonical,
+the sharpened policy holds the point like no previous run: majority 13-21s
+(v3/v4: 5-9s), uncontested up to 3.6s (previously <=1.7s), cap_gain
+100-205. Sampling starvation was real — reducing noise directly improved
+every funnel stage. But uncontested time **plateaus at ~3s against the 8s
+requirement at every std from 0.28 down to 0.11**, wins stay at 0-1/24, and
+scores stay ~0. Lower noise alone cannot buy an 8s window.
+
+### And sharpening at 600t destroys 240t transfer
+
+In-training (600t) eval hit the best score of any run (8.8/50-0 at upd 125)
+while the same checkpoints at canonical lost outright (bot scoring 7.10 at
+125, 12.37 at 325 — the first time the bot outscores us at canonical). The
+sharpened policy specialized hard to the training difficulty.
+
+### Synthesis of the 24h campaign (v3 + v4 + v5)
+
+The July 9 review's root cause 1 stands as the final boss: **at canonical
+240t respawn, staggered kills never open an 8s window; conversion requires
+near-simultaneous team wipes or lane zoning.** Everything since is
+consistent: curricula visit converting behavior transiently on the way down
+(v3), continued training at any difficulty erodes it (v4), the reward
+prefers it ~5x but PPO's sampled experience caps at ~3s windows even when
+sharp (v5). Conversion at 240t is not an attractor of PPO + this reward +
+these opponents; single-knob curriculum probes are now exhausted with
+instrumented falsifications for each.
+
+### Structural options (next campaign, pick one)
+
+1. **Shape the required behavior directly**: team-wipe simultaneity bonus
+   (all three enemies dead within a ~2s window) and/or an approach-lane
+   zoning signal — reward the mechanism, not just the outcome.
+2. **Move the gate to 600t and ladder via opponents** (weak -> basic ->
+   snapshots -> self-play) instead of via respawn; revisit 240t only with a
+   stronger policy class.
+3. **Coordination capacity**: the wipe requirement is fundamentally a
+   3-agent synchronization problem; consider comms/centralized-execution
+   features before more reward surgery.
+
+Eval infra note: all three post-mortems ran on the fixed canonical/
+stochastic matrix stack built 07-29; every claim above is reproducible from
+`runs/*/matrix_eval.json` and the sweep scripts.
