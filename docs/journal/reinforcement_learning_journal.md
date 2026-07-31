@@ -3083,3 +3083,42 @@ instrumented falsifications for each.
 Eval infra note: all three post-mortems ran on the fixed canonical/
 stochastic matrix stack built 07-29; every claim above is reproducible from
 `runs/*/matrix_eval.json` and the sweep scripts.
+
+## 2026-07-30 — Ladder campaign: gate moves to 600t, Rung A cleared, Rung B1 designed
+
+**Decision (option 2 of the synthesis):** the Phase 4 gate is redefined as
+stochastic conversion at 600t respawn / 15s / 8s, laddered by opponent
+strength toward snapshots and self-play. 240t is deferred until the policy
+class can express coordinated wipes.
+
+### Step 0 — the stochastic 600t baseline (as-trained matrix, 24 eps)
+
+v5's sharpened checkpoints CLEAR rung A — the first stochastic gate ever
+passed in this project: vs weak_basic_v2 at 600t, ckpt_0250 18/1/5
+(score 2.53), **ckpt_0300 17/1/6 (2.71, bot 0.15)**, ckpt_0400 17/5/2
+(3.57), uncontested 10-12.6s. v5's "overfit" is the ladder's foundation.
+
+### Opponent roster probed (ckpt_0300, stochastic, 600t)
+
+walk_to_objective: 18/24 wins (2.25) — below current level.
+weak_basic_v2: cleared (above).
+**hold_and_shoot: 0-0 stalemate x24** — a turret: never contests (majB
+0.0s) but kills us 15.4-0.3/round; our hit_fire collapses to 0.009. The
+approach-discipline / coordinated-assault lesson, isolated.
+weak_basic: 0/24, -23.5. basic: 0/24, -33. Late rungs.
+
+Ladder: [A: weak_basic_v2 ✓] -> [B1: hold_and_shoot] -> [B2: weak_basic]
+-> [B3: basic] -> [C: snapshots/anchor-mixed self-play].
+
+### Rung B1 run design
+
+`phase4_ladder_b1_hold.yaml`: warm start v5 ckpt_0300 (std 0.113 baked),
+600t/15s/8s fixed, opponent_bot_mix {weak_basic_v2: 0.5, hold_and_shoot:
+0.5} (the 07-29 mix machinery's first real use), anchor on warm start
+annealed 150, no std/entropy anneals, matrix_eval canonical: false +
+stochastic (the gate is as-trained 600t). Gate: retain weak_basic_v2
+stochastic score >= 2 while hold_and_shoot moves off 0-0 (any stochastic
+wins / score > 0). Falsified if weak retention breaks (mix too aggressive)
+or hold_and_shoot kills-against stay ~15/round by update 300 (mix cannot
+teach approach discipline; consider a dedicated hold-breaking reward or
+aim-noise-softened variant).
