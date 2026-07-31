@@ -1,0 +1,196 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: ladder_b1_hold
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    Ladder campaign rung B1 (journal 2026-07-30). Warm start = v5 ckpt_0300,
+    the first checkpoint to clear a stochastic gate (17/1/6, score 2.71 vs
+    weak_basic_v2 at 600t, std 0.113 baked in). hold_and_shoot stalemates it
+    0-0 while killing 15.4/round at hit_fire 0.009 — a stationary turret
+    that isolates the approach-discipline lesson. Training on a 50/50 env
+    mix should teach engagement without feeding while the weak_basic_v2
+    half plus the KL anchor preserve conversion.
+  falsification_criteria: >
+    Falsified if weak_basic_v2 stochastic retention breaks (post-run matrix
+    score < 2 vs weak — the mix or the turret gradient destroyed the
+    cleared rung); or if by update 300 the hold_and_shoot rollout envs
+    still show ~15 deaths/round and hit_fire < 0.02 (a 50/50 mix cannot
+    teach approach discipline — next lever is a dedicated hold-breaking
+    shaping term or a softened turret variant); or on eval score collapse
+    at training settings for three consecutive evals.
+  leading_indicators: >
+    Deaths-per-round vs the turret falling from ~15 while our kills on it
+    rise from 0.3; hit_fire recovering toward 0.04+; weak_basic_v2 eval
+    score holding >= 2 throughout; first stochastic wins vs hold_and_shoot
+    in the post-run matrix.
+  lineage: >
+    Warm-starts data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+    (= conversion_v5_logstd ckpt_0300). First run of the 600t ladder
+    campaign; direct successor to conversion_v5_logstd. Anchor KL on the
+    same warm start, annealed by 150. First production use of
+    env.opponent_bot_mix (2026-07-29).
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994495
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  # Rung B1: half the envs retain the cleared rung (conversion vs weak),
+  # half learn to break the hold_and_shoot turret without feeding it.
+  opponent_bot_mix:
+    weak_basic_v2: 0.5
+    hold_and_shoot: 0.5
+  self_play:
+    enabled: false
+  # Degenerate (constant) timing curriculum: 15s/8s throughout. The block
+  # exists because eval_canonical_every is parsed from it; the canonical
+  # eval itself now always runs at the canonical constants (240t/15s/8s).
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 15.0
+    initial_capture_seconds: 8.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 1
+    eval_canonical_every: 25
+  # No respawn curriculum: training respawn is FIXED at 600t, the proven
+  # conversion zone. The canonical eval measures 240t transfer every 25
+  # updates; descending training itself to 240t is what killed v2 and v3.
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 15.0
+    objective_capture_seconds: 8.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994495
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 600
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  # Anchor anneals fast (150) so it does not hold entropy up against the
+  # sharpening — its job here is only to protect combat through warmup.
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 150
+  # The one new knob (2026-07-29): entropy bonus 1.0x -> 0.1x over 300
+  # updates, then held. 0.1 floor rather than 0.0 for unattended stability.
+  entropy_anneal_updates: 0
+  entropy_final_scale: 0.1
+
+run:
+  total_updates: 400
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_ladder_b1_hold
+  init_from_checkpoint: data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+  matrix_eval:
+    episodes: 50
+    stochastic: true
+    # The B1 gate lives at as-trained settings (600t/15s/8s), not 240t.
+    canonical: false
+    anchor_bots:
+      - hold_and_shoot
+      - weak_basic_v2
+      - basic
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_ladder_b1_hold
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_wins
+      metric: canonical_eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 25
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
