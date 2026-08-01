@@ -130,8 +130,16 @@ class Phase4MappoEnv(gym.Env):
             raise ValueError("sim_cfg must not carry 'team_size'; the env owns this knob")
 
         if self._pending_opponent_bot is not None:
-            self._opponent_bot = self._pending_opponent_bot
+            pending = self._pending_opponent_bot
             self._pending_opponent_bot = None
+            if pending.startswith("snapshot:"):
+                from xushi2.snapshot_policy import SnapshotPolicy
+
+                self._opponent_policy = SnapshotPolicy(pending[len("snapshot:"):])
+                self._opponent_bot = "snapshot"
+            else:
+                self._opponent_policy = None
+                self._opponent_bot = pending
 
         cfg = _build_config(self._sim_cfg, seed_override=seed)
         cfg.team_size = 3
@@ -332,13 +340,19 @@ class Phase4MappoEnv(gym.Env):
         self._sim_cfg["mechanics"] = mechanics
 
     def set_opponent_bot(self, opponent_bot: str) -> None:
-        """Opponent-mix curriculum knob. The scripted bot is consulted every
-        step, so the new opponent applies from the next reset() onward — the
-        in-flight episode keeps the opponent it started with."""
+        """Opponent-mix curriculum knob. Accepts a scripted bot name or
+        "snapshot:<checkpoint path>" for a frozen-policy opponent. Applies
+        from the next reset() onward — the in-flight episode keeps the
+        opponent it started with."""
         bot = str(opponent_bot)
-        if bot not in VALID_OPPONENT_BOTS:
+        if bot.startswith("snapshot:"):
+            path = bot[len("snapshot:"):]
+            if not path:
+                raise ValueError("snapshot opponent requires a checkpoint path")
+        elif bot not in VALID_OPPONENT_BOTS:
             raise ValueError(
-                f"unknown opponent_bot {bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"unknown opponent_bot {bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)} "
+                "or snapshot:<path>"
             )
         self._pending_opponent_bot = bot
 

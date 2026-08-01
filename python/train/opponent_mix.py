@@ -21,10 +21,15 @@ def parse_opponent_bot_mix(raw: object) -> dict[str, float]:
     mix: dict[str, float] = {}
     for bot, weight in raw.items():
         name = str(bot)
-        if name not in VALID_OPPONENT_BOTS:
+        if name.startswith("snapshot:"):
+            if not name[len("snapshot:"):]:
+                raise ValueError(
+                    "env.opponent_bot_mix: snapshot entry requires a checkpoint path"
+                )
+        elif name not in VALID_OPPONENT_BOTS:
             raise ValueError(
                 f"env.opponent_bot_mix: unknown bot {name!r}; "
-                f"valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"valid: {sorted(VALID_OPPONENT_BOTS)} or snapshot:<path>"
             )
         value = float(weight)
         if value <= 0.0:

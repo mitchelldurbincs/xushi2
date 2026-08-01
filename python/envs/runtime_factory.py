@@ -83,6 +83,22 @@ def make_mappo_match_env(
     if mini_game not in (None, ""):
         raise ValueError(f"unknown mappo mini_game {mini_game!r}")
 
+    # 3-agent snapshot opponent: a frozen checkpoint drives the enemy team.
+    # Seeds from snapshot_paths (or snapshot_league.latest); episode-level
+    # snapshot mixing is handled by opponent_bot_mix "snapshot:<path>"
+    # entries through the runtime setters, not here.
+    opponent_policy = None
+    if str(opponent_bot) == "snapshot":
+        from xushi2.snapshot_policy import SnapshotPolicy
+
+        pool = tuple(snapshot_paths) or tuple(league_cfg.get("latest", ()))
+        if not pool:
+            raise ValueError(
+                "opponent_bot 'snapshot' requires snapshot_paths or "
+                "snapshot_league.latest"
+            )
+        opponent_policy = SnapshotPolicy(pool[0])
+
     if actor_obs == "multi_enemy_entity_grid":
         from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
 
@@ -91,6 +107,7 @@ def make_mappo_match_env(
             opponent_bot=str(opponent_bot),
             learner_team=str(learner_team),
             reward_cfg=reward,
+            opponent_policy=opponent_policy,
         )
     if actor_obs != "flat":
         raise ValueError(f"unknown mappo actor_obs {actor_obs!r}")
@@ -102,6 +119,7 @@ def make_mappo_match_env(
         opponent_bot=str(opponent_bot),
         learner_team=str(learner_team),
         reward_cfg=reward,
+        opponent_policy=opponent_policy,
     )
 
 

@@ -72,7 +72,10 @@ class SnapshotPolicy:
         if self.cfg.obs_encoder == "entity_attention":
             raise ValueError("entity_attention snapshot observations are no longer supported")
         if self.cfg.obs_encoder == "entity_attention_grid":
-            if self.phase >= 7:
+            # Route on the checkpoint's own encoder shape, not just its
+            # phase stamp: phase-4 multi-enemy checkpoints (entity_token_count
+            # 5) need the multi-enemy conversion even though phase < 7.
+            if self.phase >= 7 or self.cfg.entity_token_count > 3:
                 if self.cfg.entity_token_count > 3:
                     return self._convert_multi_enemy_obs(
                         sim,
