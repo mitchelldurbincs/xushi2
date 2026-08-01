@@ -10,6 +10,23 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 
+# Upper bound on how long the parent waits for a single worker reply.
+#
+# A worker that *dies* does not hang the parent: __init__ closes the parent's
+# copy of the child pipe end, so a dead worker surfaces as EOF right away
+# (measured: exitcode -9 reported in ~0.0s). What does hang the parent is a
+# worker that is alive but wedged -- deadlocked, or stuck in native code --
+# because nothing ever closes the pipe. An unbounded recv() then blocks
+# forever and the run holds its allocation with no output and no error.
+#
+# Generous enough that a slow first step or a large model never trips it; the
+# point is to bound the hang, not to police latency.
+_WORKER_RECV_TIMEOUT_SECONDS: float = 300.0
+
+# Shorter bound during shutdown, where a worker is expected to be exiting
+# and a slow reply is not worth waiting five minutes for.
+_WORKER_CLOSE_TIMEOUT_SECONDS: float = 10.0
+
 
 def _worker_critic_obs(env: gym.Env, critic_obs_dim: int) -> np.ndarray:
     out = np.zeros(critic_obs_dim, dtype=np.float32)
@@ -386,8 +403,46 @@ class XushiAsyncVectorEnv:
             self._procs.append(proc)
         self._last_critic_obs = np.zeros((self.num_envs, self.critic_obs_dim), dtype=np.float32)
 
-    def _recv(self, idx: int):
-        msg = self._conns[idx].recv()
+    def _recv(self, idx: int, timeout: float | None = None):
+        """Receive one worker reply, bounding the wait.
+
+        Two distinct failure modes, neither previously diagnosable:
+
+        - The worker died (signal, OOM kill). The parent closes its copy of
+          the child pipe end at construction, so this surfaces as EOF rather
+          than a hang -- but as a bare ``EOFError`` with an empty message and
+          no indication of which worker or why.
+        - The worker is alive but wedged (deadlock, stuck in native code).
+          Nothing closes the pipe, so an unbounded ``recv()`` blocks forever
+          and the training run hangs silently, holding its allocation.
+
+        The timeout is resolved here rather than as a default argument so
+        the module constant stays late-bound and overridable.
+        """
+        deadline = _WORKER_RECV_TIMEOUT_SECONDS if timeout is None else timeout
+        conn = self._conns[idx]
+        if not conn.poll(deadline):
+            proc = self._procs[idx]
+            if not proc.is_alive():
+                raise RuntimeError(
+                    f"async env worker {idx} died without reporting an error "
+                    f"(exitcode={proc.exitcode}). A negative exitcode is a signal "
+                    f"death; the usual cause is an abort inside the C++ sim from "
+                    f"an invalid MatchConfig."
+                )
+            raise TimeoutError(
+                f"async env worker {idx} did not respond within {deadline:.0f}s "
+                f"(pid={proc.pid}, still alive). The worker is wedged rather than "
+                f"dead -- inspect that pid before retrying."
+            )
+        try:
+            msg = conn.recv()
+        except EOFError as exc:
+            proc = self._procs[idx]
+            raise RuntimeError(
+                f"async env worker {idx} closed its pipe without replying "
+                f"(exitcode={proc.exitcode})"
+            ) from exc
         if isinstance(msg, BaseException):
             raise RuntimeError(f"async env worker {idx} failed") from msg
         return msg
@@ -528,8 +583,10 @@ class XushiAsyncVectorEnv:
         for i, conn in enumerate(self._conns):
             try:
                 if self._procs[i].is_alive():
-                    self._recv(i)
-            except (BrokenPipeError, EOFError, RuntimeError):
+                    self._recv(i, timeout=_WORKER_CLOSE_TIMEOUT_SECONDS)
+            except (BrokenPipeError, EOFError, RuntimeError, TimeoutError):
+                # Shutdown is best-effort; the join/terminate below is what
+                # actually guarantees the workers go away.
                 pass
             conn.close()
         for proc in self._procs:
