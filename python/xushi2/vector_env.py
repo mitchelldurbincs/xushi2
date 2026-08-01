@@ -27,6 +27,11 @@ _WORKER_RECV_TIMEOUT_SECONDS: float = 300.0
 # and a slow reply is not worth waiting five minutes for.
 _WORKER_CLOSE_TIMEOUT_SECONDS: float = 10.0
 
+# A dead worker's pipe closes before the OS reaps it, so Process.exitcode can
+# still be None at the moment we notice. Join briefly before reporting, or the
+# error says "exitcode=None" and tells the operator nothing.
+_WORKER_REAP_TIMEOUT_SECONDS: float = 5.0
+
 
 def _worker_critic_obs(env: gym.Env, critic_obs_dim: int) -> np.ndarray:
     out = np.zeros(critic_obs_dim, dtype=np.float32)
@@ -439,9 +444,12 @@ class XushiAsyncVectorEnv:
             msg = conn.recv()
         except EOFError as exc:
             proc = self._procs[idx]
+            proc.join(timeout=_WORKER_REAP_TIMEOUT_SECONDS)
             raise RuntimeError(
                 f"async env worker {idx} closed its pipe without replying "
-                f"(exitcode={proc.exitcode})"
+                f"(exitcode={proc.exitcode}). A negative exitcode is a signal "
+                f"death; the usual cause is an abort inside the C++ sim from "
+                f"an invalid MatchConfig."
             ) from exc
         if isinstance(msg, BaseException):
             raise RuntimeError(f"async env worker {idx} failed") from msg

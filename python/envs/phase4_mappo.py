@@ -580,10 +580,7 @@ class Phase4MappoEnv(gym.Env):
         assert self._sim is not None
         if not self._slot_alive(critic, slot):
             return None, None
-        try:
-            visible = list(_cpp.observable_enemy_slots(self._sim, slot))
-        except Exception:
-            visible = [False] * _AGENTS_PER_MATCH
+        visible = list(_cpp.observable_enemy_slots(self._sim, slot))
         own_pos = self._slot_position_world(critic, slot)
         # aim_angle comes from own_aim_unit / world_aim_unit, both of which are
         # world-frame under a Team-A critic build, so the bearing below must be
