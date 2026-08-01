@@ -185,12 +185,15 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
                         dtype=np.float32,
                     )
         previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
-        combat_metrics = self._combat_metrics_before_step(actions)
         objective_before = self._objective_snapshot()
+        # Same ordering contract as Phase4MappoEnv.step: derive the contest
+        # state once, pre-step, and hand it to both metric functions.
+        contested_majority_team = self._contested_majority_team(objective_before)
+        combat_metrics = self._combat_metrics_before_step(actions, contested_majority_team)
 
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
-        self._attach_damage_metrics(combat_metrics, damage_delta)
+        self._attach_damage_metrics(combat_metrics, damage_delta, contested_majority_team)
         objective_metrics = self._objective_metrics_after_step(objective_before)
 
         r_a, r_b = self._reward_calc.step(self._sim)

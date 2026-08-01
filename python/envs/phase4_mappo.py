@@ -185,12 +185,17 @@ class Phase4MappoEnv(gym.Env):
                 )
 
         previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
-        combat_metrics = self._combat_metrics_before_step(actions)
         objective_before = self._objective_snapshot()
+        # Derived once, from pre-step state, and passed explicitly to both
+        # metric functions. Fire commands and the damage they cause belong to
+        # the same decision window, so they must be attributed to the same
+        # contest state -- see _contested_majority_team.
+        contested_majority_team = self._contested_majority_team(objective_before)
+        combat_metrics = self._combat_metrics_before_step(actions, contested_majority_team)
 
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
-        self._attach_damage_metrics(combat_metrics, damage_delta)
+        self._attach_damage_metrics(combat_metrics, damage_delta, contested_majority_team)
         objective_metrics = self._objective_metrics_after_step(objective_before)
 
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
@@ -612,7 +617,34 @@ class Phase4MappoEnv(gym.Env):
             "contested_majority_damage_centi_hp": 0,
         }
 
-    def _combat_metrics_before_step(self, actions: list[_cpp.Action]) -> dict[str, Any]:
+    @staticmethod
+    def _contested_majority_team(snapshot: dict[str, float | int]) -> str | None:
+        """Which team holds a contested on-point majority, if any.
+
+        Contested means both teams have someone alive on the point; majority
+        means one has strictly more. Returns None otherwise.
+
+        Callers pass the snapshot explicitly so the temporal position is
+        visible at the call site. It used to be derived independently inside
+        two functions -- one running before step_decision and one after -- so
+        contested_majority_fire_commands and contested_majority_damage_hits,
+        the numerator and denominator of one intended ratio, could disagree
+        about who held the majority whenever a fight flipped it inside a
+        single decision window.
+        """
+        on_a = int(snapshot["alive_on_point_a"])
+        on_b = int(snapshot["alive_on_point_b"])
+        if on_a <= 0 or on_b <= 0:
+            return None
+        if on_a > on_b:
+            return "A"
+        if on_b > on_a:
+            return "B"
+        return None
+
+    def _combat_metrics_before_step(
+        self, actions: list[_cpp.Action], contested_majority_team: str | None
+    ) -> dict[str, Any]:
         assert self._sim is not None
         critic = np.zeros(CRITIC_DIM, dtype=np.float32)
         _cpp.build_critic_obs(self._sim, _cpp.Team.A, critic)
@@ -620,15 +652,6 @@ class Phase4MappoEnv(gym.Env):
             "A": self._empty_team_combat_metrics(),
             "B": self._empty_team_combat_metrics(),
         }
-        objective_before = self._objective_snapshot()
-        contested_majority_team: str | None = None
-        on_a = int(objective_before["alive_on_point_a"])
-        on_b = int(objective_before["alive_on_point_b"])
-        if on_a > 0 and on_b > 0:
-            if on_a > on_b:
-                contested_majority_team = "A"
-            elif on_b > on_a:
-                contested_majority_team = "B"
         for slot, action in enumerate(actions):
             if not action.primary_fire:
                 continue
@@ -648,17 +671,17 @@ class Phase4MappoEnv(gym.Env):
         return metrics
 
     def _attach_damage_metrics(
-        self, combat_metrics: dict[str, Any], damage_delta: np.ndarray
+        self,
+        combat_metrics: dict[str, Any],
+        damage_delta: np.ndarray,
+        contested_majority_team: str | None,
     ) -> None:
-        objective_before = self._objective_snapshot()
-        contested_majority_team: str | None = None
-        on_a = int(objective_before["alive_on_point_a"])
-        on_b = int(objective_before["alive_on_point_b"])
-        if on_a > 0 and on_b > 0:
-            if on_a > on_b:
-                contested_majority_team = "A"
-            elif on_b > on_a:
-                contested_majority_team = "B"
+        """Attribute post-step damage to the pre-step contest state.
+
+        Runs after step_decision, so it must be *given* the majority rather
+        than re-deriving it: re-deriving here reads post-step state and
+        silently disagreed with _combat_metrics_before_step.
+        """
         for team in ("A", "B"):
             team_metrics = combat_metrics[team]
             for slot in self._team_slots(team):

@@ -209,3 +209,52 @@ def test_on_point_nearest_distance_equals_true_minimum() -> None:
         assert min(best_per_agent) - 1e-3 <= reported <= max(best_per_agent) + 1e-3
     finally:
         e.close()
+
+
+def test_contested_majority_is_pure_and_requires_contest() -> None:
+    """Majority requires both teams present; ties and empty sides are None."""
+    make = dict.fromkeys(
+        ["tick", "team_a_score_ticks", "team_b_score_ticks", "cap_progress_ticks",
+         "alive_a", "alive_b"], 0
+    )
+
+    def snap(on_a: int, on_b: int) -> dict:
+        return {**make, "alive_on_point_a": on_a, "alive_on_point_b": on_b}
+
+    fn = Phase4MappoEnv._contested_majority_team
+    assert fn(snap(2, 1)) == "A"
+    assert fn(snap(1, 2)) == "B"
+    assert fn(snap(1, 1)) is None  # contested but tied
+    assert fn(snap(3, 0)) is None  # uncontested is not a contested majority
+    assert fn(snap(0, 0)) is None
+
+
+def test_fire_and_damage_share_one_contest_state(monkeypatch) -> None:
+    """Both metric halves must be attributed to the same decision window.
+
+    _attach_damage_metrics runs after step_decision. It used to re-derive the
+    majority from post-step state while _combat_metrics_before_step derived it
+    from pre-step state, so a fight that flipped the majority mid-window was
+    counted under two different definitions.
+    """
+    e = Phase4MappoEnv(_sim_cfg(), opponent_bot="noop")
+    try:
+        e.reset(seed=7)
+        seen: list[str | None] = []
+        real = Phase4MappoEnv._contested_majority_team
+
+        def spy(snapshot):
+            value = real(snapshot)
+            seen.append(value)
+            return value
+
+        monkeypatch.setattr(Phase4MappoEnv, "_contested_majority_team", staticmethod(spy))
+
+        act = np.zeros((3, 6), dtype=np.float32)
+        act[:, 3] = 1.0  # fire, so the combat-metric path runs
+        e.step(act)
+
+        # Exactly one derivation per step, shared by both consumers.
+        assert len(seen) == 1
+    finally:
+        e.close()
