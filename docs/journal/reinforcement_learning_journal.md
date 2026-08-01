@@ -3246,3 +3246,47 @@ it is capacity-blocked, not curriculum-blocked.
    mini-envs (phase4_aim_only, combat_1v1, cap_duel + distill plumbing),
    or obs/action/network upgrades (target-lead features, aim assist,
    bigger heads) — then re-run B2 unchanged as the capacity metric.
+
+## 2026-08-01 — selfplay_l1: the flywheel spins backwards against frozen greedy experts
+
+**Status:** run complete (400 updates, static pool {v5-0300, B1-075,
+B2-400} + 30% weak_basic_v2 anchor, warm start v5-0300). Artifacts
+`runs/phase4_selfplay_l1/`. Machinery all worked: snapshot factory wiring,
+snapshot:<path> mix entries, obs-routing fix — snapshot rows scored in the
+matrix on the first try.
+
+### Result (stochastic matrix, ckpt_final = best_eval = upd 325)
+
+- weak_basic_v2: 35/6/9, 2.69 — retention gate holds again.
+- **B2-400 (weakest ancestor): 41/0/9, score 9.22** — crushed.
+- **v5-0300 (its own warm start): 0/46/4, outscored 0.00/5.00,
+  majority ceded 7.2s/26.6s.** B1-075: 2/45/3. At the pre-run smoke the
+  warm start drew its frozen self 2/2; training made it WORSE against the
+  strong ancestors.
+
+### Master pattern, fourth appearance
+
+SnapshotPolicy plays GREEDY, and a greedy v5-class converter camped on the
+objective is functionally a turret. Strong-ancestor episodes punish
+approach -> the learner learns avoidance -> avoidance absorbs (cedes the
+point and farms the beatable 50% of its mix instead). Static frozen
+experts are not fair-by-construction self-play; they are scripted bots
+with extra steps. Canonical conversion (v3-v5), the turret (B1/B1c),
+weak_basic (B2), and now frozen ancestors: every failure in this campaign
+is the same theorem — behavior that is never successfully sampled cannot
+be trained, and against punishing opponents the sampled optimum is
+avoidance.
+
+### Leg 2 design — make the fight fair two ways
+
+1. **Sampled snapshot opponents** (`opponent_snapshot_stochastic`): frozen
+   selves play their stochastic policy — the distribution the learner
+   actually was — not a sharpened greedy caricature of it.
+2. **Recent-self pool refresh**: snapshot slots re-point at the learner's
+   OWN recent checkpoints (lags of 25/50/100 updates) at every checkpoint
+   event, using the existing mix-assignment + runtime setters. The skill
+   gap stays small by construction — true iterated self-play — instead of
+   frozen experts from other lineages. Warm start v5-0300 (leg-1's final
+   carries avoidance). Anchor 30% weak_basic_v2 unchanged; matrix gate:
+   positive edge vs the leg-1 seed ancestors under sampled opponents +
+   retention >= 2.
