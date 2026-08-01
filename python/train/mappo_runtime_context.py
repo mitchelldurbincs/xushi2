@@ -43,6 +43,7 @@ class RuntimeContext:
     respawn_anneal_updates: int
     opponent_bot_mix: dict[str, float]
     opponent_handicap_curriculum: dict[str, Any]
+    opponent_recent_self: dict[str, Any]
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
@@ -126,6 +127,27 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
             f"initial={respawn_initial_ticks} final={respawn_final_ticks}"
         )
     opponent_bot_mix = parse_opponent_bot_mix(env_cfg.get("opponent_bot_mix"))
+    recent_self_cfg = dict(env_cfg.get("opponent_recent_self", {}))
+    if recent_self_cfg:
+        if opponent_bot_mix:
+            raise ValueError(
+                "env.opponent_recent_self and env.opponent_bot_mix are "
+                "mutually exclusive; recent-self builds its own mix"
+            )
+        anchor = parse_opponent_bot_mix(recent_self_cfg.get("anchor", {}))
+        recent_self_cfg["anchor"] = anchor
+        share = float(recent_self_cfg.get("share", 0.7))
+        if not 0.0 < share <= 1.0:
+            raise ValueError(
+                f"env.opponent_recent_self.share must be in (0, 1], got {share}"
+            )
+        lags = [int(lag) for lag in recent_self_cfg.get("lags", (25, 50, 100))]
+        if not lags or any(lag <= 0 for lag in lags):
+            raise ValueError(
+                f"env.opponent_recent_self.lags must be positive, got {lags}"
+            )
+        recent_self_cfg["share"] = share
+        recent_self_cfg["lags"] = lags
     handicap_cfg = dict(env_cfg.get("opponent_handicap_curriculum", {}))
     if handicap_cfg:
         from envs.phase4_mappo import VALID_OPPONENT_BOTS
@@ -197,4 +219,5 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         respawn_anneal_updates=respawn_anneal_updates,
         opponent_bot_mix=opponent_bot_mix,
         opponent_handicap_curriculum=handicap_cfg,
+        opponent_recent_self=recent_self_cfg,
     )

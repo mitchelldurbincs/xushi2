@@ -64,6 +64,7 @@ class Phase4MappoEnv(gym.Env):
         learner_team: str = "A",
         reward_cfg: dict[str, Any] | None = None,
         opponent_policy: Any | None = None,
+        opponent_snapshot_stochastic: bool = False,
     ) -> None:
         super().__init__()
 
@@ -78,6 +79,7 @@ class Phase4MappoEnv(gym.Env):
         self._opponent_bot = opponent_bot
         self._pending_opponent_bot: str | None = None
         self._opponent_handicap: tuple[str, float, int] | None = None
+        self._opponent_snapshot_stochastic = bool(opponent_snapshot_stochastic)
         self._learner_team_str = learner_team
         self._learner_team = _cpp.Team.A if learner_team == "A" else _cpp.Team.B
         self._own_slots: tuple[int, int, int] = (0, 1, 2) if learner_team == "A" else (3, 4, 5)
@@ -135,7 +137,10 @@ class Phase4MappoEnv(gym.Env):
             if pending.startswith("snapshot:"):
                 from xushi2.snapshot_policy import SnapshotPolicy
 
-                self._opponent_policy = SnapshotPolicy(pending[len("snapshot:"):])
+                self._opponent_policy = SnapshotPolicy(
+                    pending[len("snapshot:"):],
+                    stochastic=self._opponent_snapshot_stochastic,
+                )
                 self._opponent_bot = "snapshot"
             else:
                 self._opponent_policy = None

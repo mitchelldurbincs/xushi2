@@ -9,6 +9,8 @@ backend (which pickles env state per worker) sees a stable assignment.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from envs.phase4_mappo import VALID_OPPONENT_BOTS
 
 
@@ -37,6 +39,45 @@ def parse_opponent_bot_mix(raw: object) -> dict[str, float]:
                 f"env.opponent_bot_mix: weight for {name!r} must be > 0, got {value}"
             )
         mix[name] = value
+    return mix
+
+
+def recent_self_mix(
+    update_idx: int,
+    *,
+    checkpoint_every: int,
+    lags: Sequence[int],
+    share: float,
+    anchor_mix: dict[str, float],
+    output_dir: str,
+    fallback_path: str,
+) -> dict[str, float]:
+    """Opponent mix for iterated self-play against the learner's own recent
+    checkpoints. Each lag targets the checkpoint-grid update at
+    ``update_idx - lag`` (falling back to ``fallback_path`` — normally the
+    warm start — before that checkpoint exists), so the skill gap stays
+    small by construction. Pure function of its inputs: refreshing at every
+    checkpoint event is deterministic and resume-safe. Duplicate paths
+    merge their weights; ``anchor_mix`` entries are added as-is."""
+    if checkpoint_every <= 0:
+        raise ValueError(f"checkpoint_every must be > 0, got {checkpoint_every}")
+    lag_list = [int(lag) for lag in lags]
+    if not lag_list or any(lag <= 0 for lag in lag_list):
+        raise ValueError(f"lags must be positive, got {list(lags)}")
+    if not 0.0 < float(share) <= 1.0:
+        raise ValueError(f"share must be in (0, 1], got {share}")
+    mix: dict[str, float] = {}
+    each = float(share) / len(lag_list)
+    for lag in lag_list:
+        grid = ((int(update_idx) - lag) // checkpoint_every) * checkpoint_every
+        if grid >= checkpoint_every:
+            path = f"{output_dir}/ckpt_{grid:04d}.pt"
+        else:
+            path = str(fallback_path)
+        key = f"snapshot:{path}"
+        mix[key] = mix.get(key, 0.0) + each
+    for bot, weight in anchor_mix.items():
+        mix[str(bot)] = mix.get(str(bot), 0.0) + float(weight)
     return mix
 
 

@@ -32,6 +32,7 @@ def make_mappo_match_env(
     snapshot_league: dict[str, Any] | None = None,
     target_slot: bool = False,
     n_agents: int = 3,
+    opponent_snapshot_stochastic: bool = False,
 ) -> gym.Env:
     reward = dict(reward_cfg or {})
     mini_cfg = dict(mini_game_cfg or {})
@@ -97,7 +98,9 @@ def make_mappo_match_env(
                 "opponent_bot 'snapshot' requires snapshot_paths or "
                 "snapshot_league.latest"
             )
-        opponent_policy = SnapshotPolicy(pool[0])
+        opponent_policy = SnapshotPolicy(
+            pool[0], stochastic=bool(opponent_snapshot_stochastic)
+        )
 
     if actor_obs == "multi_enemy_entity_grid":
         from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
@@ -108,6 +111,7 @@ def make_mappo_match_env(
             learner_team=str(learner_team),
             reward_cfg=reward,
             opponent_policy=opponent_policy,
+            opponent_snapshot_stochastic=bool(opponent_snapshot_stochastic),
         )
     if actor_obs != "flat":
         raise ValueError(f"unknown mappo actor_obs {actor_obs!r}")
@@ -120,6 +124,7 @@ def make_mappo_match_env(
         learner_team=str(learner_team),
         reward_cfg=reward,
         opponent_policy=opponent_policy,
+        opponent_snapshot_stochastic=bool(opponent_snapshot_stochastic),
     )
 
 
@@ -150,4 +155,7 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
         ),
         target_slot=bool(cfg.get("target_slot", cfg.get("features", {}).get("target_slot", False))),
         n_agents=int(cfg.get("n_agents", cfg.get("team_size", 3))),
+        opponent_snapshot_stochastic=bool(
+            cfg.get("opponent_snapshot_stochastic", False)
+        ),
     )

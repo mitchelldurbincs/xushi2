@@ -22,7 +22,7 @@ from train.mappo_model import (
 )
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
-from train.opponent_mix import opponent_mix_assignment
+from train.opponent_mix import opponent_mix_assignment, recent_self_mix
 
 
 class MappoTrainingHooks:
@@ -119,6 +119,30 @@ class MappoTrainingHooks:
                 )
             )
             self._opponent_mix_applied = True
+        recent_cfg = self.context.opponent_recent_self
+        if recent_cfg and (
+            update_idx == 1
+            or (update_idx - 1) % self.context.checkpoint_every == 0
+        ):
+            # Iterated self-play: re-point the snapshot slots at the
+            # learner's own recent checkpoints at every checkpoint event.
+            mix = recent_self_mix(
+                update_idx,
+                checkpoint_every=self.context.checkpoint_every,
+                lags=recent_cfg["lags"],
+                share=recent_cfg["share"],
+                anchor_mix=recent_cfg["anchor"],
+                output_dir=str(self.context.output_dir),
+                fallback_path=str(
+                    recent_cfg.get(
+                        "fallback_checkpoint",
+                        self.context.run_cfg.get("init_from_checkpoint", ""),
+                    )
+                ),
+            )
+            self.trainer.set_opponent_bots(
+                opponent_mix_assignment(mix, cfg.num_envs)
+            )
         entropy_scale = compute_entropy_scale(
             update=update_idx,
             anneal_updates=cfg.entropy_anneal_updates,

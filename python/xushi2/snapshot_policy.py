@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,9 +22,18 @@ from xushi2.partial_obs import actor_obs_to_entity_grid_obs, actor_obs_to_partia
 
 
 class SnapshotPolicy:
-    """Frozen recurrent MAPPO policy used as an env-side opponent."""
+    """Frozen recurrent MAPPO policy used as an env-side opponent.
 
-    def __init__(self, checkpoint_path: str | Path) -> None:
+    ``stochastic=True`` samples the frozen policy's action distribution
+    (deterministically seeded per episode) instead of playing greedy. A
+    greedy frozen converter camped on the objective is functionally a
+    turret and teaches opponents avoidance (selfplay_l1 post-mortem);
+    sampled play reproduces the distribution the snapshot actually was.
+    """
+
+    def __init__(
+        self, checkpoint_path: str | Path, *, stochastic: bool = False
+    ) -> None:
         checkpoint_path = self._resolve_checkpoint_path(checkpoint_path)
         self.checkpoint_path = str(checkpoint_path)
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
@@ -35,11 +45,27 @@ class SnapshotPolicy:
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
         self.h = self.model.init_hidden(self.cfg.n_agents)
+        self.stochastic = bool(stochastic)
+        self._episode_counter = 0
+        self._generator: torch.Generator | None = None
+        if self.stochastic:
+            self._generator = torch.Generator()
+            self._seed_generator()
+
+    def _seed_generator(self) -> None:
+        if self._generator is not None:
+            # Deterministic per (checkpoint, episode index): reruns and
+            # replays reproduce exactly, per docs/determinism_rules.md.
+            # zlib.crc32, not hash() — str hashing is salted per process.
+            base = zlib.crc32(self.checkpoint_path.encode("utf-8")) & 0x7FFFFFFF
+            self._generator.manual_seed(base + self._episode_counter)
 
     def reset(self, batch_size: int | None = None) -> None:
         self.h = self.model.init_hidden(
             self.cfg.n_agents if batch_size is None else int(batch_size)
         )
+        self._episode_counter += 1
+        self._seed_generator()
 
     def act(
         self,
@@ -56,7 +82,12 @@ class SnapshotPolicy:
         if self.h.shape[0] != len(slots):
             self.reset(batch_size=len(slots))
         with torch.no_grad():
-            action, self.h = self.model.greedy_action(obs_t, self.h)
+            if self.stochastic:
+                action, _logprob, self.h = self.model.sample_action(
+                    obs_t, self.h, generator=self._generator
+                )
+            else:
+                action, self.h = self.model.greedy_action(obs_t, self.h)
         return action.cpu().numpy().astype(np.float32)
 
     def _convert_obs(

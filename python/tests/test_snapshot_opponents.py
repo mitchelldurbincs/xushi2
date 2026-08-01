@@ -95,3 +95,72 @@ def test_factory_builds_snapshot_opponent_env():
     )
     assert np.isfinite(obs).all()
     env.close()
+
+
+# --- stochastic snapshots and recent-self mix ---------------------------
+
+
+def test_snapshot_policy_stochastic_is_deterministic_and_differs():
+    env = Phase4MappoEnv(sim_cfg=_sim_cfg(), opponent_bot="noop")
+    env.reset(seed=11)
+    greedy = SnapshotPolicy(_CKPT)
+    s1 = SnapshotPolicy(_CKPT, stochastic=True)
+    s2 = SnapshotPolicy(_CKPT, stochastic=True)
+    a_greedy = greedy.act(env._sim, [3, 4, 5])
+    a1 = s1.act(env._sim, [3, 4, 5])
+    a2 = s2.act(env._sim, [3, 4, 5])
+    env.close()
+    assert np.allclose(a1, a2)
+    assert not np.allclose(a1, a_greedy)
+
+
+def test_recent_self_mix_falls_back_before_first_checkpoint():
+    from train.opponent_mix import recent_self_mix
+
+    mix = recent_self_mix(
+        1,
+        checkpoint_every=25,
+        lags=[25, 50, 100],
+        share=0.7,
+        anchor_mix={"weak_basic_v2": 0.3},
+        output_dir="runs/x/mappo",
+        fallback_path="data/checkpoints/warm.pt",
+    )
+    assert mix == {
+        "snapshot:data/checkpoints/warm.pt": pytest.approx(0.7),
+        "weak_basic_v2": 0.3,
+    }
+
+
+def test_recent_self_mix_uses_checkpoint_grid():
+    from train.opponent_mix import recent_self_mix
+
+    mix = recent_self_mix(
+        151,
+        checkpoint_every=25,
+        lags=[25, 50, 100],
+        share=0.6,
+        anchor_mix={"weak_basic_v2": 0.4},
+        output_dir="runs/x/mappo",
+        fallback_path="data/checkpoints/warm.pt",
+    )
+    assert mix["snapshot:runs/x/mappo/ckpt_0125.pt"] == pytest.approx(0.2)
+    assert mix["snapshot:runs/x/mappo/ckpt_0100.pt"] == pytest.approx(0.2)
+    assert mix["snapshot:runs/x/mappo/ckpt_0050.pt"] == pytest.approx(0.2)
+    assert mix["weak_basic_v2"] == pytest.approx(0.4)
+    assert sum(mix.values()) == pytest.approx(1.0)
+
+
+def test_recent_self_mix_validation():
+    from train.opponent_mix import recent_self_mix
+
+    with pytest.raises(ValueError, match="lags"):
+        recent_self_mix(
+            10, checkpoint_every=25, lags=[], share=0.7,
+            anchor_mix={}, output_dir="x", fallback_path="y",
+        )
+    with pytest.raises(ValueError, match="share"):
+        recent_self_mix(
+            10, checkpoint_every=25, lags=[25], share=0.0,
+            anchor_mix={}, output_dir="x", fallback_path="y",
+        )

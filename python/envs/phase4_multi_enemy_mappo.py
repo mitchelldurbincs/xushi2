@@ -45,6 +45,7 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
         learner_team: str = "A",
         reward_cfg: dict[str, Any] | None = None,
         opponent_policy: Any | None = None,
+        opponent_snapshot_stochastic: bool = False,
     ) -> None:
         super().__init__()
         self._base = Phase4MappoEnv(
@@ -52,6 +53,7 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
             opponent_bot=opponent_bot,
             learner_team=learner_team,
             reward_cfg=reward_cfg,
+            opponent_snapshot_stochastic=opponent_snapshot_stochastic,
             opponent_policy=opponent_policy,
         )
         self._map_bounds = map_bounds_from_sim_cfg(sim_cfg)
