@@ -3202,3 +3202,47 @@ Warm start: v5 ckpt_0300 (clean, no avoidance baggage). Mix
 {weak_basic_v2: 0.3, weak_basic: 0.7}, anchor 150. Gate: stochastic
 weak_basic wins/score > 0 at full strength, weak_basic_v2 retention >= 2,
 transfer_bots set explicitly.
+
+## 2026-08-01 — ladder_b2_weakbasic: capacity is the wall; the redefined gate is CLEARED
+
+**Status:** run complete (400 updates, handicap continuity weak_basic
+1.5rad/60t -> native 0.5rad/1t, mix 30/70, warm start v5 ckpt_0300).
+Artifacts `runs/phase4_ladder_b2_weakbasic/`.
+
+### Result
+
+- **weak_basic_v2 retention: 34/2/14, score 2.35/0.37** — strongest
+  stochastic result vs v2 yet; clean-warm-start + 30% mix + anchor holds.
+- **weak_basic: -20.00 reward, 0 wins at EVERY checkpoint** including
+  300-400 (trained at full native strength). The B2 falsification fired as
+  written: engagement was guaranteed, the anneal was cliff-free
+  (weak_basic at initial handicap is bit-identical to v2), and the skill
+  still did not track. The binding constraint is combat capacity — our
+  policy fights at hit_fire 0.03-0.07 / aim error ~0.5rad against a bot
+  with 0.5rad noise at full cadence. Curriculum shape is exonerated by
+  construction; the policy class cannot express the required aim/dodge.
+- Selection artifact worth fixing for any future rung run: best-eval uses
+  the env-cfg opponent (v2), so ckpt_final aliased to update 50 and the
+  auto-matrix judged a barely-trained checkpoint. Rung configs should set
+  the eval opponent to the target bot (retention via the matrix instead).
+
+### Gate accounting (the honest ledger)
+
+The redefined Phase 4 gate (journal 2026-07-30) — **stochastic conversion
+at 600t** — is **CLEARED**, three times over: v5 step-0 (17/1/6), B1
+(36/3/11), B2 (34/2/14), all vs weak_basic_v2 at full strength, all
+reproducible from matrix artifacts. What remains open is the ladder ABOVE
+v2, and the B1/B1c/B2 falsification chain shows every scripted rung beyond
+it is capacity-blocked, not curriculum-blocked.
+
+### The fork (next campaign, one of):
+
+1. **Self-play now** (the ladder's stated destination): snapshot-league /
+   anchor-mixed machinery exists (phase11 env, snapshot retention).
+   Self-play opponents share the policy's capacity limits — the game is
+   fair by construction, which is exactly what the scripted rungs are not.
+   Bootstrap from the B2 final population (v2-retention-strong).
+2. **Combat capacity**: dedicated aim/dodge pretraining in the existing
+   mini-envs (phase4_aim_only, combat_1v1, cap_duel + distill plumbing),
+   or obs/action/network upgrades (target-lead features, aim assist,
+   bigger heads) — then re-run B2 unchanged as the capacity metric.
