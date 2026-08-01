@@ -242,6 +242,31 @@ def compute_log_std_offset(
     return progress * float(final_offset)
 
 
+def compute_opponent_handicap(
+    *,
+    update: int,
+    initial_aim_noise: float,
+    final_aim_noise: float,
+    initial_fire_cadence: int,
+    final_fire_cadence: int,
+    anneal_updates: int,
+) -> tuple[float, int]:
+    """Linear anneal of the opponent handicap (aim noise radians, fire
+    cadence ticks) from initial to final over ``anneal_updates``, then held.
+    ``anneal_updates <= 0`` holds the initial values."""
+    if anneal_updates <= 0:
+        return float(initial_aim_noise), int(initial_fire_cadence)
+    progress = min(1.0, max(0.0, float(update) / float(anneal_updates)))
+    noise = float(initial_aim_noise) + progress * (
+        float(final_aim_noise) - float(initial_aim_noise)
+    )
+    cadence = int(round(
+        float(initial_fire_cadence)
+        + progress * (float(final_fire_cadence) - float(initial_fire_cadence))
+    ))
+    return noise, max(1, cadence)
+
+
 def compute_majority_on_point_alpha(
     *,
     update: int,

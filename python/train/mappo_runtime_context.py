@@ -42,6 +42,7 @@ class RuntimeContext:
     respawn_final_ticks: int
     respawn_anneal_updates: int
     opponent_bot_mix: dict[str, float]
+    opponent_handicap_curriculum: dict[str, Any]
 
 
 def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
@@ -125,6 +126,16 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
             f"initial={respawn_initial_ticks} final={respawn_final_ticks}"
         )
     opponent_bot_mix = parse_opponent_bot_mix(env_cfg.get("opponent_bot_mix"))
+    handicap_cfg = dict(env_cfg.get("opponent_handicap_curriculum", {}))
+    if handicap_cfg:
+        from envs.phase4_mappo import VALID_OPPONENT_BOTS
+
+        handicap_bot = str(handicap_cfg.get("bot", ""))
+        if handicap_bot not in VALID_OPPONENT_BOTS:
+            raise ValueError(
+                "env.opponent_handicap_curriculum.bot must name a valid bot, "
+                f"got {handicap_bot!r}"
+            )
     total_updates = int(run_cfg.get("total_updates"))
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
     eval_episodes = int(run_cfg.get("eval_episodes", 10))
@@ -185,4 +196,5 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         respawn_final_ticks=respawn_final_ticks,
         respawn_anneal_updates=respawn_anneal_updates,
         opponent_bot_mix=opponent_bot_mix,
+        opponent_handicap_curriculum=handicap_cfg,
     )

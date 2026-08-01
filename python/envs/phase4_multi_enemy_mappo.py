@@ -103,6 +103,11 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
     def set_opponent_bot(self, opponent_bot: str) -> None:
         self._base.set_opponent_bot(opponent_bot)
 
+    def set_opponent_handicap(
+        self, bot: str, aim_noise_radians: float, fire_cadence_ticks: int
+    ) -> None:
+        self._base.set_opponent_handicap(bot, aim_noise_radians, fire_cadence_ticks)
+
     def close(self) -> None:
         self._base.close()
 

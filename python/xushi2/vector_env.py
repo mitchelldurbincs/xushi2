@@ -119,6 +119,12 @@ def _async_worker(
                 if setter is not None:
                     setter(str(payload))
                 conn.send(None)
+            elif cmd == "set_opponent_handicap":
+                bot, aim_noise, cadence = payload
+                setter = getattr(env, "set_opponent_handicap", None)
+                if setter is not None:
+                    setter(str(bot), float(aim_noise), int(cadence))
+                conn.send(None)
             elif cmd == "close":
                 conn.send(None)
                 break
@@ -319,6 +325,15 @@ class XushiVectorEnv:
             setter = getattr(env, "set_opponent_bot", None)
             if setter is not None:
                 setter(bot)
+
+    def set_opponent_handicap(
+        self, bot: str, aim_noise_radians: float, fire_cadence_ticks: int
+    ) -> None:
+        """Push the opponent-handicap curriculum to envs that support it."""
+        for env in self.envs:
+            setter = getattr(env, "set_opponent_handicap", None)
+            if setter is not None:
+                setter(str(bot), float(aim_noise_radians), int(fire_cadence_ticks))
 
     def close(self) -> None:
         for env in self.envs:
@@ -549,6 +564,18 @@ class XushiAsyncVectorEnv:
             )
         for conn, bot in zip(self._conns, bots):
             conn.send(("set_opponent_bot", bot))
+        for i in range(self.num_envs):
+            self._recv(i)
+
+    def set_opponent_handicap(
+        self, bot: str, aim_noise_radians: float, fire_cadence_ticks: int
+    ) -> None:
+        """Push the opponent-handicap curriculum to every worker."""
+        if self._closed:
+            raise RuntimeError("vector env is closed")
+        payload = (str(bot), float(aim_noise_radians), int(fire_cadence_ticks))
+        for conn in self._conns:
+            conn.send(("set_opponent_handicap", payload))
         for i in range(self.num_envs):
             self._recv(i)
 

@@ -77,6 +77,7 @@ class Phase4MappoEnv(gym.Env):
         self._sim_cfg = dict(sim_cfg)
         self._opponent_bot = opponent_bot
         self._pending_opponent_bot: str | None = None
+        self._opponent_handicap: tuple[str, float, int] | None = None
         self._learner_team_str = learner_team
         self._learner_team = _cpp.Team.A if learner_team == "A" else _cpp.Team.B
         self._own_slots: tuple[int, int, int] = (0, 1, 2) if learner_team == "A" else (3, 4, 5)
@@ -176,6 +177,7 @@ class Phase4MappoEnv(gym.Env):
         else:
             for i, enemy_slot in enumerate(self._enemy_slots):
                 scripted = _cpp.scripted_bot_action(self._sim, enemy_slot, self._opponent_bot)
+                self._apply_opponent_handicap(scripted, enemy_slot)
                 actions[enemy_slot] = scripted
                 opponent_actions[i] = np.array(
                     [
@@ -339,6 +341,56 @@ class Phase4MappoEnv(gym.Env):
                 f"unknown opponent_bot {bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
             )
         self._pending_opponent_bot = bot
+
+    def set_opponent_handicap(
+        self,
+        bot: str,
+        aim_noise_radians: float,
+        fire_cadence_ticks: int,
+    ) -> None:
+        """Opponent-handicap curriculum knob: soften one scripted bot's aim
+        and fire rate (same levers that distinguish weak_basic_v2 from
+        basic). Applies immediately (the handicap post-processes each step's
+        scripted action; there is no sim-side state). aim_noise 0 and
+        cadence 1 = full strength. Only envs whose current opponent matches
+        ``bot`` are affected, so mixed-opponent training can soften a single
+        rung. Trainer-side only — eval envs never see this setter, so
+        matrix evals always measure the full-strength bot."""
+        name = str(bot)
+        if name not in VALID_OPPONENT_BOTS:
+            raise ValueError(
+                f"unknown opponent_bot {name!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
+            )
+        noise = float(aim_noise_radians)
+        cadence = int(fire_cadence_ticks)
+        if noise < 0.0:
+            raise ValueError(f"aim_noise_radians must be >= 0, got {noise}")
+        if cadence < 1:
+            raise ValueError(f"fire_cadence_ticks must be >= 1, got {cadence}")
+        self._opponent_handicap = (name, noise, cadence)
+
+    def _apply_opponent_handicap(self, scripted, enemy_slot: int) -> None:
+        handicap = self._opponent_handicap
+        if handicap is None:
+            return
+        bot, noise_scale, cadence = handicap
+        if bot != self._opponent_bot:
+            return
+        tick = int(self._sim.tick)
+        if noise_scale > 0.0:
+            # Deterministic per-(tick, slot) unit noise, mirroring the C++
+            # weak_basic bots' deterministic_unit_noise: no RNG state, so
+            # replays and reruns reproduce exactly.
+            raw = math.sin(float(tick) * 12.9898 + float(enemy_slot) * 78.233) * 43758.5453
+            unit = (raw - math.floor(raw)) * 2.0 - 1.0
+            scripted.aim_delta = max(
+                -_AIM_DELTA_LIMIT,
+                min(_AIM_DELTA_LIMIT, scripted.aim_delta + unit * noise_scale),
+            )
+        if cadence > 1:
+            scripted.primary_fire = bool(scripted.primary_fire) and (
+                tick % cadence == 0
+            )
 
     def close(self) -> None:
         self._sim = None

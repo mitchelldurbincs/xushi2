@@ -180,6 +180,13 @@ class MappoTrainer:
     def set_opponent_bots(self, opponent_bots) -> None:
         self.vec_env.set_opponent_bots([str(bot) for bot in opponent_bots])
 
+    def set_opponent_handicap(
+        self, bot: str, aim_noise_radians: float, fire_cadence_ticks: int
+    ) -> None:
+        self.vec_env.set_opponent_handicap(
+            str(bot), float(aim_noise_radians), int(fire_cadence_ticks)
+        )
+
     def set_entropy_scale(self, scale: float) -> None:
         value = float(scale)
         if value < 0.0:
