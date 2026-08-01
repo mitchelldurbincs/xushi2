@@ -3157,3 +3157,48 @@ episodes cannot fix a gradient that never sees a success.
 3. Skip the turret: rung order is a choice — weak_basic (mobile, -23) may
    be more learnable than a one-shot turret, though it likely shares the
    failure mode.
+
+## 2026-08-01 — ladder_b1c_handicap: avoidance is absorbing; the turret rung is skipped with cause
+
+**Status:** run complete (400 updates, handicap anneal 1.5rad/60t -> 0/1 on
+hold_and_shoot, mix 40/60, warm start B1 best). Artifacts
+`runs/phase4_ladder_b1c_handicap/`. Double failure: full-strength turret
+still 0/0/50, and weak_basic_v2 retention BROKE (13/17/20, 1.96/4.13 —
+gate was >= 2; B1 held 36/3/11).
+
+### Root cause: the warm start never engaged, so the anneal never bit
+
+Diagnostic: B1c ckpt_0050 vs a turret softened BELOW its training-time
+handicap (1.25rad/50t): 0/0/24, **0.1 kills, hit_fire 0.014** — no
+engagement at any softness. The B1 warm start carried 400 updates of
+learned turret-avoidance, and avoidance is an absorbing equilibrium: the
+policy never samples the turret zone, so opponent softness is unobservable
+and provides no gradient. Third instance of the campaign's master pattern
+(canonical conversion, assault, now re-engagement): **a behavior that is
+never sampled cannot be trained, no matter how it is rewarded or how easy
+it is made.** The handicap mechanism itself is unexercised, not refuted
+(cf. v4's entropy knob).
+
+Eval-infra note: transfer_summary silently filters to
+`matrix_eval.transfer_bots` (default noop/weak_basic_v2/basic) — the
+turret row existed only in matrix_eval.json. Set transfer_bots explicitly
+in ladder configs.
+
+### Decision: skip the turret (journal 08-01 option 3, now evidence-backed)
+
+Two runs, two structural failure modes (no-signal cliff; avoidance
+absorption). hold_and_shoot is a stationary siege specialist HARDER than
+basic in pure combat, and nothing on the ladder path (weak_basic, basic,
+snapshots, self-play) is stationary. It is a side quest, not a rung.
+
+### Rung B2: weak_basic via handicap, with perfect continuity
+
+`weak_basic` at handicap (1.5rad, 60t) is BIT-IDENTICAL to weak_basic_v2
+(same walk_to_objective + hold_and_shoot composition; those parameters ARE
+the v2 nerf). B2 therefore starts as an opponent the policy already beats
+(guaranteed engagement from update 1) and anneals parametrically to native
+weak_basic (0.5rad, 1t) over 300 updates — no behavior cliff at any point.
+Warm start: v5 ckpt_0300 (clean, no avoidance baggage). Mix
+{weak_basic_v2: 0.3, weak_basic: 0.7}, anchor 150. Gate: stochastic
+weak_basic wins/score > 0 at full strength, weak_basic_v2 retention >= 2,
+transfer_bots set explicitly.
