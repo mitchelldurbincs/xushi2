@@ -3122,3 +3122,38 @@ wins / score > 0). Falsified if weak retention breaks (mix too aggressive)
 or hold_and_shoot kills-against stay ~15/round by update 300 (mix cannot
 teach approach discipline; consider a dedicated hold-breaking reward or
 aim-noise-softened variant).
+
+## 2026-08-01 — ladder_b1_hold: retention machinery works; the turret lesson doesn't take
+
+**Status:** run complete (400 updates, 600t, warm start v5 ckpt_0300, mix
+{weak_basic_v2: 0.5, hold_and_shoot: 0.5}). Artifacts
+`runs/phase4_ladder_b1_hold/`. Post-run stochastic matrix at 600t (50 eps):
+
+- **weak_basic_v2: 36/3/11, score 2.49/0.70** — rung A RETAINED through 400
+  updates of mixed training (gate was >= 2). The mix + anchor machinery
+  does its job; training on a second opponent no longer destroys the
+  cleared rung. Best eval 5.23/50-0 at upd 75.
+- **hold_and_shoot: 0/0/50, 15.9 deaths/round against, hit_fire 0.008** —
+  bit-identical to the pre-run baseline. 400 updates of 50% exposure taught
+  nothing. The B1 falsification criterion fired as written.
+- basic: 0/50 (expected, untargeted).
+
+### The pattern, now twice
+
+Turret-breaking fails for the same structural reason canonical conversion
+failed: the rewarded behavior (a coordinated, well-executed assault) is
+never sampled — every naive approach dies before any positive signal, so
+"stay away and stalemate" is the sampled-data optimum. Mixing more turret
+episodes cannot fix a gradient that never sees a success.
+
+### Next levers (from the B1 config's falsification clause)
+
+1. **Softened-turret curriculum**: hold_and_shoot with opponent aim noise /
+   damage reduction annealed toward full strength (the July 9 review lists
+   opponent aim noise among existing sim levers — verify the env knob).
+   Same shape as the respawn curriculum, applied to the opponent.
+2. **Dedicated shaping**: reward damage dealt to the holder / first-contact
+   survival, so partial progress on the assault pays before a kill does.
+3. Skip the turret: rung order is a choice — weak_basic (mobile, -23) may
+   be more learnable than a one-shot turret, though it likely shares the
+   failure mode.
