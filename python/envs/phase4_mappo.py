@@ -18,7 +18,7 @@ import numpy as np
 from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.multi_enemy_obs import map_bounds_from_sim_cfg
+from xushi2.multi_enemy_obs import denormalize_team_to_world, map_bounds_from_sim_cfg
 from xushi2.obs_manifest import (
     ACTOR_PHASE1_DIM,
     CRITIC_DIM,
@@ -457,19 +457,24 @@ class Phase4MappoEnv(gym.Env):
                 continue
             team = self._team_for_slot(slot)
             out[team]["on_point_count"] += 1.0
-            own_pos = self._slot_position(critic, slot)
+            own_pos = self._slot_position_world(critic, slot)
             visible = list(_cpp.observable_enemy_slots(self._sim, slot))
             nearest: float | None = None
+            # One flag for "any enemy in LoS", a full scan for "nearest".
+            # These were previously fused by a single `break`, which ended the
+            # distance scan at the first visible enemy -- so `nearest` was the
+            # minimum over a prefix, not over the enemy team.
+            saw_visible = False
             for enemy in self._enemy_slots_for(slot):
                 if not self._slot_alive(critic, enemy):
                     continue
-                enemy_pos = self._slot_position(critic, enemy)
+                enemy_pos = self._slot_position_world(critic, enemy)
                 dist = float(np.linalg.norm(enemy_pos - own_pos))
                 if nearest is None or dist < nearest:
                     nearest = dist
-                if visible[enemy]:
-                    out[team]["los_count"] += 1.0
-                    break
+                saw_visible = saw_visible or bool(visible[enemy])
+            if saw_visible:
+                out[team]["los_count"] += 1.0
             if nearest is not None:
                 out[team]["distance_sum"] += nearest
                 out[team]["distance_count"] += 1.0
@@ -521,11 +526,34 @@ class Phase4MappoEnv(gym.Env):
     def _enemy_slots_for(slot: int) -> range:
         return range(3, 6) if slot < 3 else range(0, 3)
 
-    @staticmethod
-    def _slot_position(critic: np.ndarray, slot: int) -> np.ndarray:
+    def _map_bounds(self) -> dict[str, float]:
+        """Map extent used for frame conversion, from the config the env owns."""
+        return map_bounds_from_sim_cfg(self._sim_cfg)
+
+    def _slot_position_world(self, critic: np.ndarray, slot: int) -> np.ndarray:
+        """World-frame position for any slot in the critic tensor.
+
+        The critic stores own-team slots as map-normalized team-frame
+        coordinates (actor mirrors, [-1, 1]) and enemy slots in raw world
+        units. This is the only place that difference is allowed to matter:
+        subtracting one from the other -- which the previous accessor invited
+        by returning both without converting -- yields a vector that is
+        neither a displacement nor a bearing.
+
+        These metric paths always build the critic from Team A's
+        perspective, so the own-team mirrors are unmirrored and
+        ``team_b_view=False`` is correct for both sides.
+        """
         if slot < 3:
-            return critic[critic_field_slice(f"slot{slot}/own_position")]
-        return critic[critic_field_slice(f"enemy{slot - 3}/world_position")]
+            return denormalize_team_to_world(
+                critic[critic_field_slice(f"slot{slot}/own_position")],
+                self._map_bounds(),
+                team_b_view=False,
+            )
+        return np.asarray(
+            critic[critic_field_slice(f"enemy{slot - 3}/world_position")],
+            dtype=np.float32,
+        )
 
     @staticmethod
     def _slot_aim_angle(critic: np.ndarray, slot: int) -> float:
@@ -551,14 +579,17 @@ class Phase4MappoEnv(gym.Env):
             visible = list(_cpp.observable_enemy_slots(self._sim, slot))
         except Exception:
             visible = [False] * _AGENTS_PER_MATCH
-        own_pos = self._slot_position(critic, slot)
+        own_pos = self._slot_position_world(critic, slot)
+        # aim_angle comes from own_aim_unit / world_aim_unit, both of which are
+        # world-frame under a Team-A critic build, so the bearing below must be
+        # world-frame too.
         aim_angle = self._slot_aim_angle(critic, slot)
         best_slot: int | None = None
         best_error: float | None = None
         for enemy in self._enemy_slots_for(slot):
             if not visible[enemy] or not self._slot_alive(critic, enemy):
                 continue
-            rel = self._slot_position(critic, enemy) - own_pos
+            rel = self._slot_position_world(critic, enemy) - own_pos
             target_angle = math.atan2(float(rel[1]), float(rel[0]))
             error = abs(self._angle_wrap(aim_angle - target_angle))
             if best_error is None or error < best_error:

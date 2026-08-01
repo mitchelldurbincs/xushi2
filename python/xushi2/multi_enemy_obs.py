@@ -74,6 +74,38 @@ def normalize_world_for_team(
     return ((team_xy - center) / half).astype(np.float32)
 
 
+def denormalize_team_to_world(
+    team_xy: np.ndarray,
+    map_bounds: dict[str, float],
+    *,
+    team_b_view: bool,
+) -> np.ndarray:
+    """Inverse of :func:`normalize_world_for_team`.
+
+    Actor-side positions are stored map-normalized to [-1, 1]; enemy blocks in
+    the critic tensor are stored in raw world units. Anything comparing the
+    two -- distances, bearings -- must first put them in a single frame, and
+    world is the honest choice: normalizing divides x and y by separate
+    half-extents, so on a non-square map it distorts angles.
+    """
+    xy = np.asarray(team_xy, dtype=np.float32)
+    min_x = float(map_bounds["min_x"])
+    min_y = float(map_bounds["min_y"])
+    max_x = float(map_bounds["max_x"])
+    max_y = float(map_bounds["max_y"])
+    center = np.array(
+        [0.5 * (min_x + max_x), 0.5 * (min_y + max_y)],
+        dtype=np.float32,
+    )
+    half = np.array(
+        [0.5 * (max_x - min_x), 0.5 * (max_y - min_y)],
+        dtype=np.float32,
+    )
+    half = np.where(half > 0.0, half, 1.0)
+    world = xy * half + center
+    return (2.0 * center - world if team_b_view else world).astype(np.float32)
+
+
 def _paint(grid: np.ndarray, channel: int, xy: np.ndarray, value: float) -> None:
     ix = int(np.clip(round((float(xy[0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
     iy = int(np.clip(round((1.0 - (float(xy[1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))

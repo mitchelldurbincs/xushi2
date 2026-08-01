@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from xushi2 import xushi2_cpp as _cpp
+from xushi2.multi_enemy_obs import denormalize_team_to_world
 from xushi2.obs_manifest import CRITIC_DIM, critic_field_slice
 
 _HERO_KIND_BY_NAME = {
@@ -213,10 +214,32 @@ def _read_critic(sim: _cpp.Sim) -> np.ndarray:
     return out
 
 
-def _slot_position(critic: np.ndarray, slot: int) -> np.ndarray:
+def _map_bounds(cfg: _cpp.MatchConfig) -> dict[str, float]:
+    return {
+        "min_x": float(cfg.map.min_x),
+        "min_y": float(cfg.map.min_y),
+        "max_x": float(cfg.map.max_x),
+        "max_y": float(cfg.map.max_y),
+    }
+
+
+def _slot_position_world(
+    critic: np.ndarray, slot: int, map_bounds: dict[str, float]
+) -> np.ndarray:
+    """World-frame position for any slot. See Phase4MappoEnv for the rationale.
+
+    Own-team slots are map-normalized actor mirrors; enemy slots are raw world
+    units. Comparing them without converting produces meaningless bearings.
+    """
     if slot < 3:
-        return critic[critic_field_slice(f"slot{slot}/own_position")]
-    return critic[critic_field_slice(f"enemy{slot - 3}/world_position")]
+        return denormalize_team_to_world(
+            critic[critic_field_slice(f"slot{slot}/own_position")],
+            map_bounds,
+            team_b_view=False,
+        )
+    return np.asarray(
+        critic[critic_field_slice(f"enemy{slot - 3}/world_position")], dtype=np.float32
+    )
 
 
 def _slot_aim_angle(critic: np.ndarray, slot: int) -> float:
@@ -239,22 +262,19 @@ def _enemy_slots(slot: int) -> range:
 
 
 def _nearest_visible_target(
-    sim: _cpp.Sim, critic: np.ndarray, slot: int
+    sim: _cpp.Sim, critic: np.ndarray, slot: int, map_bounds: dict[str, float]
 ) -> tuple[int | None, float | None]:
     if not _slot_alive(critic, slot):
         return None, None
-    try:
-        visible = list(_cpp.observable_enemy_slots(sim, slot))
-    except Exception:
-        visible = [False] * _cpp.AGENTS_PER_MATCH
-    own_pos = _slot_position(critic, slot)
+    visible = list(_cpp.observable_enemy_slots(sim, slot))
+    own_pos = _slot_position_world(critic, slot, map_bounds)
     aim_angle = _slot_aim_angle(critic, slot)
     best_slot: int | None = None
     best_error: float | None = None
     for enemy in _enemy_slots(slot):
         if not visible[enemy] or not _slot_alive(critic, enemy):
             continue
-        rel = _slot_position(critic, enemy) - own_pos
+        rel = _slot_position_world(critic, enemy, map_bounds) - own_pos
         target_angle = math.atan2(float(rel[1]), float(rel[0]))
         error = abs(_angle_wrap(aim_angle - target_angle))
         if best_error is None or error < best_error:
@@ -270,6 +290,7 @@ def _team_slots(team: str) -> range:
 def analyze_replay(path: Path) -> dict:
     header, decisions = _load_replay(path)
     cfg = _config_from_header(header)
+    map_bounds = _map_bounds(cfg)
     sim = _cpp.Sim(cfg)
     stats = [SlotStats() for _ in range(_cpp.AGENTS_PER_MATCH)]
     base_seed = cfg.seed
@@ -294,7 +315,7 @@ def analyze_replay(path: Path) -> dict:
                 continue
             slot_stats = stats[slot]
             slot_stats.fire_commands += 1
-            target_slot, aim_error = _nearest_visible_target(sim, critic, slot)
+            target_slot, aim_error = _nearest_visible_target(sim, critic, slot, map_bounds)
             if target_slot is not None:
                 slot_stats.visible_fire_commands += 1
                 slot_stats.target_counts[target_slot] = (
