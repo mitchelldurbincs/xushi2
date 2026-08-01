@@ -123,6 +123,20 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
             f"initial={respawn_initial_ticks} final={respawn_final_ticks}"
         )
     total_updates = int(run_cfg.get("total_updates"))
+    # Cadence knobs are used as modulus divisors by run_training_loop, so a
+    # value of 0 previously raised ZeroDivisionError at update 1 -- after the
+    # env and model were built and, for checkpoint_every, after real training
+    # work had been done and discarded. `log_every` already treated 0 as
+    # "disabled"; validate all three here, at parse time, on that convention.
+    for _cadence_key in ("eval_every", "checkpoint_every", "log_every"):
+        if _cadence_key not in run_cfg:
+            continue
+        _cadence_value = int(run_cfg[_cadence_key])
+        if _cadence_value < 0:
+            raise ValueError(
+                f"run.{_cadence_key} must be >= 0 (0 disables the periodic action; "
+                f"the final update always runs), got {_cadence_value}"
+            )
     eval_every = int(run_cfg.get("eval_every", max(1, total_updates)))
     eval_episodes = int(run_cfg.get("eval_episodes", 10))
     checkpoint_every = int(run_cfg.get("checkpoint_every", max(1, total_updates)))
