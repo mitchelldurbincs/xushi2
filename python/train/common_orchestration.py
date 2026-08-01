@@ -80,9 +80,7 @@ def run_training_loop(
             eval_result = hooks.evaluate_step(update_idx, lr)
             should_stop = hooks.on_eval(update_idx, lr, eval_result)
 
-        if is_final_update or (
-            cfg.checkpoint_every > 0 and update_idx % cfg.checkpoint_every == 0
-        ):
+        if is_final_update or (cfg.checkpoint_every > 0 and update_idx % cfg.checkpoint_every == 0):
             hooks.on_checkpoint(update_idx, hooks.checkpoint_payload(update_idx))
 
         if should_stop:

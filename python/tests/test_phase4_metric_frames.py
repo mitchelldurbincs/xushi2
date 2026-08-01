@@ -93,9 +93,7 @@ def test_slot_position_world_round_trips_own_team(env) -> None:
 
 
 def test_slot_position_world_passes_enemy_block_through(env) -> None:
-    critic = _synthetic_critic(
-        own_world=_CENTRE, own_aim_rad=0.0, enemies_world={0: (3.5, 44.25)}
-    )
+    critic = _synthetic_critic(own_world=_CENTRE, own_aim_rad=0.0, enemies_world={0: (3.5, 44.25)})
     got = env._slot_position_world(critic, 3)
     np.testing.assert_allclose(got, (3.5, 44.25), atol=1e-5)
 
@@ -214,8 +212,15 @@ def test_on_point_nearest_distance_equals_true_minimum() -> None:
 def test_contested_majority_is_pure_and_requires_contest() -> None:
     """Majority requires both teams present; ties and empty sides are None."""
     make = dict.fromkeys(
-        ["tick", "team_a_score_ticks", "team_b_score_ticks", "cap_progress_ticks",
-         "alive_a", "alive_b"], 0
+        [
+            "tick",
+            "team_a_score_ticks",
+            "team_b_score_ticks",
+            "cap_progress_ticks",
+            "alive_a",
+            "alive_b",
+        ],
+        0,
     )
 
     def snap(on_a: int, on_b: int) -> dict:
