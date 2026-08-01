@@ -182,17 +182,32 @@ void build_actor_obs_phase1(const Sim& sim,
     w.push1(clamp01(static_cast<float>(s.objective.cap_progress_ticks) /
                     static_cast<float>(cfg.objective_capture_ticks)));
 
-    // --- contested (both teams present and alive on point) ---
-    bool a_on = false;
-    bool b_on = false;
+    // --- contested (both teams have someone alive on the point) ---
+    //
+    // Own-team presence is always known to the viewer. Enemy presence must
+    // enter through the fog filter, like every other enemy field in this
+    // builder: a direct scan of all heroes would hand the actor a free
+    // "an enemy is standing on the point" bit through walls, which is
+    // exactly the leak observation_spec.md invariant 1 forbids.
+    //
+    // With fog disabled observable_enemy_slots is all-true for opposite-team
+    // slots and short-circuits before any line-of-sight work, so this is
+    // bit-identical to the previous direct scan -- verified by the golden
+    // replay, whose hash is unchanged by this commit.
+    const auto enemy_observable = obs_utils::observable_enemy_slots(sim, agent_slot);
+    bool own_team_on_point = false;
+    bool enemy_team_on_point = false;
     for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
         const auto& h = s.heroes[i];
         if (!h.present || !h.alive) continue;
         if (!obs_utils::position_on_objective(h.position, map)) continue;
-        if (h.team == common::Team::A) a_on = true;
-        if (h.team == common::Team::B) b_on = true;
+        if (h.team == viewer) {
+            own_team_on_point = true;
+        } else if (enemy_observable[i]) {
+            enemy_team_on_point = true;
+        }
     }
-    const bool contested = a_on && b_on;
+    const bool contested = own_team_on_point && enemy_team_on_point;
     w.push1(contested ? 1.0F : 0.0F);
 
     // --- objective_unlocked ---

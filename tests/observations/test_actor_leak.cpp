@@ -6,6 +6,7 @@
 
 #include <xushi2/common/limits.hpp>
 #include <xushi2/sim/obs.h>
+#include <xushi2/sim/obs_utils.h>
 #include <xushi2/sim/sim.h>
 
 #include "test_config.hpp"
@@ -177,8 +178,112 @@ TEST(ActorLeak, EnemyReloadingStateDoesNotAffectActorObs) {
         << "actor obs leaked enemy reloading flag — NOT in Phase 1 manifest";
 }
 
-TEST(ActorLeak, Placeholder) {
-    // Kept so the previous test name still passes CI; real coverage is
-    // above.
-    SUCCEED() << "actor/critic leak coverage provided by the tests above";
+// --- Fog-enabled leak coverage ---
+//
+// The tests above run without fog, where hidden-enemy leaks are vacuous by
+// construction. These enable fog and place cover between the teams, which is
+// the configuration the whole separation contract exists for.
+//
+// MatchConfig::fog_of_war_enabled defaults to TRUE, so any config that
+// simply omits it lands here -- these are not hypothetical futures.
+
+namespace {
+
+// 3v3 arena with one off-centre cover disc.
+//
+// Two constraints shape this setup, both learned the hard way:
+//
+//  - The disc must not overlap the objective (centre, radius 3). A disc that
+//    covers the objective pushes heroes back out of it via
+//    resolve_cover_overlap, so nobody can ever stand on the point.
+//  - The disc sits at (20, 15), off the straight line from slot 1's spawn to
+//    the objective, so the teammate driving the `contested` precondition has
+//    an unobstructed path.
+//
+// It does block the diagonal from slot 0's spawn (17.5, 5) to the far-side
+// slots, which is exactly what the test needs.
+MatchConfig fog_test_config() {
+    auto cfg = xushi2::test_support::make_test_config();
+    cfg.seed = 0xD1CEDA7AULL;
+    cfg.round_length_seconds = 30;
+    cfg.fog_of_war_enabled = true;
+    cfg.team_size = 3;
+
+    xushi2::sim::CoverCircle cover{};
+    cover.center = xushi2::common::Vec2{20.0F, 15.0F};
+    cover.radius = 4.0F;
+    cfg.num_cover_circles = 1;
+    cfg.cover_circles[0] = cover;
+    return cfg;
+}
+
+}  // namespace
+
+TEST(ActorLeak, ContestedFlagDoesNotLeakHiddenEnemyOnPoint) {
+    // `contested` used to be computed by scanning every hero's position
+    // directly, bypassing the fog filter that guards every other enemy field.
+    // That handed the actor a free "an enemy is standing on the objective"
+    // bit through cover.
+    //
+    // Isolating that bit takes some care, because the obvious differential
+    // does not work: an enemy standing on the objective also drives the
+    // objective state machine, and cap_team / cap_progress are legitimately
+    // public fields in the actor manifest. Two properties make the test
+    // clean:
+    //
+    //  - Everything happens inside the objective lock window
+    //    (kObjectiveLockTicks = 450). objective_tick_update returns early
+    //    while locked, so no objective state diverges between the two sims.
+    //  - The varied enemy is slot 4, which is NOT slot 0's counterpart. In
+    //    3v3, visible_enemy_1v1 only ever queries viewer_slot +/- 3, so slot
+    //    4 never reaches slot 0's enemy_* fields by any route. `contested`
+    //    was the only path.
+    //
+    // The `contested` precondition (own team on the point) is satisfied by
+    // teammate slot 1, whose position is not part of slot 0's observation.
+    Sim sim_enemy_away(fog_test_config());
+    Sim sim_enemy_on_point(fog_test_config());
+
+    std::array<Action, kAgentsPerMatch> ally_only{};
+    std::array<Action, kAgentsPerMatch> ally_and_enemy{};
+    // Slot 1 (Team A, spawns at x=25, y=5) walks up onto the objective in
+    // BOTH sims. Slot 4 (Team B, x=25, y=45) walks down onto it in one only.
+    ally_only[1].move_y = 1.0F;
+    ally_and_enemy[1].move_y = 1.0F;
+    ally_and_enemy[4].move_y = -1.0F;
+
+    const auto& map = sim_enemy_away.config().map;
+    int steps = 0;
+    for (; steps < 60; ++steps) {
+        sim_enemy_away.step_decision(ally_only);
+        sim_enemy_on_point.step_decision(ally_and_enemy);
+        if (xushi2::sim::obs_utils::position_on_objective(
+                sim_enemy_on_point.state().heroes[4].position, map)) {
+            break;
+        }
+    }
+
+    // Preconditions.
+    ASSERT_LT(sim_enemy_on_point.state().tick, xushi2::common::kObjectiveLockTicks)
+        << "test precondition: must stay inside the objective lock window so "
+           "no objective state diverges";
+    ASSERT_TRUE(xushi2::sim::obs_utils::position_on_objective(
+        sim_enemy_on_point.state().heroes[1].position, map))
+        << "test precondition: an ALLY must be on the point so `contested` "
+           "can be true at all";
+    ASSERT_TRUE(xushi2::sim::obs_utils::position_on_objective(
+        sim_enemy_on_point.state().heroes[4].position, map))
+        << "test precondition: the hidden enemy must reach the objective";
+    ASSERT_FALSE(xushi2::sim::obs_utils::position_on_objective(
+        sim_enemy_away.state().heroes[4].position, map))
+        << "test precondition: the enemy must NOT be on the point in the "
+           "reference sim";
+    ASSERT_FALSE(sim_enemy_on_point.line_of_sight(0, 4))
+        << "test precondition: cover must hide slot 4 from slot 0";
+
+    auto a = build_team_a_obs(sim_enemy_away);
+    auto b = build_team_a_obs(sim_enemy_on_point);
+    EXPECT_TRUE(arrays_equal(a, b))
+        << "actor obs leaked a hidden enemy's presence on the objective via "
+           "the `contested` field";
 }
