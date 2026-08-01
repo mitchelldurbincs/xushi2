@@ -6,6 +6,7 @@ import yaml
 from envs.phase4_mappo import Phase4MappoEnv
 from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
 from envs.runtime_factory import make_mappo_match_env
+from tests._paths import config_path
 from train.runtime_specs import resolve_runtime_spec
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
@@ -215,8 +216,8 @@ def test_phase4_multi_enemy_actor_obs_is_opt_in_only() -> None:
 
 
 def test_phase4_multi_enemy_probe_config_resolves_runtime_shapes() -> None:
-    path = "../experiments/configs/phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"
-    config = yaml.safe_load(open(path, encoding="utf-8"))
+    path = config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
     runtime = resolve_runtime_spec(config)
 
     assert runtime.env.actor_obs == "multi_enemy_entity_grid"
@@ -229,8 +230,8 @@ def test_phase4_multi_enemy_probe_config_resolves_runtime_shapes() -> None:
 
 
 def test_phase4_multi_enemy_supervised_bridge_config_is_opt_in() -> None:
-    path = "../experiments/configs/phase4/probe/phase4_mappo_multi_enemy_supervised_bridge_v1.yaml"
-    config = yaml.safe_load(open(path, encoding="utf-8"))
+    path = config_path("phase4/probe/phase4_mappo_multi_enemy_supervised_bridge_v1.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
     runtime = resolve_runtime_spec(config)
     bridge_cfg = config["run"]["multi_enemy_supervised_bridge"]
 
@@ -247,11 +248,10 @@ def test_phase4_multi_enemy_supervised_bridge_config_is_opt_in() -> None:
 
 
 def test_phase4_multi_enemy_closed_loop_bridge_config_is_bounded_opt_in() -> None:
-    path = (
-        "../experiments/configs/phase4/probe/"
-        "phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1.yaml"
+    path = config_path(
+        "phase4/probe/phase4_mappo_multi_enemy_closed_loop_supervised_bridge_v1.yaml"
     )
-    config = yaml.safe_load(open(path, encoding="utf-8"))
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
     runtime = resolve_runtime_spec(config)
     bridge_cfg = config["run"]["multi_enemy_supervised_bridge"]
     closed_loop = bridge_cfg["closed_loop"]
@@ -272,11 +272,8 @@ def test_phase4_multi_enemy_closed_loop_bridge_config_is_bounded_opt_in() -> Non
 
 
 def test_phase4_objective_conversion_bridge_config_is_bounded_opt_in() -> None:
-    path = (
-        "../experiments/configs/phase4/probe/"
-        "phase4_mappo_objective_conversion_bridge_v1.yaml"
-    )
-    config = yaml.safe_load(open(path, encoding="utf-8"))
+    path = config_path("phase4/probe/phase4_mappo_objective_conversion_bridge_v1.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
     runtime = resolve_runtime_spec(config)
     bridge_cfg = config["run"]["multi_enemy_supervised_bridge"]
     closed_loop = bridge_cfg["closed_loop"]
