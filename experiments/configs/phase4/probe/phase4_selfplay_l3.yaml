@@ -1,0 +1,216 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: selfplay_l3
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    Leg 3 = leg 1's static-pool recipe corrected by the 08-01 control:
+    sampled training opponents everywhere (greedy turtles taught leg 1 an
+    avoidance quirk it did not need), a frozen copy of the leg-1 champion
+    in the pool (beat the best, not just the ancestors), anchor fattened
+    to 0.35 (leg 2 showed 0.30 is the retention edge), and 800 updates
+    (leg 2's best eval was still climbing at 400). Warm start = the
+    champion itself. Success: positive sampled W/L edge vs the champion
+    copy while retention >= 2 — a strictly better generation.
+  falsification_criteria: >
+    Falsified if weak_basic_v2 stochastic retention < 2 in the post-run
+    matrix (mix pressure too high — raise the v2 share); or if stochastic
+    performance vs full weak_basic is still 0 wins with deaths ~15/round
+    (skill does not track even a cliff-free anneal — the binding
+    constraint is combat capacity, not curriculum shape; escalate to
+    coordination/capacity work, option 3 of the 07-30 synthesis); or on
+    eval collapse for three consecutive evals.
+  leading_indicators: >
+    Rollout deaths vs weak_basic envs staying low as noise anneals through
+    ~0.8 rad (the v2->native midpoint); eval score vs weak_basic_v2
+    holding; first stochastic wins vs native-strength weak_basic in the
+    post-run matrix. handicap metrics track the schedule.
+  lineage: >
+    Warm-starts data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+    (v5 ckpt_0300 — no turret-avoidance baggage). Successor to
+    ladder_b1c_handicap after its avoidance-absorption post-mortem; second
+    use of env.opponent_handicap_curriculum, first with guaranteed
+    engagement. Anchor KL on the same warm start, annealed by 150.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 3519994500
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  # Rung B1: half the envs retain the cleared rung (conversion vs weak),
+  # half learn to break the hold_and_shoot turret without feeding it.
+  # Leg 3 (overnight): the leg-1 recipe with the two corrections from the
+  # sampled-ancestor control. Training opponents SAMPLE their policies (no
+  # greedy turtles anywhere), the pool includes a frozen copy of the
+  # champion itself, and the anchor share is fattened to 0.35 to hold the
+  # weak_basic_v2 gate that leg 2's treadmill let slip.
+  opponent_snapshot_stochastic: true
+  opponent_bot_mix:
+    "snapshot:data/checkpoints/phase4_selfplay_l1_champion.pt": 0.25
+    "snapshot:data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt": 0.2
+    "snapshot:data/checkpoints/phase4_b1_upd075_weak_retainer.pt": 0.2
+    weak_basic_v2: 0.35
+  self_play:
+    enabled: false
+  # Degenerate (constant) timing curriculum: 15s/8s throughout. The block
+  # exists because eval_canonical_every is parsed from it; the canonical
+  # eval itself now always runs at the canonical constants (240t/15s/8s).
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 15.0
+    initial_capture_seconds: 8.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 1
+    eval_canonical_every: 25
+  # No respawn curriculum: training respawn is FIXED at 600t, the proven
+  # conversion zone. The canonical eval measures 240t transfer every 25
+  # updates; descending training itself to 240t is what killed v2 and v3.
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 15.0
+    objective_capture_seconds: 8.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 3519994500
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 600
+
+model:
+  use_recurrence: true
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  minibatch_size: 256
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  # Anchor anneals fast (150) so it does not hold entropy up against the
+  # sharpening — its job here is only to protect combat through warmup.
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 200
+  # The one new knob (2026-07-29): entropy bonus 1.0x -> 0.1x over 300
+  # updates, then held. 0.1 floor rather than 0.0 for unattended stability.
+  entropy_anneal_updates: 0
+  entropy_final_scale: 0.1
+
+run:
+  total_updates: 800
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_selfplay_l3
+  init_from_checkpoint: data/checkpoints/phase4_selfplay_l1_champion.pt
+  matrix_eval:
+    episodes: 50
+    stochastic: true
+    # The B1 gate lives at as-trained settings (600t/15s/8s), not 240t.
+    canonical: false
+    anchor_bots:
+      - weak_basic_v2
+      - basic
+    opponent_checkpoints:
+      - data/checkpoints/phase4_selfplay_l1_champion.pt
+      - data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+      - data/checkpoints/phase4_b1_upd075_weak_retainer.pt
+      - data/checkpoints/phase4_b2_upd400_v2_retainer.pt
+    transfer_bots:
+      - weak_basic_v2
+      - basic
+      - phase4_selfplay_l1_champion.pt
+      - phase4_v5_upd300_stochastic_600t_converter.pt
+      - phase4_b1_upd075_weak_retainer.pt
+      - phase4_b2_upd400_v2_retainer.pt
+    output: matrix_eval.json
+
+phase_gate:
+  phase: phase4_selfplay_l3
+  identity_requirements:
+    min_unique_seeds: 1
+  objective_checks:
+    - id: canonical_score
+      metric: canonical_eval/mean_score_a
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 1.0
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: canonical_wins
+      metric: canonical_eval/wins
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 25
+      min_samples: 3
+      on_missing: EVIDENCE_INSUFFICIENT
+    - id: hit_fire_floor
+      metric: eval/team_a_hit_fire
+      source: wandb
+      aggregation: { type: max, window: all }
+      comparator: ">="
+      threshold: 0.04
+      min_samples: 1
+      on_missing: EVIDENCE_INSUFFICIENT
