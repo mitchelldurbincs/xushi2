@@ -192,8 +192,10 @@ def test_train_config_matrix_eval_writes_post_training_artifact(
 
 
 def test_train_config_transfer_gate_can_fail_on_insufficient_evidence(tmp_path: Path) -> None:
+    # The noop evidence gate applies when a noop row is requested.
     config = _phase4_smoke_matrix_config(tmp_path, "phase4_matrix_fail")
-    config["run"]["matrix_eval"]["anchor_bots"] = ["basic"]
+    config["run"]["matrix_eval"]["anchor_bots"] = ["noop"]
+    config["run"]["matrix_eval"]["transfer_bots"] = ["noop"]
     config["run"]["matrix_eval"]["transfer_fail_on_insufficient"] = True
     try:
         train_phase4_from_config(config)
@@ -201,6 +203,19 @@ def test_train_config_transfer_gate_can_fail_on_insufficient_evidence(tmp_path: 
         assert "transfer gate evidence insufficient" in str(exc)
     else:
         raise AssertionError("expected transfer gate failure")
+
+
+def test_train_config_transfer_gate_ungated_without_noop(tmp_path: Path) -> None:
+    # Matrices without a noop row are "ungated", not "evidence_insufficient"
+    # (2026-08-02 review: ladder/self-play summaries were permanently
+    # mislabeled), and the fail flag must not fire.
+    config = _phase4_smoke_matrix_config(tmp_path, "phase4_matrix_ungated")
+    config["run"]["matrix_eval"]["anchor_bots"] = ["basic"]
+    config["run"]["matrix_eval"]["transfer_bots"] = ["basic"]
+    config["run"]["matrix_eval"]["transfer_fail_on_insufficient"] = True
+    train_phase4_from_config(config)
+    transfer_md = tmp_path / "phase4_matrix_ungated" / "mappo" / "transfer_summary.md"
+    assert "ungated" in transfer_md.read_text(encoding="utf-8")
 
 
 def test_matrix_eval_updates_snapshot_retention_manifest(tmp_path: Path) -> None:

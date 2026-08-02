@@ -151,7 +151,12 @@ class Phase4MappoEnv(gym.Env):
         self._sim = _cpp.Sim(cfg)
         self._applied_respawn_ticks = int(cfg.mechanics.respawn_ticks)
         if self._opponent_policy is not None:
-            self._opponent_policy.reset()
+            # Thread the env's reset seed into the frozen opponent so its
+            # sampling stream varies with the campaign/eval seed and across
+            # vector slots, matching the single-source seed flow in
+            # docs/rl_design.md. Auto-resets (seed=None) keep the stream
+            # advancing via the policy's own episode counter.
+            self._opponent_policy.reset(seed=seed)
         self._reward_calc.reset(self._sim)
         self._first_team_a_alive_edge_tick = None
         self._first_team_a_score_after_edge_tick = None
@@ -367,13 +372,21 @@ class Phase4MappoEnv(gym.Env):
         aim_noise_radians: float,
         fire_cadence_ticks: int,
     ) -> None:
-        """Opponent-handicap curriculum knob: soften one scripted bot's aim
-        and fire rate (same levers that distinguish weak_basic_v2 from
-        basic). Applies immediately (the handicap post-processes each step's
-        scripted action; there is no sim-side state). aim_noise 0 and
-        cadence 1 = full strength. Only envs whose current opponent matches
-        ``bot`` are affected, so mixed-opponent training can soften a single
-        rung. Trainer-side only — eval envs never see this setter, so
+        """Opponent-handicap curriculum knob: soften one scripted bot by
+        post-processing its emitted actions (extra aim noise, fire gating).
+
+        This is an APPROXIMATE softening, not parametric interpolation
+        between bot tiers: the noise is added AFTER the bot's own decide()
+        (including any native noise and the pre-clamp aim path), so e.g.
+        weak_basic at handicap (1.5, 60) is NOT bit-identical to
+        weak_basic_v2 — it carries both noise sources and a post-clamp
+        distribution (2026-08-02 review; the B2 config's original
+        continuity claim was wrong). Exact tier equivalence would require
+        injecting noise inside the C++ behavior primitives.
+
+        Applies immediately per step. aim_noise 0 and cadence 1 = full
+        strength. Only envs whose current opponent matches ``bot`` are
+        affected. Trainer-side only — eval envs never see this setter, so
         matrix evals always measure the full-strength bot."""
         name = str(bot)
         if name not in VALID_OPPONENT_BOTS:

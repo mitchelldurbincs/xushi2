@@ -128,6 +128,8 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         )
     opponent_bot_mix = parse_opponent_bot_mix(env_cfg.get("opponent_bot_mix"))
     recent_self_cfg = dict(env_cfg.get("opponent_recent_self", {}))
+    if recent_self_cfg and not bool(recent_self_cfg.get("enabled", True)):
+        recent_self_cfg = {}
     if recent_self_cfg:
         if opponent_bot_mix:
             raise ValueError(

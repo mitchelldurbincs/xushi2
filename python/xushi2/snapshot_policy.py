@@ -47,6 +47,7 @@ class SnapshotPolicy:
         self.h = self.model.init_hidden(self.cfg.n_agents)
         self.stochastic = bool(stochastic)
         self._episode_counter = 0
+        self._env_seed = 0
         self._generator: torch.Generator | None = None
         if self.stochastic:
             self._generator = torch.Generator()
@@ -54,16 +55,21 @@ class SnapshotPolicy:
 
     def _seed_generator(self) -> None:
         if self._generator is not None:
-            # Deterministic per (checkpoint, episode index): reruns and
-            # replays reproduce exactly, per docs/determinism_rules.md.
-            # zlib.crc32, not hash() — str hashing is salted per process.
+            # Deterministic per (checkpoint, env seed, episode index).
+            # Mixing in the env's reset seed keeps sampling streams
+            # independent across campaign seeds and across vector slots that
+            # share a checkpoint (2026-08-02 review finding); crc32 rather
+            # than hash() because str hashing is salted per process.
             base = zlib.crc32(self.checkpoint_path.encode("utf-8")) & 0x7FFFFFFF
-            self._generator.manual_seed(base + self._episode_counter)
+            mixed = (base ^ (self._env_seed * 2654435761)) & 0x7FFFFFFF
+            self._generator.manual_seed(mixed + self._episode_counter)
 
-    def reset(self, batch_size: int | None = None) -> None:
+    def reset(self, batch_size: int | None = None, *, seed: int | None = None) -> None:
         self.h = self.model.init_hidden(
             self.cfg.n_agents if batch_size is None else int(batch_size)
         )
+        if seed is not None:
+            self._env_seed = int(seed)
         self._episode_counter += 1
         self._seed_generator()
 

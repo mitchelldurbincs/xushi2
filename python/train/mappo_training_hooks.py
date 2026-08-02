@@ -202,12 +202,47 @@ class MappoTrainingHooks:
             metrics["respawn_ticks"] = float(self._last_respawn_ticks)
         return metrics
 
+    def _eval_env_fn(self):
+        """Env factory for in-training evaluation and best-eval selection.
+
+        By default this is the training env_fn, whose opponent is the config
+        base `opponent_bot` — which in ladder/self-play runs is the RETAINED
+        rung, so best-eval selects warm-up checkpoints that merely preserve
+        the warm start (bit B2, L3; journal 2026-08-02). `run.eval_opponent`
+        overrides the eval opponent (a scripted bot name or "snapshot:<path>",
+        with `stochastic_snapshot: true` for sampled frozen play) so
+        best-eval tracks the run's actual objective."""
+        eval_cfg = dict(self.context.run_cfg.get("eval_opponent", {}))
+        if not eval_cfg:
+            return self.context.env_fn
+        from envs.runtime_factory import mappo_env_fn_from_config
+
+        env_cfg = dict(self.context.ckpt_env_cfg)
+        for key in (
+            "opponent_bot_mix",
+            "self_play",
+            "self_play_schedule",
+            "snapshot_league",
+        ):
+            env_cfg.pop(key, None)
+        bot = str(eval_cfg.get("bot", env_cfg.get("opponent_bot", "basic")))
+        if bot.startswith("snapshot:"):
+            env_cfg["opponent_bot"] = "snapshot"
+            env_cfg["snapshot_paths"] = [bot[len("snapshot:"):]]
+        else:
+            env_cfg["opponent_bot"] = bot
+            env_cfg.pop("snapshot_paths", None)
+        env_cfg["opponent_snapshot_stochastic"] = bool(
+            eval_cfg.get("stochastic_snapshot", False)
+        )
+        return mappo_env_fn_from_config(env_cfg)
+
     def evaluate_step(self, update_idx: int, lr: float):
         timing = self._objective_timing_for_update(update_idx)
         respawn_ticks = self._respawn_ticks_for_update(update_idx)
         eval_stats = evaluate_mappo(
             self.trainer.model,
-            self.context.env_fn,
+            self._eval_env_fn(),
             episodes=self.context.eval_episodes,
             seed=self.context.seed_base + 100_000 + update_idx,
             objective_timing_seconds=timing,
@@ -225,7 +260,7 @@ class MappoTrainingHooks:
             # respawn never descends to the canonical 240t.)
             self._last_canonical_eval_stats = evaluate_mappo(
                 self.trainer.model,
-                self.context.env_fn,
+                self._eval_env_fn(),
                 episodes=self.context.eval_episodes,
                 seed=self.context.seed_base + 200_000 + update_idx,
                 objective_timing_seconds=CANONICAL_OBJECTIVE_TIMING_SECONDS,

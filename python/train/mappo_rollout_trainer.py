@@ -99,7 +99,17 @@ class MappoTrainer:
         self.last_critic_obs = self._critic_obs_from_np(initial_critic_obs)
         apply_global_seeds(self.seed)
         self.model = MappoActorCritic(cfg).to(self.device)
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.learning_rate)
+        # When the log_std anneal owns the parameter, exclude it from the
+        # optimizer entirely: otherwise Adam keeps stale momentum across the
+        # schedule's hard overwrites and the checkpointed value can drift
+        # off-schedule (2026-08-02 review finding).
+        if cfg.log_std_anneal_updates > 0:
+            optim_params = [
+                p for n, p in self.model.named_parameters() if n != "log_std"
+            ]
+        else:
+            optim_params = list(self.model.parameters())
+        self.optimizer = torch.optim.Adam(optim_params, lr=cfg.learning_rate)
         set_optimizer_learning_rate(self.optimizer, cfg.learning_rate)
         self.h = self.model.init_hidden(cfg.num_envs * cfg.n_agents).view(
             cfg.num_envs, cfg.n_agents, cfg.gru_hidden

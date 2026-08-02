@@ -15,6 +15,29 @@ from train.mappo_model import MappoActorCritic
 from train.mappo_runtime_context import RuntimeContext
 
 
+def transfer_rows_and_gate(
+    rows: list[dict[str, Any]], transfer_bots: tuple[str, ...]
+) -> tuple[list[dict[str, Any]], str]:
+    """Select transfer-summary rows and derive the gate status.
+
+    Filters by opponent NAME only — snapshot rows explicitly listed in
+    transfer_bots must appear (they were silently dropped by an
+    opponent_type == "bot" requirement until 2026-08-02). The noop cap-gain
+    check only means something when a noop row was requested; matrices
+    without noop are "ungated" rather than forever "evidence_insufficient".
+    """
+    transfer_rows = [
+        row for row in rows if str(row.get("opponent", "")) in transfer_bots
+    ]
+    noop_rows = [row for row in transfer_rows if str(row.get("opponent", "")) == "noop"]
+    if not noop_rows:
+        return transfer_rows, "ungated"
+    noop_cap_gain = max(
+        float(row.get("mean_cap_progress_gain_ticks", 0.0)) for row in noop_rows
+    )
+    return transfer_rows, ("pass" if noop_cap_gain > 0.0 else "evidence_insufficient")
+
+
 def _transfer_row_summary(row: dict[str, Any]) -> dict[str, Any]:
     wins = int(round(float(row.get("win_rate", 0.0)) * int(row.get("episodes", 0))))
     losses = int(round(float(row.get("loss_rate", 0.0)) * int(row.get("episodes", 0))))
@@ -99,23 +122,12 @@ def maybe_run_post_training_matrix_eval(
             "transfer_bots", ("noop", "weak_basic_v2", "basic")
         )
     )
-    transfer_rows = [
-        row
-        for row in rows
-        if str(row.get("opponent_type", "")) == "bot"
-        and str(row.get("opponent", "")) in transfer_bots
-    ]
-    noop_rows = [row for row in transfer_rows if str(row.get("opponent", "")) == "noop"]
-    noop_cap_gain = max(
-        [float(row.get("mean_cap_progress_gain_ticks", 0.0)) for row in noop_rows],
-        default=0.0,
-    )
-    gate_status = "pass" if noop_cap_gain > 0.0 else "evidence_insufficient"
+    transfer_rows, gate_status = transfer_rows_and_gate(rows, transfer_bots)
     _write_transfer_summary(context.output_dir, transfer_rows, gate_status=gate_status)
     transfer_fail_on_insufficient = bool(
         dict(run_cfg.get("matrix_eval", {})).get("transfer_fail_on_insufficient", False)
     )
-    if gate_status != "pass" and transfer_fail_on_insufficient:
+    if gate_status == "evidence_insufficient" and transfer_fail_on_insufficient:
         raise RuntimeError(
             "MAPPO transfer gate evidence insufficient: nonzero objective conversion vs noop not observed"
         )
