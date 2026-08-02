@@ -3290,3 +3290,50 @@ avoidance.
    carries avoidance). Anchor 30% weak_basic_v2 unchanged; matrix gate:
    positive edge vs the leg-1 seed ancestors under sampled opponents +
    retention >= 2.
+
+## 2026-08-01 — selfplay_l2 + the control that flipped both verdicts
+
+**Status:** leg 2 complete (sampled opponents, recent-self pool lags
+25/50/100, warm v5-0300). Artifacts `runs/phase4_selfplay_l2/`. Raw matrix:
+vs sampled v5-0300 11/38/1 (2.52/5.97), vs sampled B1-075 14/35/1, vs
+B2-400 43/3/4; weak_basic_v2 retention SLIPPED to 1.62 (16/11/23), below
+the >= 2 gate. Best-eval 9.10 at update 400 (still climbing at the end).
+
+### The control: evaluate leg-1's final against a SAMPLED ancestor
+
+Leg 1's matrix used greedy ancestors; leg 2's used sampled ones — the two
+legs were never measured on the same axis. Control (24 eps, seed 4242):
+**leg-1 final vs sampled v5-0300: 13/8/3, score 5.40/2.09.**
+
+Both verdicts flip:
+- Leg 1's "0/46 catastrophe" was a MEASUREMENT artifact: its policy fights
+  sampled opponents fine and holds a positive edge over its ancestor. The
+  avoidance it learned was specifically anti-greedy-turtle, and greedy
+  frozen play is not a deployment condition any policy will ever face.
+- Leg 2's "0/46 -> 11/38 progress" was the same artifact in reverse
+  (opponents got easier). Measured fairly, leg 2 is WORSE than leg 1
+  against the ancestor AND lost weak retention. The recent-self treadmill
+  (chasing a moving copy of yourself) produced treadmill skill, not
+  transferable strength.
+
+### Corrected ledger
+
+Under fair sampled measurement, **leg 1 already passed the self-play
+gate**: positive W/L and score edge vs its seed ancestor (13/8, +5.40),
+retention 35/6/9 (2.69 >= 2), weakest ancestor crushed 41/0. Champion
+checkpoint: `runs/phase4_selfplay_l1/mappo/ckpt_final.pt` (upd 325).
+
+### Doctrine addition (extends 07-29 eval hygiene)
+
+Greedy vs sampled applies to OPPONENTS, not just learners. Frozen-greedy
+evaluation turtle-ifies converters and measures a fight nobody deploys
+into. All future matrix snapshot rows: sampled opponents
+(opponent_snapshot_stochastic: true in eval env cfg), and never compare
+rows across opponent-sampling regimes.
+
+### Open next steps (not yet run)
+
+Leg 3 candidate: leg-1's static-pool recipe but with SAMPLED training
+opponents and anchor >= 0.35 — test whether removing the greedy-turtle
+training environments improves on leg 1's already-positive edge without
+the leg-2 treadmill. Secondary: PFSP-style weighting before pool growth.
