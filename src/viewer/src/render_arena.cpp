@@ -25,10 +25,14 @@ Vector2 world_to_screen(const ArenaTransform& t, xushi2::common::Vec2 p) {
 
 float world_len_to_screen(const ArenaTransform& t, float u) { return u * t.pixels_per_unit; }
 
+// Must agree with panel.cpp's team_color — Team A (the learner in every
+// replay we dump) is red, Team B is blue. These were opposite conventions
+// until 2026-08-02, so the arena painted the learner blue while the panel
+// called Team A red.
 Color team_color(xushi2::common::Team team) {
     switch (team) {
-        case xushi2::common::Team::A: return Color{82, 156, 255, 255};
-        case xushi2::common::Team::B: return Color{255, 96, 96, 255};
+        case xushi2::common::Team::A: return Color{255, 96, 96, 255};
+        case xushi2::common::Team::B: return Color{82, 156, 255, 255};
         default: return GRAY;
     }
 }
@@ -49,8 +53,8 @@ void draw_objective(const ArenaTransform& t, const xushi2::sim::ObjectiveState& 
     const Vector2 c = world_to_screen(t, center);
     const float r = world_len_to_screen(t, xushi2::common::kObjectiveRadius);
     Color fill = Color{40, 50, 64, 180};
-    if (obj.owner == xushi2::common::Team::A) fill = Color{40, 70, 120, 200};
-    else if (obj.owner == xushi2::common::Team::B) fill = Color{120, 50, 50, 200};
+    if (obj.owner == xushi2::common::Team::A) fill = Color{120, 50, 50, 200};
+    else if (obj.owner == xushi2::common::Team::B) fill = Color{40, 70, 120, 200};
     DrawCircleV(c, r, fill);
     DrawCircleLinesV(c, r, Color{200, 200, 80, 255});
 
