@@ -129,7 +129,7 @@ Self-play win rate trends to 50% by construction and is not a gate metric on its
 
 Unless a Kanban card says otherwise, the current focus is Phase 4.
 
-Phase 4 is recurrent MAPPO, 3v3 Ranger, flat observations, centralized critic, fixed map. All six slots run Ranger so Phase 4 isolates the multi-agent / CTDE delta from hero diversity.
+Phase 4 is recurrent MAPPO, 3v3 Ranger, centralized critic, fixed map. All six slots run Ranger so Phase 4 isolates the multi-agent / CTDE delta from hero diversity. As-built (2026-07+), Phase-4 training uses `multi_enemy_entity_grid` observations, snapshot opponents, and the redefined 600t gate — see docs/rl_design.md's as-built divergence note and the RL journal.
 
 Phase 4 work is split across several active sub-plans in `docs/plans/active/`. The canonical current driver is listed in `docs/plans/README.md` — read that first; do not pick a sub-plan by guessing.
 

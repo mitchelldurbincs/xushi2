@@ -2,7 +2,10 @@ phase: 4
 metadata:
   phase: phase4
   purpose: conversion_v3b_timingfreeze
-  status: experimental
+  status: retired
+  # 2026-08-02: RETIRED, never run — superseded by v4/v5 before launch. Its
+  # init_from_checkpoint references runs/ (gitignored), so it is not
+  # runnable from a clean clone; kept for the design record only.
   expected_runtime: long
   gate_relevance:
     - phase4_objective_conversion

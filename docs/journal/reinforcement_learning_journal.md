@@ -3373,3 +3373,88 @@ opponents ate the scripted-walker game — anchor 0.35 held to ~600, not
    re-crown and restart, rather than longer runs that decay past the
    sweet spot. This is the league loop: crown -> freeze -> train against ->
    crown.
+
+## 2026-08-02 — Review response: eight fixes, two retracted crowns, and the real standings
+
+**Status:** an external review of the campaign range (1fe11c5..c552d44)
+found the training/eval paths sound but flagged material issues. All fixed
+or corrected this entry; every claim below at n=96 episodes, seed 0xA11CE,
+sampled play, as-trained 600t (artifacts in docs/reports/2026-08-02-*.json).
+
+### Fixes landed (code)
+
+1. transfer_summary now includes snapshot rows named in transfer_bots
+   (opponent_type filter removed) and reports "ungated" instead of
+   "evidence_insufficient" when no noop row was requested
+   (`transfer_rows_and_gate`, tested).
+2. Best-eval selection: new `run.eval_opponent` ({bot: <name|snapshot:path>,
+   stochastic_snapshot: bool}) drives in-training eval + best-eval, fixing
+   the ckpt_final-aliases-to-warmup artifact (bit B2, L3). Canonical eval
+   uses the same opponent.
+3. log_std anneal now OWNS the parameter: excluded from Adam when the
+   anneal is active (stale-momentum drift risk closed, tested).
+4. Snapshot RNG: env reset seed threads into SnapshotPolicy
+   (crc32(path) ^ env_seed mix), restoring seed-flow independence across
+   campaign seeds and vector slots (tested).
+5. `opponent_recent_self.enabled: false` now respected.
+6. Async vector-env propagation of set_opponent_bot / set_opponent_handicap
+   under test; pytest-timeout installed (was silently inactive).
+
+### Corrections of record (claims)
+
+7. **B2 "bit-identical / cliff-free / capacity wall by construction":
+   RETRACTED.** The handicap post-processes the bot's emitted action
+   (after weak_basic's native ±0.5-rad pre-clamp noise), so handicapped
+   weak_basic ≠ weak_basic_v2 — both noise sources, post-clamp
+   distribution. B2's null result stands; the capacity-wall conclusion is
+   now "under an approximate softening curriculum", not by construction.
+   Exact tier equivalence would need noise injection inside the C++
+   primitives. Configs corrected with dated notes; likewise opponent-mix
+   claims of "engagement from update 1" (first episode runs the config
+   opponent until its reset — up to ~5 updates at these settings), the
+   obsolete phase_gate blocks in all ladder/self-play configs (decisions
+   were made from matrices, never those gates), L3's wrong lineage line,
+   and v3b marked retired (references a gitignored checkpoint).
+
+### The re-crowning saga: n=24 gate decisions produced two false champions
+
+Regenerating the L3 crowning sweep under a different eval seed flipped it;
+n=96 settles everything:
+
+| matchup (n=96) | W/L/D | score |
+|---|---|---|
+| L1-champ vs sampled v5-0300 | 26/52/18 | 2.04/2.98 — **loses** |
+| L3-0600 vs sampled v5-0300 | 40/53/3 | 3.88/3.98 — loses |
+| **L3-0800 vs sampled v5-0300** | **54/35/7** | **5.37/2.87 — wins** |
+| L3-0600 vs L1-champ | 46/45/5 | 5.29/2.20 |
+| L3-0800 vs L1-champ | 46/38/12 | 4.22/2.07 |
+| retention: v5-0300 vs weak | 77/3/16 | 2.57 — dominant |
+| retention: L1-champ vs weak | 65/12/19 | 2.39 — pass |
+| retention: L3-0600 vs weak | 30/25/41 | 1.69 — FAIL |
+| retention: L3-0800 vs weak | 3/30/63 | 0.06 — dead |
+
+- **"Champion 2" (L3-0600): RETRACTED** — the 2026-08-02 morning crowning
+  (13/11, 7.40/1.80, retention 3.02) was an n=24 sample; at n=96 it is
+  parity-to-losing with failed retention.
+- **"Corrected-ledger champion" (L1 ckpt_final): RETRACTED** — the
+  2026-08-01 sampled-ancestor control (13/8, +5.40) was also an n=24
+  sample; at n=96 it loses to its ancestor.
+- **True standings: v5-0300 remains the reigning all-rounder** (beats both
+  false champions, dominant retention). **L3-0800 is the first checkpoint
+  to decisively beat v5-0300 head-to-head — self-play genuinely produced a
+  stronger fighter — but its anchor game is dead.** Copied to
+  data/checkpoints/phase4_l3_upd800_best_fighter.pt.
+
+### Doctrine (the sample-size clause)
+
+Gate and crowning decisions require **n >= 96 episodes at a fixed decision
+seed** (Wilson ~±10% at 96); n=24 is for direction-finding only. This is
+the campaign's instrument lesson at the statistics layer: funnel stats,
+eased configs, greedy learners, greedy opponents, and now small samples.
+
+### Leg 4 design implication
+
+The best fighter exists and needs retention repair, not more fighting:
+warm-start L3-0800, anchor share >= 0.45, `run.eval_opponent` = sampled
+v5-0300 (so best-eval tracks the real objective), gate at n=96: beat
+v5-0300 AND retention >= 2.

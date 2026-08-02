@@ -1,0 +1,24 @@
+[
+ {
+  "learner": "phase4_selfplay_l1_champion.pt",
+  "opponent": "v5_0300_sampled",
+  "wins": 26,
+  "losses": 52,
+  "draws": 18,
+  "mean_score_a": 2.0375,
+  "mean_score_b": 2.977430555555556,
+  "std_score_a": 4.256395650686763,
+  "episodes": 96
+ },
+ {
+  "learner": "phase4_selfplay_l1_champion.pt",
+  "opponent": "weak_basic_v2",
+  "wins": 65,
+  "losses": 12,
+  "draws": 19,
+  "mean_score_a": 2.390625,
+  "mean_score_b": 1.2906250000000001,
+  "std_score_a": 2.1212205121643652,
+  "episodes": 96
+ }
+]

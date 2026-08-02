@@ -1,5 +1,12 @@
 phase: 4
 metadata:
+  # 2026-08-02 REVIEW CORRECTION NOTE: these configs were generated from
+  # their predecessors and some falsification/indicator prose carries copy
+  # residue from earlier campaigns; the env/ppo/run blocks are what actually
+  # ran. Additionally, the phase_gate block below measures the OBSOLETE
+  # canonical-240t/config-opponent objective, not this run's stated gate —
+  # all campaign pass/fail decisions were made from the post-run stochastic
+  # matrices (journal), never from these phase_gate checks.
   phase: phase4
   purpose: selfplay_l3
   status: experimental
@@ -29,11 +36,13 @@ metadata:
     holding; first stochastic wins vs native-strength weak_basic in the
     post-run matrix. handicap metrics track the schedule.
   lineage: >
-    Warm-starts data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
-    (v5 ckpt_0300 — no turret-avoidance baggage). Successor to
-    ladder_b1c_handicap after its avoidance-absorption post-mortem; second
-    use of env.opponent_handicap_curriculum, first with guaranteed
-    engagement. Anchor KL on the same warm start, annealed by 150.
+    (Corrected 2026-08-02: an earlier revision of this block wrongly said
+    the run warm-starts v5-0300.) Warm-starts
+    data/checkpoints/phase4_selfplay_l1_champion.pt (= selfplay_l1
+    ckpt_final, upd 325 — the corrected-ledger champion), which is also
+    frozen into the opponent pool. Successor to selfplay_l1/l2 and the
+    sampled-ancestor control. First 800-update run. Anchor KL on the
+    champion, annealed by 200.
 
 wandb:
   enabled: true

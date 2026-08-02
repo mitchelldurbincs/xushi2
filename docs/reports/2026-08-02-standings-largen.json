@@ -1,0 +1,32 @@
+[
+ {
+  "learner": "v5_0300",
+  "opponent": "weak_basic_v2",
+  "wins": 77,
+  "losses": 3,
+  "draws": 16,
+  "mean_score_a": 2.5722222222222224,
+  "mean_score_b": 0.37048611111111107,
+  "episodes": 96
+ },
+ {
+  "learner": "l3_0600",
+  "opponent": "v5_0300_sampled",
+  "wins": 40,
+  "losses": 53,
+  "draws": 3,
+  "mean_score_a": 3.88125,
+  "mean_score_b": 3.983680555555555,
+  "episodes": 96
+ },
+ {
+  "learner": "l3_0800",
+  "opponent": "v5_0300_sampled",
+  "wins": 54,
+  "losses": 35,
+  "draws": 7,
+  "mean_score_a": 5.3656250000000005,
+  "mean_score_b": 2.869444444444445,
+  "episodes": 96
+ }
+]

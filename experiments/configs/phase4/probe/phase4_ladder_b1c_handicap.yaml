@@ -1,5 +1,12 @@
 phase: 4
 metadata:
+  # 2026-08-02 REVIEW CORRECTION NOTE: these configs were generated from
+  # their predecessors and some falsification/indicator prose carries copy
+  # residue from earlier campaigns; the env/ppo/run blocks are what actually
+  # ran. Additionally, the phase_gate block below measures the OBSOLETE
+  # canonical-240t/config-opponent objective, not this run's stated gate —
+  # all campaign pass/fail decisions were made from the post-run stochastic
+  # matrices (journal), never from these phase_gate checks.
   phase: phase4
   purpose: ladder_b1c_handicap
   status: experimental

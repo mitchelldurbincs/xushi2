@@ -1,5 +1,12 @@
 phase: 4
 metadata:
+  # 2026-08-02 REVIEW CORRECTION NOTE: these configs were generated from
+  # their predecessors and some falsification/indicator prose carries copy
+  # residue from earlier campaigns; the env/ppo/run blocks are what actually
+  # ran. Additionally, the phase_gate block below measures the OBSOLETE
+  # canonical-240t/config-opponent objective, not this run's stated gate —
+  # all campaign pass/fail decisions were made from the post-run stochastic
+  # matrices (journal), never from these phase_gate checks.
   phase: phase4
   purpose: ladder_b2_weakbasic
   status: experimental
@@ -53,12 +60,14 @@ env:
   opponent_bot_mix:
     weak_basic_v2: 0.3
     weak_basic: 0.7
-  # Perfect curriculum continuity: weak_basic at (1.5 rad, 60t) is
-  # bit-identical to weak_basic_v2 (those parameters ARE the v2 nerf on the
-  # same bot composition), so the annealed envs start as an opponent the
-  # policy already beats and morph parametrically into native weak_basic
-  # (0.5 rad, every tick). Engagement — and therefore gradient — is
-  # guaranteed from update 1; evals always face full strength.
+  # 2026-08-02 REVIEW CORRECTION: the original comment here claimed the
+  # handicapped weak_basic was "bit-identical to weak_basic_v2". FALSE —
+  # the handicap post-processes the bot's emitted action (after its native
+  # +-0.5 rad pre-clamp noise), so the softened opponent carries BOTH noise
+  # sources with a post-clamp distribution. It is an approximate softening,
+  # not tier interpolation, and "engagement guaranteed" / "cliff-free" are
+  # not established. The run's null result stands; its "capacity wall by
+  # construction" framing is downgraded in the journal (2026-08-02).
   opponent_handicap_curriculum:
     bot: weak_basic
     initial_aim_noise: 1.5

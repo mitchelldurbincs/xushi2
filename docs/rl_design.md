@@ -292,6 +292,20 @@ training and the centralized critic while holding hero diversity constant.
 All six slots run Ranger so the phase isolates the multi-agent / CTDE delta.
 Still flat obs, still fixed map.
 
+> **As-built divergence (2026-07-29 → 2026-08-02, see journal):** Phase 4 in
+> practice runs `multi_enemy_entity_grid` observations, and several
+> capabilities planned for later phases were pulled forward during the
+> conversion/ladder/self-play campaigns: 3v3 snapshot opponents with sampled
+> (stochastic) frozen policies and a recent-self pool (planned Phase 9),
+> plus new trainer knobs — entropy-bonus scale, direct log_std anneal,
+> `opponent_bot_mix` (incl. `snapshot:<path>` entries), `opponent_handicap_curriculum`
+> (approximate softening, NOT tier interpolation), `run.eval_opponent` for
+> best-eval selection, and a canonical-eval contract (15s/8s/240t constants
+> shared by in-training canonical eval and the post-training matrix). The
+> Phase 4 gate was redefined 2026-07-30 to stochastic conversion at 600t and
+> cleared; canonical 240t remains open. The journal is authoritative for all
+> of this; this ladder section is kept as the original design plan.
+
 **Phase 5 — Add entity attention.** Swap flat obs for entity-tokens + attention pooling. 2v2 or 3v3. Fixed map. No grid yet.
 
 **Phase 6 — Add the egocentric grid. *OA5-analog milestone.*** Concat a small CNN feature with the entity features. 3v3 Vanguard / Ranger / Mender. Fixed map. **Full vision.** This is the phase where "teamfights emerge from self-play without explicit communication" becomes a testable claim: the information structure (team-shared/full vision, no pings, no learned comms, recurrent policy per agent, centralized critic, `team_spirit`-scalarized reward — see §5) mirrors OpenAI Five's setup. If teamfights do not emerge here, no amount of fog-of-war polish will rescue them in Phase 7; debugging stops here until they do.

@@ -1,3 +1,9 @@
+> **STATUS 2026-08-02:** This protocol targets the ORIGINAL Phase-4 gate and
+> predates the 2026-07-30 gate redefinition (stochastic conversion at 600t —
+> CLEARED; see docs/journal/reinforcement_learning_journal.md). Treat the
+> journal as authoritative for gate accounting; this document is retained
+> for the supervision-protocol mechanics only.
+
 # Goal: PPO-Time Cap-Duel v2 Distillation Anchor For Phase 4
 
 ## Status Going Into This Goal
