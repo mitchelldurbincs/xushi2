@@ -3337,3 +3337,39 @@ Leg 3 candidate: leg-1's static-pool recipe but with SAMPLED training
 opponents and anchor >= 0.35 — test whether removing the greedy-turtle
 training environments improves on leg 1's already-positive edge without
 the leg-2 treadmill. Secondary: PFSP-style weighting before pool growth.
+
+## 2026-08-02 — selfplay_l3 (overnight): Champion 2 crowned at update 600
+
+**Status:** run complete (800 updates, champion warm start, sampled static
+pool incl. frozen champion copy, anchor 0.35). Artifacts
+`runs/phase4_selfplay_l3/`. The auto-matrix judged ckpt_final = best_eval =
+**update 25** (the best-eval selection artifact, third bite: in-training
+eval measures the anchor game the warm start already aces). The real
+result was in the late checkpoints, recovered by sweep:
+
+| ckpt | vs sampled champion | vs weak_basic_v2 |
+|---:|---|---|
+| 100 | 4/., -8.4 | 15/., +4.1 |
+| 400 | 1/., -12.1 (transient trough) | 2/., -0.9 |
+| **600** | **13/11/0, score 7.40/1.80** | **13/3/8, score 3.02 (gate ok)** |
+| 800 | 15/8/1, 5.34/0.44 | 0/10/14, 0.00 (retention DEAD) |
+
+**ckpt_0600 passes both gates simultaneously: it beats the leg-1 champion
+under fair sampled play with a dominant score margin AND retains the
+weak_basic_v2 gate.** Crowned Champion 2:
+`data/checkpoints/phase4_selfplay_l3_champion2.pt`. The 600->800 tail is
+the retention see-saw: continued specialization vs converter-shaped
+opponents ate the scripted-walker game — anchor 0.35 held to ~600, not
+800.
+
+### Lessons carried to leg 4
+
+1. Fix the selection artifact structurally: with snapshot opponents now
+   config-native, set the in-training eval opponent to the SAMPLED current
+   champion (env opponent_bot: snapshot + stochastic flag), so best-eval
+   tracks the true objective and ckpt_final stops aliasing to warm-up
+   checkpoints.
+2. Generation cadence: ~600 updates per generation at anchor 0.35, then
+   re-crown and restart, rather than longer runs that decay past the
+   sweet spot. This is the league loop: crown -> freeze -> train against ->
+   crown.
