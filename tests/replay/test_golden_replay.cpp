@@ -22,8 +22,20 @@ namespace {
 #error "XUSHI2_SOURCE_DIR must be defined via target_compile_definitions"
 #endif
 
+// The scripted trajectory is deterministic per platform but NOT across
+// platforms: libm/codegen float differences give darwin-arm64 a different
+// (internally consistent) hash sequence than linux-x86_64. Discovered
+// 2026-08-09: the "corrupted" abf98a1 fixture was simply this machine's
+// regeneration — every commit since May reproduces it bit-exactly on
+// darwin-arm64, while linux reproduces the pre-abf98a1 values. One fixture
+// per platform keeps the gate real on both. Regenerate ON the platform whose
+// fixture you are updating.
 constexpr const char* kGoldenPath =
+#if defined(__APPLE__) && defined(__aarch64__)
+    XUSHI2_SOURCE_DIR "/data/replays/golden_phase0_basic.darwin-arm64.txt";
+#else
     XUSHI2_SOURCE_DIR "/data/replays/golden_phase0_basic.txt";
+#endif
 
 std::vector<std::uint64_t> load_golden(const std::string& path) {
     std::vector<std::uint64_t> out;
