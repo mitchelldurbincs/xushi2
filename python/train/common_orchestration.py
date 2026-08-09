@@ -13,6 +13,18 @@ CheckpointPayloadT = TypeVar("CheckpointPayloadT")
 
 @dataclass(frozen=True)
 class LoopConfig:
+    """Cadence and LR schedule for :func:`run_training_loop`.
+
+    Cadence convention, uniform across all three knobs: a value of ``0``
+    disables the periodic action, and negative values are a config error
+    rejected at parse time (see ``train.mappo_runtime_context``).
+
+    Disabling is *periodic only*. The final update always evaluates and
+    always checkpoints regardless of ``eval_every`` / ``checkpoint_every``,
+    because ``last_eval`` is the training loop's return value and a run that
+    saved nothing is worse than one that saved once.
+    """
+
     total_updates: int
     eval_every: int
     checkpoint_every: int
@@ -65,12 +77,14 @@ def run_training_loop(
         if cfg.log_every > 0 and update_idx % cfg.log_every == 0:
             hooks.on_log(update_idx, lr, metrics)
 
+        is_final_update = update_idx == cfg.total_updates
+
         should_stop = False
-        if update_idx % cfg.eval_every == 0 or update_idx == cfg.total_updates:
+        if is_final_update or (cfg.eval_every > 0 and update_idx % cfg.eval_every == 0):
             eval_result = hooks.evaluate_step(update_idx, lr)
             should_stop = hooks.on_eval(update_idx, lr, eval_result)
 
-        if update_idx % cfg.checkpoint_every == 0 or update_idx == cfg.total_updates:
+        if is_final_update or (cfg.checkpoint_every > 0 and update_idx % cfg.checkpoint_every == 0):
             hooks.on_checkpoint(update_idx, hooks.checkpoint_payload(update_idx))
 
         if should_stop:

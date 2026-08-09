@@ -182,15 +182,33 @@ void build_actor_obs_phase1(const Sim& sim,
     w.push1(clamp01(static_cast<float>(s.objective.cap_progress_ticks) /
                     static_cast<float>(cfg.objective_capture_ticks)));
 
-    // --- contested (both teams present and alive on point) ---
-    // Read from the objective state machine, which recomputes it every tick.
-    // Deriving it here would mean iterating every hero's true world position
-    // inside the actor builder, which violates the structural invariant this
-    // TU is required to hold (see the file header and observation_spec.md):
-    // no function reachable from the actor builder may iterate hidden enemy
-    // state. The displayed contested flag is public HUD state, but it must
-    // arrive as public state, not be re-derived from the full world.
-    w.push1(s.objective.contested ? 1.0F : 0.0F);
+    // --- contested (both teams have someone alive on the point) ---
+    //
+    // The sim keeps a public ObjectiveState::contested (HUD state, recomputed
+    // every tick by the objective state machine). The actor obs deliberately
+    // does NOT read it: under fog that flag is global truth and would hand
+    // the actor a free "an enemy is standing on the point" bit through walls.
+    // Instead, enemy presence enters through the fog filter, like every other
+    // enemy field in this builder. With fog disabled observable_enemy_slots
+    // is all-true for opposite-team slots, making this bit-identical to
+    // ObjectiveState::contested (pinned by ContestedMirrorsObjectiveState);
+    // with fog enabled the leak test ContestedFlagDoesNotLeakHiddenEnemy-
+    // OnPoint pins the filtered behavior.
+    const auto enemy_observable = obs_utils::observable_enemy_slots(sim, agent_slot);
+    bool own_team_on_point = false;
+    bool enemy_team_on_point = false;
+    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
+        const auto& h = s.heroes[i];
+        if (!h.present || !h.alive) continue;
+        if (!obs_utils::position_on_objective(h.position, map)) continue;
+        if (h.team == viewer) {
+            own_team_on_point = true;
+        } else if (enemy_observable[i]) {
+            enemy_team_on_point = true;
+        }
+    }
+    const bool contested = own_team_on_point && enemy_team_on_point;
+    w.push1(contested ? 1.0F : 0.0F);
 
     // --- objective_unlocked ---
     w.push1(s.objective.unlocked ? 1.0F : 0.0F);

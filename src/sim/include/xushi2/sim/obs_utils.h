@@ -76,12 +76,13 @@ struct VisibleEnemySlot {
 // `MatchConfig::fog_of_war_enabled` is true, alive enemies blocked by cover
 // line-of-sight are hidden. Dead enemies remain present so globally-known
 // respawn timers stay observable.
+// There is deliberately no MatchState overload. One existed -- an unfiltered
+// "raw full-state" variant with no callers -- but overload resolution made it
+// a one-character slip away from silently disabling fog at the actor
+// builder's only enemy-lookup site (`sim` vs `sim.state()`), with no compile
+// error and no failing test. Anything needing unfiltered enemy state should
+// go through the critic builder, which is allowed to see everything.
 VisibleEnemySlot visible_enemy_1v1(const Sim& sim,
-                                   std::uint32_t viewer_slot) noexcept;
-
-// Raw full-state helper for critic/tests that explicitly do not want fog
-// filtering.
-VisibleEnemySlot visible_enemy_1v1(const MatchState& s,
                                    std::uint32_t viewer_slot) noexcept;
 
 // Return a fixed slot mask for all observable opposite-team heroes from one

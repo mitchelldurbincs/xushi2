@@ -106,7 +106,7 @@ TEST(ObsUtils, VisibleEnemyForTeamASeesSlotThree) {
     Sim sim(cfg);
     // Slot 0 is Team A Ranger, slot 3 is Team B Ranger (see sim.cpp reset).
     const auto& state = sim.state();
-    auto e = ou::visible_enemy_1v1(state, 0);
+    auto e = ou::visible_enemy_1v1(sim, 0);
     EXPECT_TRUE(e.present);
     EXPECT_TRUE(e.alive);
     EXPECT_EQ(e.id, state.heroes[3].id);
@@ -118,7 +118,7 @@ TEST(ObsUtils, VisibleEnemyForTeamBSeesSlotZero) {
     MatchConfig cfg = xushi2::test_support::make_test_config();
     Sim sim(cfg);
     const auto& state = sim.state();
-    auto e = ou::visible_enemy_1v1(state, 3);
+    auto e = ou::visible_enemy_1v1(sim, 3);
     EXPECT_TRUE(e.present);
     EXPECT_EQ(e.id, state.heroes[0].id);
 }
@@ -126,9 +126,8 @@ TEST(ObsUtils, VisibleEnemyForTeamBSeesSlotZero) {
 TEST(ObsUtils, VisibleEnemyAbsentSlotReturnsFalse) {
     MatchConfig cfg = xushi2::test_support::make_test_config();
     Sim sim(cfg);
-    const auto& state = sim.state();
     // Slot 1 is unoccupied at Phase 1.
-    auto e = ou::visible_enemy_1v1(state, 1);
+    auto e = ou::visible_enemy_1v1(sim, 1);
     // viewer's team is Neutral -> no opposite; present == false.
     EXPECT_FALSE(e.present);
 }

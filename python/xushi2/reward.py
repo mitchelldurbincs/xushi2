@@ -570,10 +570,15 @@ class RewardCalculator:
             return None
         out = np.zeros(3, dtype=np.float32)
         for i, slot in enumerate(slots):
-            try:
-                _cpp.build_actor_obs(sim, slot, self._obs.obs_bufs[slot])
-            except Exception:
-                return None
+            # Deliberately unguarded. This used to catch Exception and return
+            # None, which made _on_point_shares fall back to a uniform 1/3 --
+            # silently replacing per-agent credit assignment with an even team
+            # split, which is exactly what the team_spirit work exists to
+            # study. build_actor_obs raises only ValueError, for a malformed
+            # buffer; every other failure inside the builder aborts and cannot
+            # be caught anyway. So the catch could not catch what it was
+            # written for, and could catch real bugs.
+            _cpp.build_actor_obs(sim, slot, self._obs.obs_bufs[slot])
             out[i] = float(self._obs.obs_bufs[slot][self._obs.on_point_slice][0])
         return out
 

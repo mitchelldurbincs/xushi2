@@ -18,7 +18,7 @@ import numpy as np
 from gymnasium import spaces
 
 from xushi2 import xushi2_cpp as _cpp
-from xushi2.multi_enemy_obs import map_bounds_from_sim_cfg
+from xushi2.multi_enemy_obs import denormalize_team_to_world, map_bounds_from_sim_cfg
 from xushi2.obs_manifest import (
     ACTOR_PHASE1_DIM,
     CRITIC_DIM,
@@ -210,12 +210,17 @@ class Phase4MappoEnv(gym.Env):
                 )
 
         previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
-        combat_metrics = self._combat_metrics_before_step(actions)
         objective_before = self._objective_snapshot()
+        # Derived once, from pre-step state, and passed explicitly to both
+        # metric functions. Fire commands and the damage they cause belong to
+        # the same decision window, so they must be attributed to the same
+        # contest state -- see _contested_majority_team.
+        contested_majority_team = self._contested_majority_team(objective_before)
+        combat_metrics = self._combat_metrics_before_step(actions, contested_majority_team)
 
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
-        self._attach_damage_metrics(combat_metrics, damage_delta)
+        self._attach_damage_metrics(combat_metrics, damage_delta, contested_majority_team)
         objective_metrics = self._objective_metrics_after_step(objective_before)
 
         r_a, r_b = self._reward_calc.step(self._sim)  # shape (3,) each
@@ -562,19 +567,24 @@ class Phase4MappoEnv(gym.Env):
                 continue
             team = self._team_for_slot(slot)
             out[team]["on_point_count"] += 1.0
-            own_pos = self._slot_position(critic, slot)
+            own_pos = self._slot_position_world(critic, slot)
             visible = list(_cpp.observable_enemy_slots(self._sim, slot))
             nearest: float | None = None
+            # One flag for "any enemy in LoS", a full scan for "nearest".
+            # These were previously fused by a single `break`, which ended the
+            # distance scan at the first visible enemy -- so `nearest` was the
+            # minimum over a prefix, not over the enemy team.
+            saw_visible = False
             for enemy in self._enemy_slots_for(slot):
                 if not self._slot_alive(critic, enemy):
                     continue
-                enemy_pos = self._slot_position(critic, enemy)
+                enemy_pos = self._slot_position_world(critic, enemy)
                 dist = float(np.linalg.norm(enemy_pos - own_pos))
                 if nearest is None or dist < nearest:
                     nearest = dist
-                if visible[enemy]:
-                    out[team]["los_count"] += 1.0
-                    break
+                saw_visible = saw_visible or bool(visible[enemy])
+            if saw_visible:
+                out[team]["los_count"] += 1.0
             if nearest is not None:
                 out[team]["distance_sum"] += nearest
                 out[team]["distance_count"] += 1.0
@@ -626,11 +636,34 @@ class Phase4MappoEnv(gym.Env):
     def _enemy_slots_for(slot: int) -> range:
         return range(3, 6) if slot < 3 else range(0, 3)
 
-    @staticmethod
-    def _slot_position(critic: np.ndarray, slot: int) -> np.ndarray:
+    def _map_bounds(self) -> dict[str, float]:
+        """Map extent used for frame conversion, from the config the env owns."""
+        return map_bounds_from_sim_cfg(self._sim_cfg)
+
+    def _slot_position_world(self, critic: np.ndarray, slot: int) -> np.ndarray:
+        """World-frame position for any slot in the critic tensor.
+
+        The critic stores own-team slots as map-normalized team-frame
+        coordinates (actor mirrors, [-1, 1]) and enemy slots in raw world
+        units. This is the only place that difference is allowed to matter:
+        subtracting one from the other -- which the previous accessor invited
+        by returning both without converting -- yields a vector that is
+        neither a displacement nor a bearing.
+
+        These metric paths always build the critic from Team A's
+        perspective, so the own-team mirrors are unmirrored and
+        ``team_b_view=False`` is correct for both sides.
+        """
         if slot < 3:
-            return critic[critic_field_slice(f"slot{slot}/own_position")]
-        return critic[critic_field_slice(f"enemy{slot - 3}/world_position")]
+            return denormalize_team_to_world(
+                critic[critic_field_slice(f"slot{slot}/own_position")],
+                self._map_bounds(),
+                team_b_view=False,
+            )
+        return np.asarray(
+            critic[critic_field_slice(f"enemy{slot - 3}/world_position")],
+            dtype=np.float32,
+        )
 
     @staticmethod
     def _slot_aim_angle(critic: np.ndarray, slot: int) -> float:
@@ -652,18 +685,18 @@ class Phase4MappoEnv(gym.Env):
         assert self._sim is not None
         if not self._slot_alive(critic, slot):
             return None, None
-        try:
-            visible = list(_cpp.observable_enemy_slots(self._sim, slot))
-        except Exception:
-            visible = [False] * _AGENTS_PER_MATCH
-        own_pos = self._slot_position(critic, slot)
+        visible = list(_cpp.observable_enemy_slots(self._sim, slot))
+        own_pos = self._slot_position_world(critic, slot)
+        # aim_angle comes from own_aim_unit / world_aim_unit, both of which are
+        # world-frame under a Team-A critic build, so the bearing below must be
+        # world-frame too.
         aim_angle = self._slot_aim_angle(critic, slot)
         best_slot: int | None = None
         best_error: float | None = None
         for enemy in self._enemy_slots_for(slot):
             if not visible[enemy] or not self._slot_alive(critic, enemy):
                 continue
-            rel = self._slot_position(critic, enemy) - own_pos
+            rel = self._slot_position_world(critic, enemy) - own_pos
             target_angle = math.atan2(float(rel[1]), float(rel[0]))
             error = abs(self._angle_wrap(aim_angle - target_angle))
             if best_error is None or error < best_error:
@@ -686,7 +719,34 @@ class Phase4MappoEnv(gym.Env):
             "contested_majority_damage_centi_hp": 0,
         }
 
-    def _combat_metrics_before_step(self, actions: list[_cpp.Action]) -> dict[str, Any]:
+    @staticmethod
+    def _contested_majority_team(snapshot: dict[str, float | int]) -> str | None:
+        """Which team holds a contested on-point majority, if any.
+
+        Contested means both teams have someone alive on the point; majority
+        means one has strictly more. Returns None otherwise.
+
+        Callers pass the snapshot explicitly so the temporal position is
+        visible at the call site. It used to be derived independently inside
+        two functions -- one running before step_decision and one after -- so
+        contested_majority_fire_commands and contested_majority_damage_hits,
+        the numerator and denominator of one intended ratio, could disagree
+        about who held the majority whenever a fight flipped it inside a
+        single decision window.
+        """
+        on_a = int(snapshot["alive_on_point_a"])
+        on_b = int(snapshot["alive_on_point_b"])
+        if on_a <= 0 or on_b <= 0:
+            return None
+        if on_a > on_b:
+            return "A"
+        if on_b > on_a:
+            return "B"
+        return None
+
+    def _combat_metrics_before_step(
+        self, actions: list[_cpp.Action], contested_majority_team: str | None
+    ) -> dict[str, Any]:
         assert self._sim is not None
         critic = np.zeros(CRITIC_DIM, dtype=np.float32)
         _cpp.build_critic_obs(self._sim, _cpp.Team.A, critic)
@@ -694,15 +754,6 @@ class Phase4MappoEnv(gym.Env):
             "A": self._empty_team_combat_metrics(),
             "B": self._empty_team_combat_metrics(),
         }
-        objective_before = self._objective_snapshot()
-        contested_majority_team: str | None = None
-        on_a = int(objective_before["alive_on_point_a"])
-        on_b = int(objective_before["alive_on_point_b"])
-        if on_a > 0 and on_b > 0:
-            if on_a > on_b:
-                contested_majority_team = "A"
-            elif on_b > on_a:
-                contested_majority_team = "B"
         for slot, action in enumerate(actions):
             if not action.primary_fire:
                 continue
@@ -722,17 +773,17 @@ class Phase4MappoEnv(gym.Env):
         return metrics
 
     def _attach_damage_metrics(
-        self, combat_metrics: dict[str, Any], damage_delta: np.ndarray
+        self,
+        combat_metrics: dict[str, Any],
+        damage_delta: np.ndarray,
+        contested_majority_team: str | None,
     ) -> None:
-        objective_before = self._objective_snapshot()
-        contested_majority_team: str | None = None
-        on_a = int(objective_before["alive_on_point_a"])
-        on_b = int(objective_before["alive_on_point_b"])
-        if on_a > 0 and on_b > 0:
-            if on_a > on_b:
-                contested_majority_team = "A"
-            elif on_b > on_a:
-                contested_majority_team = "B"
+        """Attribute post-step damage to the pre-step contest state.
+
+        Runs after step_decision, so it must be *given* the majority rather
+        than re-deriving it: re-deriving here reads post-step state and
+        silently disagreed with _combat_metrics_before_step.
+        """
         for team in ("A", "B"):
             team_metrics = combat_metrics[team]
             for slot in self._team_slots(team):

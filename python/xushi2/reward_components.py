@@ -78,10 +78,7 @@ class ObsAccessor:
         """
         if self.obs_buf_a is None or self.owner_slice is None:
             return None
-        try:
-            _cpp.build_actor_obs(sim, _TEAM_A_RANGER_SLOT, self.obs_buf_a)
-        except Exception:
-            return None
+        _cpp.build_actor_obs(sim, _TEAM_A_RANGER_SLOT, self.obs_buf_a)
         owner = self.obs_buf_a[self.owner_slice]
         cap_team = self.obs_buf_a[self.cap_team_slice]
         owner_sign = float(owner[1]) - float(owner[2])
@@ -103,33 +100,14 @@ class ObsAccessor:
             return 0.0
         return coef * (self.team_on_point_fraction(sim, (0, 1, 2)) - self.team_on_point_fraction(sim, (3, 4, 5)))
 
-    def on_point_shares(self, sim, slots: tuple[int, int, int]) -> np.ndarray:
-        uniform = np.full(3, 1.0 / 3.0, dtype=np.float32)
-        if self.obs_bufs is None or self.on_point_slice is None:
-            return uniform
-        shares = np.zeros(3, dtype=np.float32)
-        for i, slot in enumerate(slots):
-            try:
-                _cpp.build_actor_obs(sim, slot, self.obs_bufs[slot])
-            except Exception:
-                return uniform
-            shares[i] = float(self.obs_bufs[slot][self.on_point_slice][0])
-        total = float(shares.sum())
-        return uniform if total <= 1e-12 else (shares / total)
-
     def team_on_point_fraction(self, sim, slots: tuple[int, int, int]) -> float:
         if self.obs_bufs is None or self.on_point_slice is None:
             return 0.0
-        present = 0
         on_point = 0.0
         for slot in slots:
-            try:
-                _cpp.build_actor_obs(sim, slot, self.obs_bufs[slot])
-            except Exception:
-                continue
-            present += 1
+            _cpp.build_actor_obs(sim, slot, self.obs_bufs[slot])
             on_point += float(self.obs_bufs[slot][self.on_point_slice][0])
-        return 0.0 if present == 0 else on_point / float(present)
+        return on_point / float(len(slots))
 
 
 class ShapingTerms:

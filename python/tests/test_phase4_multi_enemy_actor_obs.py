@@ -7,6 +7,7 @@ from _paths import config_path
 from envs.phase4_mappo import Phase4MappoEnv
 from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
 from envs.runtime_factory import make_mappo_match_env
+from tests._paths import config_path
 from train.runtime_specs import resolve_runtime_spec
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT

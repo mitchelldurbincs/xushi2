@@ -7,6 +7,8 @@
 #include <pybind11/stl.h>
 
 #include <array>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -14,11 +16,163 @@
 
 #include <xushi2/bots/bot.h>
 #include <xushi2/bots/runner.h>
+#include <xushi2/common/limits.hpp>
 #include <xushi2/sim/obs.h>
 #include <xushi2/sim/obs_utils.h>
 #include <xushi2/sim/sim.h>
 
 namespace py = pybind11;
+
+namespace {
+
+// --- Boundary validation -------------------------------------------------
+//
+// The sim validates its own preconditions with X2_REQUIRE, which aborts the
+// process. Aborting is the right call *inside* the sim: a Tier-0 invariant
+// violation means the state is no longer trustworthy. It is the wrong call
+// at this boundary, where the caller is a Python program that can and should
+// handle a bad config. A SIGABRT gives Python no traceback, no exception to
+// catch, and no chance to run `finally` blocks -- and under the async vector
+// env it strands the parent process waiting on a pipe that will never be
+// written to.
+//
+// Everything below mirrors a check in the Sim constructor
+// (src/sim/src/sim.cpp) or in a builder, and raises ValueError naming the
+// offending field instead.
+//
+// INVARIANT: an X2_REQUIRE firing during a Python call is a bug in this file.
+
+[[noreturn]] void bad_field(const std::string& field, const std::string& why) {
+    throw std::invalid_argument("MatchConfig." + field + " " + why);
+}
+
+void validate_mechanics(const xushi2::sim::Phase1MechanicsConfig& m) {
+    constexpr auto kU32Unset = std::numeric_limits<std::uint32_t>::max();
+
+    if (m.revolver_damage_centi_hp == kU32Unset) {
+        bad_field("mechanics.revolver_damage_centi_hp",
+                  "is unset; it has no default and must be supplied explicitly");
+    }
+    if (m.revolver_damage_centi_hp == 0U) {
+        bad_field("mechanics.revolver_damage_centi_hp", "must be > 0");
+    }
+    if (m.revolver_fire_cooldown_ticks == kU32Unset) {
+        bad_field("mechanics.revolver_fire_cooldown_ticks",
+                  "is unset; it has no default and must be supplied explicitly");
+    }
+    if (m.revolver_fire_cooldown_ticks < 1U) {
+        bad_field("mechanics.revolver_fire_cooldown_ticks", "must be >= 1");
+    }
+    if (!std::isfinite(m.revolver_hitbox_radius)) {
+        bad_field("mechanics.revolver_hitbox_radius",
+                  "is unset or non-finite; it has no default and must be supplied "
+                  "explicitly");
+    }
+    if (m.revolver_hitbox_radius <= 0.0F) {
+        bad_field("mechanics.revolver_hitbox_radius", "must be > 0");
+    }
+    if (m.respawn_ticks == kU32Unset) {
+        bad_field("mechanics.respawn_ticks",
+                  "is unset; it has no default and must be supplied explicitly");
+    }
+    if (m.respawn_ticks == 0U) {
+        bad_field("mechanics.respawn_ticks", "must be > 0");
+    }
+}
+
+void validate_geometry(const xushi2::sim::MatchConfig& cfg) {
+    if (cfg.num_cover_circles > xushi2::common::kMaxWalls) {
+        bad_field("cover_circles", "exceeds kMaxWalls");
+    }
+    for (std::uint32_t i = 0; i < cfg.num_cover_circles; ++i) {
+        const auto& c = cfg.cover_circles[i];
+        const std::string at = "cover_circles[" + std::to_string(i) + "]";
+        if (!std::isfinite(c.center.x) || !std::isfinite(c.center.y)) {
+            bad_field(at + ".center", "must be finite");
+        }
+        if (!std::isfinite(c.radius) || c.radius <= 0.0F) {
+            bad_field(at + ".radius", "must be finite and > 0");
+        }
+        if (c.center.x - c.radius < cfg.map.min_x || c.center.x + c.radius > cfg.map.max_x ||
+            c.center.y - c.radius < cfg.map.min_y || c.center.y + c.radius > cfg.map.max_y) {
+            bad_field(at, "must lie entirely within map bounds");
+        }
+    }
+
+    if (cfg.num_wall_segments > xushi2::common::kMaxWalls) {
+        bad_field("wall_segments", "exceeds kMaxWalls");
+    }
+    for (std::uint32_t i = 0; i < cfg.num_wall_segments; ++i) {
+        const auto& w = cfg.wall_segments[i];
+        const std::string at = "wall_segments[" + std::to_string(i) + "]";
+        if (!std::isfinite(w.a.x) || !std::isfinite(w.a.y) || !std::isfinite(w.b.x) ||
+            !std::isfinite(w.b.y)) {
+            bad_field(at, "endpoints must be finite");
+        }
+        if (!std::isfinite(w.half_width) || w.half_width <= 0.0F) {
+            bad_field(at + ".half_width", "must be finite and > 0");
+        }
+        const float dx = w.b.x - w.a.x;
+        const float dy = w.b.y - w.a.y;
+        if (dx * dx + dy * dy <= 1e-6F) {
+            bad_field(at, "must have non-zero length");
+        }
+        if (w.a.x - w.half_width < cfg.map.min_x || w.a.x + w.half_width > cfg.map.max_x ||
+            w.a.y - w.half_width < cfg.map.min_y || w.a.y + w.half_width > cfg.map.max_y ||
+            w.b.x - w.half_width < cfg.map.min_x || w.b.x + w.half_width > cfg.map.max_x ||
+            w.b.y - w.half_width < cfg.map.min_y || w.b.y + w.half_width > cfg.map.max_y) {
+            bad_field(at, "must lie entirely within map bounds");
+        }
+    }
+}
+
+void validate_match_config(const xushi2::sim::MatchConfig& cfg) {
+    if (cfg.action_repeat != 2U && cfg.action_repeat != 3U) {
+        bad_field("action_repeat",
+                  "must be 2 or 3, got " + std::to_string(cfg.action_repeat));
+    }
+    if (cfg.map.max_x <= cfg.map.min_x) {
+        bad_field("map", "requires max_x > min_x");
+    }
+    if (cfg.map.max_y <= cfg.map.min_y) {
+        bad_field("map", "requires max_y > min_y");
+    }
+    if (cfg.team_size != 1U && cfg.team_size != 3U) {
+        bad_field("team_size", "must be 1 or 3, got " + std::to_string(cfg.team_size));
+    }
+    if (cfg.objective_unlock_ticks == 0U) {
+        bad_field("objective_unlock_ticks", "must be > 0");
+    }
+    if (cfg.objective_capture_ticks == 0U) {
+        bad_field("objective_capture_ticks", "must be > 0");
+    }
+    validate_mechanics(cfg.mechanics);
+    validate_geometry(cfg);
+}
+
+// Canonical scripted-bot registry, mirrored from
+// src/bots/src/runner.cpp::kBotFactories. make_bot_by_name aborts on an
+// unknown name, so every binding that accepts one validates first.
+constexpr std::array<std::string_view, 6> kValidBotNames{
+    {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic", "weak_basic_v2", "noop"}};
+
+void validate_bot_name(const std::string& name, const char* arg_name) {
+    for (const auto& valid : kValidBotNames) {
+        if (name == valid) {
+            return;
+        }
+    }
+    std::string msg = "unknown ";
+    msg += arg_name;
+    msg += " '" + name + "'; valid:";
+    for (const auto& valid : kValidBotNames) {
+        msg += " ";
+        msg += valid;
+    }
+    throw std::invalid_argument(msg);
+}
+
+}  // namespace
 
 PYBIND11_MODULE(xushi2_cpp, m) {
     m.doc() = "xushi2 C++ extension — deterministic 3v3 hero-shooter simulation";
@@ -159,7 +313,12 @@ PYBIND11_MODULE(xushi2_cpp, m) {
             });
 
     py::class_<xushi2::sim::Sim>(m, "Sim")
-        .def(py::init<const xushi2::sim::MatchConfig&>())
+        // Validate before constructing: the Sim ctor's X2_REQUIRE checks abort
+        // the process, which Python cannot catch or diagnose.
+        .def(py::init([](const xushi2::sim::MatchConfig& config) {
+            validate_match_config(config);
+            return std::make_unique<xushi2::sim::Sim>(config);
+        }))
         .def("reset", py::overload_cast<>(&xushi2::sim::Sim::reset))
         .def("reset", py::overload_cast<std::uint64_t>(&xushi2::sim::Sim::reset),
              py::arg("seed"))
@@ -284,18 +443,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
         "scripted_bot_action",
         [](const xushi2::sim::Sim& sim, int agent_slot,
            const std::string& bot_name) {
-            static const std::array<std::string, 6> kValidNames{
-                {"walk_to_objective", "hold_and_shoot", "basic", "weak_basic",
-                 "weak_basic_v2", "noop"}};
-            bool valid = false;
-            for (const auto& n : kValidNames) {
-                if (bot_name == n) { valid = true; break; }
-            }
-            if (!valid) {
-                throw std::invalid_argument(
-                    "unknown bot_name; valid: walk_to_objective, "
-                    "hold_and_shoot, basic, weak_basic, weak_basic_v2, noop");
-            }
+            validate_bot_name(bot_name, "bot_name");
             auto bot = xushi2::bots::make_bot_by_name(bot_name);
             return bot->decide(sim.state(), sim.config(), agent_slot);
         },
@@ -306,6 +454,11 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     m.def("run_scripted_episode",
           [](const xushi2::sim::MatchConfig& config, const std::string& bot_a,
              const std::string& bot_b) {
+              // Both the config and the bot names reach abort-on-invalid code
+              // (Sim ctor, make_bot_by_name) inside run_scripted_episode.
+              validate_match_config(config);
+              validate_bot_name(bot_a, "bot_a");
+              validate_bot_name(bot_b, "bot_b");
               auto result = xushi2::bots::run_scripted_episode(config, bot_a, bot_b);
               return py::make_tuple(std::move(result.decision_hashes), result.final_tick,
                                     result.team_a_kills, result.team_b_kills,
@@ -368,6 +521,13 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                 throw std::invalid_argument(
                     "team_perspective must be Team.A or Team.B "
                     "(Team.Neutral is not a valid critic side)");
+            }
+            // The builder also asserts team_size == 3 (it needs three present
+            // Rangers per side); that assert aborts, so check it here too.
+            if (sim.config().team_size != 3U) {
+                throw std::invalid_argument(
+                    "build_critic_obs requires a Sim built with team_size == 3, got " +
+                    std::to_string(sim.config().team_size));
             }
             xushi2::sim::build_critic_obs(
                 sim, team_perspective, out.mutable_data(0),
