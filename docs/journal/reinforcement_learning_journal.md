@@ -3458,3 +3458,75 @@ The best fighter exists and needs retention repair, not more fighting:
 warm-start L3-0800, anchor share >= 0.45, `run.eval_opponent` = sampled
 v5-0300 (so best-eval tracks the real objective), gate at n=96: beat
 v5-0300 AND retention >= 2.
+
+## 2026-08-09 — Engineering-review merge, re-baseline, and a third retracted crown
+
+**Status:** both external engineering-review branches merged into main
+(`repo-engineering-review-hnzrb6`: truncation-vs-termination bootstrapping,
+atomic/resumable checkpoints, config-key validation, contested derived in
+the sim, explicit env curriculum capabilities; `repository-engineering-
+review-86xqx6`: fog-filtered contested in the actor obs, metrics
+attribution fixes, bounded async worker waits, boundary validation in the
+bindings, golden fixture restore). C++ suite 143/143, Python 605/605.
+
+### Merge reconciliations (both branches predate the campaign)
+
+- Config-key registry taught the post-fork campaign keys (opponent_bot_mix,
+  opponent_handicap_curriculum, opponent_recent_self,
+  opponent_snapshot_stochastic, snapshot_paths, entropy/log_std anneals,
+  run.eval_opponent); dead minibatch_size / use_recurrence keys removed
+  from the 10 post-fork configs.
+- `mappo_config_from_checkpoint` tolerates the two removed keys inside
+  historical checkpoints' stored configs (checkpoints are immutable).
+- `env.snapshot_paths` left the dead-key lists: the self-play campaign
+  implemented it after the branches forked.
+- Contested: sim keeps public `ObjectiveState.contested` (HUD state); the
+  actor obs derives it through the fog filter — bit-identical fog-off,
+  leak-safe fog-on. Both branches' tests pass.
+
+### Golden replay: the "corruption" was platform divergence
+
+The abf98a1 fixture, retracted upstream as corrupt, is reproduced
+bit-exactly by every commit since May on darwin-arm64; the restored
+pre-abf98a1 fixture is what linux reproduces. The scripted trajectory is
+deterministic per platform, not across platforms (libm/codegen float
+differences). Fixtures are now per-platform
+(`golden_phase0_basic.darwin-arm64.txt` beside the linux default) with a
+compile-time platform check. Corollary: cross-machine bit-reproducibility
+of runs was never real; per-machine determinism still is.
+
+### Re-baseline at n=96, seed 0xA11CE, sampled, as-trained 600t
+
+| matchup | 08-02 claim | 08-09 re-run |
+|---|---|---|
+| v5-0300 vs weak_basic_v2 | 77/3/16, 2.57 | **77/3/16, 2.5722 — exact** |
+| L3-0800 vs weak_basic_v2 | 3/30/63, 0.06 | 0/31/65, 0.00 — consistent |
+| L3-0800 vs sampled v5-0300 | 54/35/7, 5.37/2.87 | **41/51/4, 4.56/3.21** |
+
+The retention rows confirm the merge changed no eval behavior. The
+head-to-head row does not: re-run at a second seed (0xBEEF) gives 40/53/3,
+and a pre-merge (40d1be8) control at the original seed gives 41/51/4 —
+bit-identical to the merged run. The 54/35/7 row cannot be blamed on the
+merge, the seed, or the code: it was produced by an ad-hoc, uncommitted
+eval path and does not reproduce under the committed one
+(`eval_mappo_matrix.py --stochastic-snapshot`, added this entry).
+
+- **"L3-0800 decisively beats v5-0300": RETRACTED** — the third false
+  crown, and the first retracted under the n>=96 doctrine itself. At
+  n=96x2 seeds L3-0800 loses the win count (41/51, 40/53) while holding
+  the mean-score edge (4.56/3.21, 4.49/3.33): it wins big and loses
+  often. No decisive fighter exists.
+- **Doctrine addendum:** a gate/crowning number only counts if produced by
+  a committed CLI invocation recorded with its artifact. The sample-size
+  clause was necessary but not sufficient; the instrument lesson now
+  includes the instrument's provenance.
+
+### Leg 4 implication
+
+The leg-4 premise ("best fighter exists, needs retention repair")
+weakens: L3-0800 holds a score edge but not a win edge over v5-0300, and
+its anchor game is confirmed dead. Warm-starting L3-0800 is still
+defensible (score edge is real, and retention repair was the plan), but
+the gate should now require the win count too: beat sampled v5-0300 on
+wins at n>=96 AND retention >= 2 vs weak_basic_v2, both from the
+committed eval path. v5-0300 remains the reigning all-rounder.
