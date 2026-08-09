@@ -3530,3 +3530,54 @@ defensible (score edge is real, and retention repair was the plan), but
 the gate should now require the win count too: beat sampled v5-0300 on
 wins at n>=96 AND retention >= 2 vs weak_basic_v2, both from the
 committed eval path. v5-0300 remains the reigning all-rounder.
+
+## 2026-08-09 — selfplay_l4: retention repair works, then sampled play collapses; gate failed
+
+**Status:** run complete (600 updates, warm start L3-0800, anchor 0.45
+weak_basic_v2 + sampled v5-0300 0.35 + sampled self-copy 0.20,
+`run.eval_opponent` = sampled v5-0300, anchor KL annealed by 150).
+Artifacts `runs/phase4_selfplay_l4/`. Gate artifacts
+`docs/reports/2026-08-09-l4-gate-ckpt0250.json` / `-ckpt0300.json`.
+
+### Result (committed CLI, n=96, seed 0xA11CE, sampled, as-trained 600t)
+
+| checkpoint | vs weak_basic_v2 | vs sampled v5-0300 |
+|---|---|---|
+| ckpt_0250 | 21/38/37, 1.13 | 23/68/5, 3.11/4.65 |
+| **ckpt_0300** | **29/35/32, 1.59** | **31/61/4, 3.50/3.86** |
+
+**Gate: FAILED** on both legs (retention < 2; no win-count edge). Copied
+ckpt_0300 to `data/checkpoints/phase4_l4_upd300_repair_candidate.pt` —
+the best retention+fighting compromise any self-play leg has produced.
+
+### What the run established
+
+1. **Retention repair is real but paid for.** Dead anchor game (0.00 at
+   warm start) climbed to 1.59 by upd 300 under the 0.45 anchor share —
+   while the v5 head-to-head slid 41/51 -> 31/61. Retention and fighting
+   competed for capacity along the whole trajectory; no checkpoint held
+   both. Second consecutive league leg to fail this way (L3's fighter had
+   dead retention; L4's repair dulled the fighter).
+2. **New instrument failure: greedy best-eval is blind to sampled-play
+   collapse.** From upd 350 SAMPLED play collapsed in BOTH matchups
+   (probe: 1/21 vs v5, 0-1 wins vs weak) while every greedy in-training
+   eval stayed in the 18-33/50 band, and log_std was flat (~0.113) — the
+   policy's mean stayed strong while its sampled behavior died. Fix
+   landed: `run.eval_opponent.stochastic: true` makes in-training eval
+   (and best-eval selection) sample. Future legs must set it: the gate
+   measures sampled play, so the selector has to.
+3. **n=24 flattered again**: ckpt_0300 read 10/13 (42%) vs v5 at n=24,
+   31/61 (34%) at n=96. Direction-finding only, as doctrined.
+
+### Verdict and the fork
+
+Falsified as designed ("retention and fighting compete for capacity" is
+now the confirmed reading, not just a clause). Two league legs from two
+directions produced no both-skills checkpoint. The evidence has shifted
+decisively toward the 08-01 fork's option 2: **combat/policy capacity is
+the binding constraint** — aim/dodge pretraining in the mini-envs or
+obs/action/network upgrades, with B2-unchanged (and now also "hold both
+L4 gate legs at once") as the capacity metric. A cheap intermediate probe
+first: rerun a short L4 variant with `eval_opponent.stochastic: true` to
+test whether sampled-aware selection alone finds a both-skills
+checkpoint before concluding capacity work is unavoidable.

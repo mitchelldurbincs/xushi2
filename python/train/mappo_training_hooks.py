@@ -275,6 +275,13 @@ class MappoTrainingHooks:
     def evaluate_step(self, update_idx: int, lr: float):
         timing = self._objective_timing_for_update(update_idx)
         respawn_ticks = self._respawn_ticks_for_update(update_idx)
+        # `run.eval_opponent.stochastic: true` makes the in-training eval (and
+        # therefore best-eval selection) sample the learner's policy instead of
+        # playing greedy. Leg 4 (journal 2026-08-09) showed why greedy-only is
+        # a trap: sampled play collapsed from update 350 in BOTH gate matchups
+        # while every greedy eval stayed in the normal band, so best-eval was
+        # blind to the failure the gate actually measures.
+        eval_cfg = dict(self.context.run_cfg.get("eval_opponent", {}))
         eval_stats = evaluate_mappo(
             self.trainer.model,
             self._eval_env_fn(),
@@ -282,6 +289,7 @@ class MappoTrainingHooks:
             seed=self.context.seed_base + 100_000 + update_idx,
             objective_timing_seconds=timing,
             respawn_ticks=respawn_ticks,
+            stochastic=bool(eval_cfg.get("stochastic", False)),
         )
         self._last_canonical_eval_stats = None
         if (
