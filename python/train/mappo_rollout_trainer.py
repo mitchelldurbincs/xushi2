@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
@@ -12,12 +12,17 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     import gymnasium as gym
+
     from train.cap_duel_distill import CapDuelDistillAnchor, CapDuelDistillBatch
 
 from train.device import resolve_device
+from train.losses import (
+    _masked_mean,
+    action_logprob_and_entropy_parts,
+)
 from train.mappo_advantage import compute_gae
+from train.mappo_metrics import rollout_metrics
 from train.mappo_model import (
-    _OWN_POSITION_SLICE,
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
@@ -27,10 +32,6 @@ from train.mappo_model import (
     target_selection_aux_metrics,
 )
 from train.mappo_rollout import collect_rollout, step_loss_mask
-from train.losses import (
-    _masked_mean,
-    action_logprob_and_entropy_parts,
-)
 from train.recurrent_common import (
     apply_global_seeds,
     get_optimizer_learning_rate,
@@ -39,8 +40,6 @@ from train.recurrent_common import (
     set_optimizer_learning_rate,
 )
 from train.runtime_specs import resolve_runtime_spec
-from xushi2.multi_enemy_obs import entity_obs_self_position
-from xushi2.obs_manifest import actor_field_slice
 from xushi2.vector_env import make_xushi_vector_env
 
 
@@ -66,8 +65,14 @@ class MappoRollout:
         self.logprob = torch.zeros(N, A, L, device=dev)
         self.reward = torch.zeros(N, A, L, device=dev)
         self.done = torch.zeros(N, L, device=dev)
+        # Episode boundaries that are true MDP terminals, tracked apart from
+        # `done` so GAE can bootstrap time-limit truncations correctly.
+        self.terminated = torch.zeros(N, L, device=dev)
+        # V(s_T) for the pre-reset state, filled only on truncated steps.
+        self.truncated_value = torch.zeros_like(self.value)
         self.h_init = torch.zeros(N, A, L, cfg.gru_hidden, device=dev)
         self.last_done = torch.zeros(N, device=dev)
+        self.last_terminated = torch.zeros(N, device=dev)
         self.info_metrics: dict[str, float] = {}
         raw_mask = cfg.agent_loss_mask or tuple(1.0 for _ in range(A))
         self.agent_loss_mask = (
@@ -158,6 +163,57 @@ class MappoTrainer:
     def close(self) -> None:
         self.vec_env.close()
 
+    # --- resume ---------------------------------------------------------
+    #
+    # Model weights alone are not enough to continue a run. Restoring from
+    # weights only zeroes the Adam moments and restarts the LR schedule at
+    # update 1, a large silent optimization discontinuity that looks like "the
+    # run got worse after restart". These two methods carry the rest.
+
+    def resume_state(self) -> dict[str, Any]:
+        """Everything besides model weights needed to continue this run."""
+        return {
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "update_idx": int(self._active_update_idx),
+            "update_counter": int(self._update_counter),
+            "hidden_state": self.h.detach().cpu(),
+            "policy_sampling_generator_state": self.policy_sampling_generator.get_state(),
+            "torch_rng_state": torch.get_rng_state(),
+            "numpy_rng_state": np.random.get_state(),
+            "seed": int(self.seed),
+        }
+
+    def load_resume_state(self, state: dict[str, Any]) -> int:
+        """Restore optimizer/RNG/hidden state. Returns the completed update index.
+
+        Shapes are checked rather than trusted: resuming into a differently
+        shaped run would otherwise fail deep inside the first update, or worse,
+        broadcast silently.
+        """
+        expected_h = (self.cfg.num_envs, self.cfg.n_agents, self.cfg.gru_hidden)
+        hidden = state.get("hidden_state")
+        if hidden is not None:
+            if tuple(hidden.shape) != expected_h:
+                raise ValueError(
+                    f"resume hidden_state shape {tuple(hidden.shape)} does not match this "
+                    f"run's {expected_h}; num_envs/n_agents/gru_hidden must match to resume"
+                )
+            self.h = hidden.to(self.device)
+        self.optimizer.load_state_dict(state["optimizer_state_dict"])
+        self._update_counter = int(state.get("update_counter", 0))
+        gen_state = state.get("policy_sampling_generator_state")
+        if gen_state is not None:
+            self.policy_sampling_generator.set_state(gen_state)
+        torch_state = state.get("torch_rng_state")
+        if torch_state is not None:
+            torch.set_rng_state(torch_state)
+        numpy_state = state.get("numpy_rng_state")
+        if numpy_state is not None:
+            np.random.set_state(numpy_state)
+        completed = int(state.get("update_idx", 0))
+        self.set_update_index(completed)
+        return completed
+
     def set_learning_rate(self, lr: float) -> None:
         set_optimizer_learning_rate(self.optimizer, lr)
 
@@ -166,6 +222,10 @@ class MappoTrainer:
 
     def set_cap_duel_distill_anchor(self, anchor: CapDuelDistillAnchor | None) -> None:
         self.cap_duel_distill_anchor = anchor
+
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Curriculum knobs the underlying envs can actually apply."""
+        return self.vec_env.supported_curriculum_setters()
 
     def set_team_spirit(self, value: float) -> None:
         """Push team_spirit value to every wrapped env via the vector wrapper.
@@ -295,95 +355,7 @@ class MappoTrainer:
         return metrics
 
     def _rollout_metrics(self, rollout: MappoRollout) -> dict[str, float]:
-        cfg = self.cfg
-        reward = rollout.reward
-        advantages = rollout.advantages
-        returns = rollout.returns
-        action = rollout.action
-        agent_mask = rollout.agent_loss_mask.expand_as(reward)
-        move_mag = torch.linalg.vector_norm(action[:, :, :, 0:2], dim=-1)
-        cont = action[:, :, :, : cfg.continuous_action_dim]
-        binary_start = cfg.continuous_action_dim
-        binary_end = binary_start + cfg.binary_action_dim
-        binary = action[:, :, :, binary_start:binary_end]
-        target = action[:, :, :, binary_end:] if cfg.target_action_dim > 0 else None
-
-        self_on_point_slice = actor_field_slice("self_on_point")
-        if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
-            obs_np = rollout.actor_obs.detach().cpu().numpy()
-            own_pos_np = entity_obs_self_position(obs_np)
-            own_pos = torch.as_tensor(
-                own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device
-            )
-            self_on_point = torch.zeros_like(own_pos[..., :1])
-        else:
-            own_pos = rollout.actor_obs[:, :, :, _OWN_POSITION_SLICE]
-            self_on_point = rollout.actor_obs[:, :, :, self_on_point_slice]
-        distance_to_objective = torch.linalg.vector_norm(own_pos, dim=-1)
-
-        out = {
-            "active_agent_fraction": float(agent_mask.mean().item()),
-            "rollout_reward_mean": float(_masked_mean(reward, agent_mask).item()),
-            "rollout_reward_std": float(
-                _masked_mean(
-                    (reward - _masked_mean(reward, agent_mask)) ** 2,
-                    agent_mask,
-                )
-                .sqrt()
-                .item()
-            ),
-            "rollout_reward_min": float(reward[agent_mask > 0.0].min().item()),
-            "rollout_reward_max": float(reward[agent_mask > 0.0].max().item()),
-            "advantage_mean": float(advantages.mean().item()),
-            "advantage_std": float(advantages.std(unbiased=False).item()),
-            "advantage_min": float(advantages.min().item()),
-            "advantage_max": float(advantages.max().item()),
-            "return_mean": float(returns.mean().item()),
-            "return_std": float(returns.std(unbiased=False).item()),
-            "action_move_mag_mean": float(_masked_mean(move_mag, agent_mask).item()),
-            "action_cont_mean": float(
-                _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont)).item()
-            ),
-            "action_cont_std": float(
-                _masked_mean(
-                    (cont - _masked_mean(cont, agent_mask.unsqueeze(-1).expand_as(cont))) ** 2,
-                    agent_mask.unsqueeze(-1).expand_as(cont),
-                )
-                .sqrt()
-                .item()
-            ),
-            "mean_distance_to_objective": float(
-                _masked_mean(distance_to_objective, agent_mask).item()
-            ),
-            "self_on_point_fraction": float(
-                _masked_mean(
-                    self_on_point, agent_mask.unsqueeze(-1).expand_as(self_on_point)
-                ).item()
-            ),
-        }
-        if binary.numel() > 0:
-            out["action_binary_mean"] = float(
-                _masked_mean(binary, agent_mask.unsqueeze(-1).expand_as(binary)).item()
-            )
-        else:
-            out["action_binary_mean"] = 0.0
-        if target is not None and target.numel() > 0:
-            out["action_target_slot_mean"] = float(
-                _masked_mean(target, agent_mask.unsqueeze(-1).expand_as(target)).item()
-            )
-        if cfg.mask_fire_when_no_visible_enemy:
-            valid = self.model.fire_valid_mask(rollout.actor_obs.reshape(-1, cfg.obs_dim))
-            if valid is not None:
-                out["fire_valid_fraction"] = float(
-                    _masked_mean(valid.to(agent_mask.dtype), agent_mask.reshape(-1)).item()
-                )
-        samples = float(rollout.info_metrics.get("info_metric_samples", 0.0))
-        if samples > 0.0:
-            for key, value in rollout.info_metrics.items():
-                if key == "info_metric_samples":
-                    continue
-                out[f"rollout_{key}_mean"] = float(value) / samples
-        return out
+        return rollout_metrics(self.cfg, rollout, model=self.model)
 
     def _action_logprob_and_entropy(
         self,
@@ -859,7 +831,6 @@ def make_mappo_config(config: dict) -> MappoConfig:
         max_grad_norm=float(ppo_cfg["max_grad_norm"]),
         learning_rate=float(ppo_cfg["learning_rate"]),
         num_epochs=int(ppo_cfg["num_epochs"]),
-        minibatch_size=int(ppo_cfg["minibatch_size"]),
         lr_schedule=str(ppo_cfg.get("lr_schedule", "constant")),
         lr_final_ratio=float(ppo_cfg.get("lr_final_ratio", 1.0)),
         warmup_updates=int(ppo_cfg.get("warmup_updates", 0)),

@@ -183,17 +183,14 @@ void build_actor_obs_phase1(const Sim& sim,
                     static_cast<float>(cfg.objective_capture_ticks)));
 
     // --- contested (both teams present and alive on point) ---
-    bool a_on = false;
-    bool b_on = false;
-    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
-        const auto& h = s.heroes[i];
-        if (!h.present || !h.alive) continue;
-        if (!obs_utils::position_on_objective(h.position, map)) continue;
-        if (h.team == common::Team::A) a_on = true;
-        if (h.team == common::Team::B) b_on = true;
-    }
-    const bool contested = a_on && b_on;
-    w.push1(contested ? 1.0F : 0.0F);
+    // Read from the objective state machine, which recomputes it every tick.
+    // Deriving it here would mean iterating every hero's true world position
+    // inside the actor builder, which violates the structural invariant this
+    // TU is required to hold (see the file header and observation_spec.md):
+    // no function reachable from the actor builder may iterate hidden enemy
+    // state. The displayed contested flag is public HUD state, but it must
+    // arrive as public state, not be re-derived from the full world.
+    w.push1(s.objective.contested ? 1.0F : 0.0F);
 
     // --- objective_unlocked ---
     w.push1(s.objective.unlocked ? 1.0F : 0.0F);

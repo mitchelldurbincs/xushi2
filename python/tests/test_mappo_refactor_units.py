@@ -3,10 +3,10 @@ from __future__ import annotations
 import pytest
 import torch
 
+from train.losses import action_logprob_and_entropy_parts
 from train.mappo import MappoConfig, MappoRollout
 from train.mappo_metrics import rollout_metrics
 from train.mappo_rollout import step_loss_mask
-from train.mappo_update import action_logprob_entropy
 
 
 def _cfg(*, target_action_dim: int = 0) -> MappoConfig:
@@ -33,7 +33,6 @@ def _cfg(*, target_action_dim: int = 0) -> MappoConfig:
         max_grad_norm=0.5,
         learning_rate=1.0e-4,
         num_epochs=1,
-        minibatch_size=1,
         agent_loss_mask=(1.0, 1.0, 0.0),
     )
 
@@ -65,13 +64,22 @@ def test_rollout_metrics_returns_expected_keys() -> None:
     assert isinstance(metrics["rollout_reward_mean"], float)
 
 
-def test_action_logprob_entropy_shapes_without_target() -> None:
+def test_action_logprob_entropy_parts_shapes() -> None:
+    """Covers the helper the live update path actually calls.
+
+    ``MappoTrainer._action_logprob_and_entropy`` delegates to
+    ``action_logprob_and_entropy_parts`` and needs the entropy split by
+    component so ``entropy_coef_{move,aim,binary}`` can be applied separately.
+    """
     cfg = _cfg(target_action_dim=0)
     batch = 5
     mean = torch.zeros(batch, cfg.continuous_action_dim)
     log_std = torch.zeros(batch, cfg.continuous_action_dim)
     binary_logits = torch.zeros(batch, cfg.binary_action_dim)
-    action = torch.zeros(batch, cfg.action_dim)
-    logp, ent = action_logprob_entropy(cfg, mean, log_std, binary_logits, None, action)
-    assert logp.shape == (batch,)
-    assert ent.shape == (batch,)
+    action = torch.zeros(batch, cfg.continuous_action_dim + cfg.binary_action_dim)
+    logp, move_ent, aim_ent, binary_ent = action_logprob_and_entropy_parts(
+        mean, log_std, binary_logits, action
+    )
+    for tensor in (logp, move_ent, aim_ent, binary_ent):
+        assert tensor.shape == (batch,)
+    assert torch.isfinite(logp).all()

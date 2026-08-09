@@ -23,6 +23,7 @@ from train.mappo_model import (
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
 from train.opponent_mix import opponent_mix_assignment, recent_self_mix
+from xushi2.env_capabilities import require_curriculum_setters
 
 
 class MappoTrainingHooks:
@@ -56,6 +57,40 @@ class MappoTrainingHooks:
         self._last_log_std_offset = 0.0
         self._last_opponent_handicap: tuple[float, int] | None = None
         self._last_log_std_offset = 0.0
+
+        self._require_supported_curricula()
+
+    def _require_supported_curricula(self) -> None:
+        """Fail at startup if a configured curriculum cannot reach the envs.
+
+        The trainer pushes curriculum values down to the vector env on every
+        update. Envs declare which knobs they can apply (see
+        xushi2.env_capabilities); values pushed to an env that declared a knob
+        unsupported are dropped by design. That is only safe when the knob is
+        inert -- if the config actually turns a curriculum on and no env can
+        apply it, the run would silently train against a curriculum that never
+        happened, which is exactly what the 2026-06-10 multi-enemy runs did.
+        """
+        context = self.context
+        cfg = context.cfg
+        required: list[str] = []
+        if cfg.team_spirit_initial != 0.0 or cfg.team_spirit_final != 0.0:
+            required.append("set_team_spirit")
+        if context.majority_on_point_initial > 0.0:
+            required.append("set_majority_on_point_alpha")
+        if context.uncontested_on_point_initial > 0.0:
+            required.append("set_uncontested_on_point_alpha")
+        if context.objective_timing_enabled:
+            required.append("set_objective_timing_seconds")
+        if context.respawn_curriculum_enabled:
+            required.append("set_respawn_ticks")
+        if not required:
+            return
+        require_curriculum_setters(
+            self.trainer.supported_curriculum_setters(),
+            required,
+            context="training config",
+        )
 
     def set_learning_rate(self, lr: float) -> None:
         self.trainer.set_learning_rate(lr)
@@ -491,6 +526,10 @@ class MappoTrainingHooks:
             phase_label=self.context.phase_label,
             ckpt_env_cfg=self.context.ckpt_env_cfg,
             mappo_cfg=self.context.cfg,
+            # Periodic checkpoints are the ones a preempted or OOM-killed run
+            # restarts from, so they carry the optimizer/RNG/hidden state that
+            # makes `run.resume_from` continue rather than warm-start.
+            resume_state=self.trainer.resume_state(),
         )
         if self.context.retention is None:
             return

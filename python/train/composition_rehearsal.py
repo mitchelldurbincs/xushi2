@@ -327,11 +327,9 @@ def build_mappo_env_fn_with_overrides(
             if "self_play_schedule" in env_cfg
             else None
         ),
-        snapshot_paths=tuple(str(p) for p in env_cfg.get("snapshot_paths", ())),
         snapshot_league=(
             dict(env_cfg.get("snapshot_league", {})) if "snapshot_league" in env_cfg else None
         ),
-        target_slot=bool(env_cfg.get("target_slot", False)),
         n_agents=int(env_cfg.get("n_agents", env_cfg.get("team_size", 3))),
     )
 

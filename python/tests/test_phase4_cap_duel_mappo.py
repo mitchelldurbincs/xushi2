@@ -227,7 +227,6 @@ def test_cap_duel_selfplay_keeps_three_agent_shape_and_uses_loss_masks() -> None
             "num_envs": 1,
             "rollout_len": 2,
             "num_epochs": 1,
-            "minibatch_size": 1,
             "learning_rate": 1.0e-5,
             "value_per_agent": True,
             "gamma": 0.997,

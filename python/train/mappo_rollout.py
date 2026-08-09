@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import torch
 
 from train.device import resolve_device
 from train.mappo_model import MappoConfig
+
+if TYPE_CHECKING:
+    from train.mappo_rollout_trainer import MappoRollout
 
 _INFO_METRIC_KEYS = (
     "majority_on_point_alpha",
@@ -64,7 +69,7 @@ def step_loss_mask(
     return masks
 
 
-def collect_rollout(trainer) -> "MappoRollout":
+def collect_rollout(trainer) -> MappoRollout:
     cfg = trainer.cfg
     device = trainer.device
     rollout = trainer.rollout_cls(cfg, device=device)
@@ -87,11 +92,16 @@ def collect_rollout(trainer) -> "MappoRollout":
             else:
                 value = trainer.model.value(critic_obs)
         action_3d = action.view(cfg.num_envs, cfg.n_agents, cfg.action_dim)
-        next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, infos = trainer.vec_env.step(
-            action_3d.detach().cpu().numpy()
-        )
+        step_result = trainer.vec_env.step(action_3d.detach().cpu().numpy())
+        next_obs_np, reward_np, terminated, truncated, next_critic_obs_np, infos = step_result
         _accumulate_info_metrics(rollout.info_metrics, infos)
         done_np = np.logical_or(terminated, truncated)
+        truncated_np = np.logical_and(truncated, np.logical_not(terminated))
+        if truncated_np.any():
+            # A truncated step's `next_critic_obs` belongs to the freshly reset
+            # episode, so the value the critic should bootstrap from has to
+            # come from the pre-reset observation the env stashed for us.
+            _fill_truncated_values(trainer, rollout, infos, truncated_np, t)
         rollout.actor_obs[:, :, t] = obs
         if cfg.value_per_agent:
             rollout.critic_obs[:, :, t] = critic_obs
@@ -106,6 +116,9 @@ def collect_rollout(trainer) -> "MappoRollout":
         else:
             rollout.value[:, t] = value
         rollout.done[:, t] = torch.as_tensor(done_np, dtype=torch.float32, device=device)
+        rollout.terminated[:, t] = torch.as_tensor(
+            terminated, dtype=torch.float32, device=device
+        )
         h = h_next.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
         rollout.h_init[:, :, t] = flat_h.view(cfg.num_envs, cfg.n_agents, cfg.gru_hidden)
         for e, done in enumerate(done_np):
@@ -121,10 +134,40 @@ def collect_rollout(trainer) -> "MappoRollout":
         else:
             rollout.last_value = trainer.model.value(critic_obs)
     rollout.last_done = rollout.done[:, -1].clone()
+    rollout.last_terminated = rollout.terminated[:, -1].clone()
     trainer.last_obs = obs
     trainer.last_critic_obs = critic_obs
     trainer.h = h
     return rollout
+
+
+def _fill_truncated_values(trainer, rollout, infos, truncated_np, t) -> None:
+    """Store V(final_critic_observation) for each truncated env at step t.
+
+    Envs that do not publish `final_critic_observation` leave the entry at 0
+    and the step falls back to the reset episode's value, i.e. the previous
+    behavior, rather than silently producing a wrong bootstrap target.
+    """
+    cfg = trainer.cfg
+    for env_idx, was_truncated in enumerate(truncated_np):
+        if not bool(was_truncated):
+            continue
+        info = infos[env_idx]
+        final_critic = info.get("final_critic_observation")
+        if final_critic is None:
+            continue
+        obs = torch.as_tensor(
+            np.asarray(final_critic, dtype=np.float32), device=trainer.device
+        )
+        with torch.no_grad():
+            if cfg.value_per_agent:
+                value = trainer.model.value(
+                    obs.reshape(cfg.n_agents, cfg.critic_obs_dim)
+                ).view(cfg.n_agents)
+                rollout.truncated_value[env_idx, :, t] = value
+            else:
+                value = trainer.model.value(obs.reshape(1, cfg.critic_obs_dim)).view(())
+                rollout.truncated_value[env_idx, t] = value
 
 
 def _accumulate_info_metrics(dst: dict[str, float], infos: list[dict]) -> None:

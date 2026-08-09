@@ -21,6 +21,10 @@ class LoopConfig:
     lr_schedule: str
     lr_final_ratio: float
     warmup_updates: int
+    # First update to run. Resuming starts after the last completed update
+    # while keeping total_updates fixed, so the LR schedule continues from
+    # where it left off instead of restarting.
+    start_update: int = 1
 
 
 class OrchestrationHooks(Protocol[RolloutT, UpdateMetricsT, EvalResultT, CheckpointPayloadT]):
@@ -45,7 +49,7 @@ def run_training_loop(
     cfg: LoopConfig,
     hooks: OrchestrationHooks[RolloutT, UpdateMetricsT, EvalResultT, CheckpointPayloadT],
 ) -> None:
-    for update_idx in range(1, cfg.total_updates + 1):
+    for update_idx in range(max(1, cfg.start_update), cfg.total_updates + 1):
         lr = lr_for_update(
             update_idx,
             cfg.total_updates,

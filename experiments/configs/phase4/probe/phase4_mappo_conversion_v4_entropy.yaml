@@ -98,7 +98,6 @@ env:
       respawn_ticks: 600
 
 model:
-  use_recurrence: true
   obs_encoder: entity_attention_grid
   entity_token_count: 5
   entity_token_dim: 18
@@ -114,7 +113,6 @@ ppo:
   num_envs: 64
   rollout_len: 128
   num_epochs: 2
-  minibatch_size: 256
   learning_rate: 1.0e-5
   value_normalization: true
   vector_env: sync

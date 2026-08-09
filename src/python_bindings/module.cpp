@@ -223,6 +223,13 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                                           static_cast<double>(xushi2::sim::kTickHz);
                                })
         .def_property_readonly("episode_over", &xushi2::sim::Sim::episode_over)
+        // Gymnasium's terminated/truncated split needs the *reason* the episode
+        // ended, not just that it did. Deriving it from `winner` is wrong: a
+        // timeout with one team ahead has a winner but is still a time limit.
+        .def_property_readonly("score_threshold_reached",
+                               &xushi2::sim::Sim::score_threshold_reached)
+        .def_property_readonly("round_timer_expired",
+                               &xushi2::sim::Sim::round_timer_expired)
         .def_property_readonly("winner", &xushi2::sim::Sim::winner)
         .def_property_readonly("team_a_kills", &xushi2::sim::Sim::team_a_kills)
         .def_property_readonly("team_b_kills", &xushi2::sim::Sim::team_b_kills)

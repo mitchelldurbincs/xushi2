@@ -108,6 +108,14 @@ struct ObjectiveState {
     std::uint32_t team_a_score_ticks = 0;       // 0..kWinTicks
     std::uint32_t team_b_score_ticks = 0;
     bool unlocked = false;                      // true after the 15s lock window
+    // Both teams have a living hero inside the objective circle. Public HUD
+    // state (observation_spec.md §"Never exposed to actor" explicitly permits
+    // the contested flag), recomputed every tick by objective_tick_update.
+    //
+    // This lives on ObjectiveState rather than being derived inside
+    // actor_obs.cpp so the actor observation builder never has to iterate
+    // hero state — see the structural invariant in observation_spec.md.
+    bool contested = false;
 };
 
 // Phase-1 mechanic values not pinned by docs — must be supplied by the
@@ -189,6 +197,17 @@ class Sim {
     const MatchState& state() const noexcept { return state_; }
     const MatchConfig& config() const noexcept { return config_; }
     bool episode_over() const noexcept;
+
+    // Why the episode ended. `episode_over()` is true for two structurally
+    // different reasons and callers need to tell them apart: reaching the
+    // score threshold is a true terminal state, while the round timer expiring
+    // is a time limit cutting off an MDP that would otherwise continue.
+    //
+    // Gymnasium's terminated/truncated split means exactly this distinction,
+    // and RL value bootstrapping depends on it: a time limit must bootstrap
+    // from V(s_T), a real terminal must not.
+    bool score_threshold_reached() const noexcept;
+    bool round_timer_expired() const noexcept;
 
     // Config-gated training curriculum hook. Updates only future objective
     // ticks; it does not reset score or ownership.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -107,6 +108,52 @@ def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
     else:
         trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
     print(f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}", flush=True)
+
+
+def maybe_resume(context: RuntimeContext, trainer: MappoTrainer) -> int:
+    """Continue a previous run from ``run.resume_from``. Returns the next update.
+
+    Distinct from ``run.init_from_checkpoint`` (warm start), which deliberately
+    starts a *new* run from someone else's weights. Resuming restores the
+    optimizer moments, RNG streams, recurrent hidden state, and update index, so
+    the LR schedule and exploration continue rather than restarting.
+
+    Scope: the learner's state is restored, the environment's is not. The C++
+    Sim cannot be serialized from Python, so the first resumed update begins
+    from a freshly reset episode rather than mid-episode. A resumed run
+    therefore does not reproduce an uninterrupted one bit for bit; it continues
+    optimization correctly, which is the part that a weights-only restart got
+    wrong.
+    """
+    resume_path = context.run_cfg.get("resume_from")
+    if not resume_path:
+        return 1
+    if context.run_cfg.get("init_from_checkpoint"):
+        raise ValueError(
+            "run.resume_from and run.init_from_checkpoint are mutually exclusive: "
+            "the first continues this run, the second starts a new one from "
+            "foreign weights. Pick one."
+        )
+    path = Path(resume_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"run.resume_from checkpoint not found: {path}")
+    raw = torch.load(path, map_location="cpu", weights_only=False)
+    trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
+    resume_state = raw.get("resume_state")
+    if resume_state is None:
+        raise ValueError(
+            f"{path} has no resume_state, so it can only be warm-started from. "
+            "It was written before resumable checkpoints existed, or by a code "
+            "path that does not record optimizer/RNG state. Use "
+            "run.init_from_checkpoint if a fresh optimizer is acceptable."
+        )
+    completed = trainer.load_resume_state(resume_state)
+    print(
+        f"[{context.phase_label}/mappo] resume: {path} at update {completed}; "
+        f"continuing at {completed + 1}",
+        flush=True,
+    )
+    return completed + 1
 
 
 def maybe_run_composition_pretrain(

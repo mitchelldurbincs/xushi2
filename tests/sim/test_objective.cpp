@@ -170,3 +170,57 @@ TEST(Objective, ScoresMonotoneNonDecreasing) {
         last_b = sim.state().objective.team_b_score_ticks;
     }
 }
+
+// `contested` is public HUD state (observation_spec.md §"Never exposed to
+// actor" explicitly permits the contested flag). It lives on ObjectiveState so
+// the actor observation builder can read it without iterating hero state.
+//
+// These tests pin the two properties that relocation must preserve: the flag
+// tracks both-teams-on-point exactly, and it stays live during the objective
+// lock window, when objective_tick_update otherwise returns early.
+
+TEST(Objective, ContestedTracksBothTeamsOnPoint) {
+    Sim sim(objective_cfg());
+    auto walk = xushi2::bots::make_walk_to_objective_bot();
+    auto noop = xushi2::bots::make_noop_bot();
+
+    // Only Team A walks in: present but not contested.
+    step_with_bots(sim, walk.get(), noop.get(), 200);
+    EXPECT_FALSE(sim.state().objective.contested);
+
+    // Team B joins: now contested.
+    step_with_bots(sim, walk.get(), walk.get(), 200);
+    EXPECT_TRUE(sim.state().objective.contested);
+}
+
+TEST(Objective, ContestedIsLiveDuringLockWindow) {
+    auto cfg = objective_cfg();
+    // A long lock window so the whole test runs before the objective unlocks.
+    cfg.objective_unlock_ticks = 900U;
+    Sim sim(cfg);
+    auto walk = xushi2::bots::make_walk_to_objective_bot();
+
+    step_with_bots(sim, walk.get(), walk.get(), 300);
+
+    // Still locked — the state machine takes its early-return path...
+    ASSERT_FALSE(sim.state().objective.unlocked);
+    EXPECT_EQ(sim.state().objective.cap_progress_ticks, 0U);
+    // ...but the displayed contested flag must still be current.
+    EXPECT_TRUE(sim.state().objective.contested);
+}
+
+TEST(Objective, ContestedClearsWhenAContestingHeroDies) {
+    Sim sim(objective_cfg());
+    auto walk = xushi2::bots::make_walk_to_objective_bot();
+    step_with_bots(sim, walk.get(), walk.get(), 400);
+    ASSERT_TRUE(sim.state().objective.contested);
+
+    // Kill Team B's hero outright; contested must clear on the next tick.
+    auto& state = const_cast<xushi2::sim::MatchState&>(sim.state());
+    state.heroes[3].health_centi_hp = 0;
+    state.heroes[3].alive = false;
+    state.heroes[3].respawn_tick = state.tick + sim.config().mechanics.respawn_ticks;
+
+    step_with_bots(sim, walk.get(), walk.get(), 1);
+    EXPECT_FALSE(sim.state().objective.contested);
+}

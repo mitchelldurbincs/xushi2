@@ -74,6 +74,10 @@ static void hash_objective(std::uint64_t& h, const ObjectiveState& obj) {
     hash_u32(h, obj.team_a_score_ticks);
     hash_u32(h, obj.team_b_score_ticks);
     hash_u8 (h, obj.unlocked ? 1U : 0U);
+    // obj.contested is deliberately NOT hashed. Unlike the fields above it is
+    // not independent state: it is a pure function of hero positions and alive
+    // flags, all of which hash_hero already covers. Hashing it would add no
+    // discriminating power while forcing a golden-replay regeneration.
 }
 
 // mt19937_64 exposes its full state via operator<<. Hash the textual form —

@@ -8,7 +8,13 @@ from xushi2.multi_enemy_obs import entity_obs_self_position
 from xushi2.obs_manifest import actor_field_slice
 
 
-def rollout_metrics(cfg, rollout) -> dict[str, float]:
+def rollout_metrics(cfg, rollout, *, model=None) -> dict[str, float]:
+    """Summarize a rollout into scalar metrics.
+
+    ``model`` is optional and only needed for ``fire_valid_fraction``, which
+    requires the policy's invalid-fire mask. Callers without a model (unit
+    tests, offline analysis) simply get that key omitted.
+    """
     reward = rollout.reward
     advantages = rollout.advantages
     returns = rollout.returns
@@ -69,6 +75,12 @@ def rollout_metrics(cfg, rollout) -> dict[str, float]:
             tensor_metrics["action_binary_mean"] = _masked_mean(binary, binary_mask)
         if target_mask is not None:
             tensor_metrics["action_target_slot_mean"] = _masked_mean(target, target_mask)
+        if cfg.mask_fire_when_no_visible_enemy and model is not None:
+            valid = model.fire_valid_mask(rollout.actor_obs.reshape(-1, cfg.obs_dim))
+            if valid is not None:
+                tensor_metrics["fire_valid_fraction"] = _masked_mean(
+                    valid.to(agent_mask.dtype), agent_mask.reshape(-1)
+                )
 
     # Stack + single .item() so we incur one host sync instead of N.
     keys = list(tensor_metrics.keys())
@@ -76,4 +88,13 @@ def rollout_metrics(cfg, rollout) -> dict[str, float]:
     out: dict[str, float] = {k: float(v) for k, v in zip(keys, stacked, strict=False)}
     if "action_binary_mean" not in out:
         out["action_binary_mean"] = 0.0
+
+    # Env-reported info metrics are already host-side floats accumulated over
+    # the rollout; average them by the number of samples that contributed.
+    samples = float(rollout.info_metrics.get("info_metric_samples", 0.0))
+    if samples > 0.0:
+        for key, value in rollout.info_metrics.items():
+            if key == "info_metric_samples":
+                continue
+            out[f"rollout_{key}_mean"] = float(value) / samples
     return out
