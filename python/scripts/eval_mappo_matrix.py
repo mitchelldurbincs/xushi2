@@ -80,11 +80,18 @@ def _native_bot_env_fn(ckpt_config: dict, bot: str, *, learner_team: str = "A"):
     return _checkpoint_env_fn(ckpt_config, env_cfg, context="native bot matrix eval")
 
 
-def _snapshot_env_fn(ckpt_config: dict, snapshot_path: str):
+def _snapshot_env_fn(
+    ckpt_config: dict, snapshot_path: str, *, stochastic_snapshot: bool = False
+):
     env_cfg = _snapshot_env_cfg(
         CheckpointEnvConfig(dict(ckpt_config.get("env", {}))),
         snapshot_path,
     )
+    # Sampled frozen opponents (journal 2026-08-01, self-play leg 2): the
+    # snapshot plays its stochastic policy instead of the greedy caricature.
+    # Off by default to preserve existing greedy-snapshot rows.
+    if stochastic_snapshot:
+        env_cfg["opponent_snapshot_stochastic"] = True
     return _checkpoint_env_fn(ckpt_config, env_cfg, context="snapshot matrix eval")
 
 
@@ -126,6 +133,7 @@ def evaluate_matrix(
     *,
     anchor_bots: list[str],
     opponent_checkpoints: list[str],
+    stochastic_snapshot: bool = False,
     episodes: int,
     seed: int,
     learner_team: str = "A",
@@ -168,7 +176,9 @@ def evaluate_matrix(
                     "snapshot matrix eval currently requires a 3-agent learner checkpoint; "
                     f"got n_agents={model.cfg.n_agents}"
                 )
-            env_fn = _snapshot_env_fn(ckpt_config, opponent)
+            env_fn = _snapshot_env_fn(
+                ckpt_config, opponent, stochastic_snapshot=stochastic_snapshot
+            )
             stats = evaluate_mappo(
                 model,
                 env_fn,
@@ -206,6 +216,12 @@ def main() -> int:
         "sim settings instead of the canonical Phase 4 gate settings",
     )
     parser.add_argument(
+        "--stochastic-snapshot",
+        action="store_true",
+        help="snapshot opponents sample their stochastic policy instead of "
+        "playing greedy (the 'sampled ancestor' control, journal 2026-08-01)",
+    )
+    parser.add_argument(
         "--stochastic",
         action="store_true",
         help="sample actions from the policy (seeded) instead of greedy; "
@@ -222,6 +238,7 @@ def main() -> int:
         learner_team=str(args.learner_team),
         canonical=not bool(args.as_trained),
         stochastic=bool(args.stochastic),
+        stochastic_snapshot=bool(args.stochastic_snapshot),
     )
     if not rows:
         raise ValueError("no matchups requested; pass --anchor-bot or --opponent-checkpoint")
