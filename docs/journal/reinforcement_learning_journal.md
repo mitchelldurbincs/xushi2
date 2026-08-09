@@ -3581,3 +3581,57 @@ L4 gate legs at once") as the capacity metric. A cheap intermediate probe
 first: rerun a short L4 variant with `eval_opponent.stochastic: true` to
 test whether sampled-aware selection alone finds a both-skills
 checkpoint before concluding capacity work is unavoidable.
+
+## 2026-08-09 — selfplay_l4b: stopped at 400 by its own criteria; the league campaign is falsified
+
+**Status:** run stopped early at update 400/600 (falsification clause:
+retention < 1 at every checkpoint AND fighting at-or-below warm start).
+Two deltas from leg 4: sampled-aware best-eval
+(`run.eval_opponent.stochastic: true`, its first use) and a fresh seed.
+Artifacts `runs/phase4_selfplay_l4b/`, gate artifact
+`docs/reports/2026-08-09-l4b-gate-ckpt0150.json`.
+
+### Result
+
+- The sampled eval worked as an instrument: it caught the sampled-play
+  collapse LIVE at update 175 (6/41/3 immediately after the anchor
+  released — leg 4's greedy eval had been blind to the same collapse at
+  350) and pinned best-eval at upd 150.
+- **Formal gate on that selector's pick (n=96, committed CLI): FAILED
+  both legs.** ckpt_0150 vs weak_basic_v2: 0/31/65, 0.00 — retention
+  dead, the warm start's exact shape. vs sampled v5-0300: 36/57/3
+  (4.49/3.41) — score edge, no win edge. The in-run 31/50 (62%) at
+  n=50/varied seeds flattened to 37.5% at the decision seed: selection
+  optimism, the small-sample lesson at the selector layer.
+- This trajectory never repaired retention at all — by upd 300 it had
+  found a stalemate equilibrium instead (0/1/23 vs weak, opponent score
+  collapsed 3.47 -> 0.09): deny-don't-convert, the avoidance family's
+  newest member. Post-anchor fighting oscillated underwater (aim_err
+  compressing 1.6 -> 1.17 while both play modes degraded — mean
+  over-sharpening into brittleness).
+
+### The campaign verdict
+
+Four league legs (L1, L3, L4, L4b) from three different warm starts and
+two selection instruments produced ZERO checkpoints that hold fighting
+and retention simultaneously. Leg 4 traded retention up (0 -> 1.69) as
+fighting fell (41/51 -> 31/61); leg 4b held fighting briefly and never
+gained retention. The trade is bidirectional, smooth, and no selector
+can route around it because no point on any trajectory has both. The
+curricular explanations are exhausted: **the retention/fighting trade is
+a capacity limit of the current policy class** (64-hidden GRU, flat aim
+heads, entity-grid obs). The league campaign is falsified as a path to a
+both-skills champion at this capacity.
+
+### Next campaign: capacity (the 08-01 fork, option 2, now unblocked)
+
+Structural changes, cheapest-first, each measured by the fixed yardstick
+(B2 unchanged + the L4 dual gate at n=96/0xA11CE via committed CLI):
+
+1. Target-lead features in the actor obs — make aim cheap to represent.
+2. Dedicated aim/dodge pretraining in the existing mini-envs
+   (phase4_aim_only, combat_1v1, cap_duel + distill plumbing).
+3. Bigger/specialized heads (aim head width, or gru_hidden 64 -> 128).
+
+Standings unchanged: v5-0300 reigns; L3-0800 (score-edge fighter) and
+L4-0300 (best compromise) are the preserved candidates.
