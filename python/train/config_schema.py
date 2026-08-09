@@ -91,6 +91,7 @@ _ENV_KEYS = frozenset(
         "opponent_handicap_curriculum",
         "opponent_recent_self",
         "opponent_snapshot_stochastic",
+        "snapshot_paths",
     }
 )
 
@@ -219,7 +220,6 @@ _REMOVED_KEYS: dict[tuple[str, str], str] = {
         "the update path does one full-batch step per epoch; there is no "
         "minibatching to configure"
     ),
-    ("env", "snapshot_paths"): "use env.snapshot_league",
     ("env", "target_slot"): "use ppo.target_selection_dim",
 }
 

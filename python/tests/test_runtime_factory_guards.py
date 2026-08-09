@@ -122,9 +122,10 @@ def test_phase11_honors_fog_and_map_so_neither_is_rejected():
 # --- dead config keys ----------------------------------------------------
 
 
-def test_unimplemented_snapshot_paths_key_is_rejected():
-    with pytest.raises(ValueError, match="snapshot_paths is not implemented"):
-        mappo_env_fn_from_config({"sim": _sim_cfg(), "snapshot_paths": ["a.pt"]})
+# test_unimplemented_snapshot_paths_key_is_rejected was removed 2026-08-09:
+# the self-play campaign implemented env.snapshot_paths (it seeds the snapshot
+# opponent pool for opponent_bot "snapshot"); coverage for the live path is in
+# tests/test_snapshot_opponents.py.
 
 
 def test_unimplemented_target_slot_key_is_rejected():

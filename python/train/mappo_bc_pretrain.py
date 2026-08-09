@@ -14,6 +14,7 @@ from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
     aim_aux_loss_and_rmse,
+    mappo_config_from_checkpoint,
     mode_aux_loss_and_accuracy,
     mode_aux_targets,
     target_selection_aux_loss_and_accuracy,
@@ -99,7 +100,7 @@ def load_bc_aim_target_model(
     ckpt_cfg_raw = dict(raw.get("config", {}).get("mappo", {}))
     if not ckpt_cfg_raw:
         raise ValueError(f"checkpoint {checkpoint_path} does not contain config.mappo")
-    ckpt_cfg = MappoConfig(**ckpt_cfg_raw)
+    ckpt_cfg = mappo_config_from_checkpoint(ckpt_cfg_raw)
     if ckpt_cfg.obs_encoder != "flat":
         raise ValueError("BC aim-target checkpoint inference currently supports only flat obs")
     compatibility = {

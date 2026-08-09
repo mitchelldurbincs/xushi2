@@ -199,6 +199,15 @@ class _WorkerFailureEnv(gym.Env):
 
     PROBE = "kill"
 
+    # This fake exists to die or wedge; no curriculum knob applies to it.
+    UNSUPPORTED_CURRICULUM_SETTERS = {
+        "set_team_spirit": "failure-injection fake; no reward path",
+        "set_majority_on_point_alpha": "failure-injection fake; no reward path",
+        "set_uncontested_on_point_alpha": "failure-injection fake; no reward path",
+        "set_objective_timing_seconds": "failure-injection fake; no objective",
+        "set_respawn_ticks": "failure-injection fake; no respawn",
+    }
+
     def __init__(self) -> None:
         self.observation_space = gym.spaces.Box(
             low=-1.0, high=1.0, shape=(3, ACTOR_PHASE1_DIM), dtype=np.float32

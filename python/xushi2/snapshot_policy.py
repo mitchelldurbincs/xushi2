@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from train.mappo import MappoActorCritic, MappoConfig
+from train.mappo import MappoActorCritic, mappo_config_from_checkpoint
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
@@ -40,7 +40,7 @@ class SnapshotPolicy:
         ckpt_config = ckpt.get("config", {})
         self.phase = int(ckpt_config.get("phase", 4))
         self.env_cfg = dict(ckpt_config.get("env", {}))
-        self.cfg = MappoConfig(**ckpt_config["mappo"])
+        self.cfg = mappo_config_from_checkpoint(ckpt_config["mappo"])
         self.model = MappoActorCritic(self.cfg)
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()

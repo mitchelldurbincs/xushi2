@@ -118,6 +118,7 @@ def make_mappo_match_env(
     self_play: bool = False,
     self_play_schedule: dict[str, Any] | None = None,
     snapshot_league: dict[str, Any] | None = None,
+    snapshot_paths: tuple[str, ...] = (),
     n_agents: int = 3,
     opponent_snapshot_stochastic: bool = False,
 ) -> gym.Env:
@@ -251,9 +252,12 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
     # keeping a config surface that does nothing.
     # Only a key that actually asks for something is an error; several configs
     # carry an explicit `target_slot: false`, which requests nothing.
+    # NOTE: `snapshot_paths` was on this dead-key list when it was authored
+    # (pre-fork it was accepted and read by nothing), but the 2026-07-31
+    # self-play campaign implemented it: it seeds the snapshot opponent pool
+    # for opponent_bot "snapshot". Only `target_slot` remains dead.
     features = dict(cfg.get("features", {}))
     for dead_key, replacement in (
-        ("snapshot_paths", "snapshot_league"),
         ("target_slot", "ppo.target_selection_dim"),
     ):
         if cfg.get(dead_key) or features.get(dead_key):
@@ -280,6 +284,7 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
         snapshot_league=(
             dict(cfg.get("snapshot_league", {})) if "snapshot_league" in cfg else None
         ),
+        snapshot_paths=tuple(str(p) for p in cfg.get("snapshot_paths", ())),
         n_agents=int(cfg.get("n_agents", cfg.get("team_size", 3))),
         opponent_snapshot_stochastic=bool(
             cfg.get("opponent_snapshot_stochastic", False)

@@ -122,6 +122,20 @@ class MappoConfig:
     device: str = "cpu"
 
 
+# Keys that older checkpoints carry in their stored ``mappo`` config but that
+# MappoConfig no longer accepts (removed as never-read; see config_schema).
+# Checkpoints are immutable historical artifacts, so loading tolerates exactly
+# this list — anything else unknown is still a hard error.
+_REMOVED_CHECKPOINT_KEYS = frozenset({"minibatch_size", "use_recurrence"})
+
+
+def mappo_config_from_checkpoint(ckpt_cfg: dict) -> MappoConfig:
+    """Build a MappoConfig from a checkpoint's stored config dict."""
+    return MappoConfig(
+        **{k: v for k, v in ckpt_cfg.items() if k not in _REMOVED_CHECKPOINT_KEYS}
+    )
+
+
 @dataclass(frozen=True)
 class MappoEvalStats:
     mean_reward: float

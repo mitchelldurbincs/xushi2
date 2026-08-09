@@ -95,7 +95,8 @@ def test_all_problems_are_reported_at_once():
     [
         ("model", "use_recurrence", "always recurrent"),
         ("ppo", "minibatch_size", "full-batch"),
-        ("env", "snapshot_paths", "snapshot_league"),
+        # env.snapshot_paths left this list 2026-08-09: the self-play campaign
+        # implemented it (seeds the snapshot opponent pool).
         ("env", "target_slot", "target_selection_dim"),
     ],
 )

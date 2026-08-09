@@ -8,6 +8,7 @@ from train.mappo_evaluate import evaluate_mappo
 from train.mappo_model import (
     MappoActorCritic,
     MappoConfig,
+    mappo_config_from_checkpoint,
     MappoEvalStats,
     compute_anchor_kl_coef,
     compute_majority_on_point_alpha,
@@ -31,6 +32,7 @@ __all__ = [
     "compute_team_spirit",
     "evaluate_mappo",
     "make_mappo_config",
+    "mappo_config_from_checkpoint",
     "train_mappo_from_config",
     "train_phase4_from_config",
 ]
