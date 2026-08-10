@@ -97,6 +97,42 @@ def test_warm_start_migration_loads_compatible_and_reports_skipped(tmp_path, cap
     assert "actor_entity_encoder.weight(checkpoint=(3, 2), model=(2, 2))" in out
 
 
+def test_warm_start_migration_resets_log_std_to_config_init(tmp_path) -> None:
+    """Migration never carries the checkpoint's log_std: it is exploration
+    tuned for the OLD architecture. The 2026-08-09 head-width probe migrated
+    v5-0300's sharpened log_std onto fresh heads and exploration flatlined
+    for 300 updates."""
+
+    class _LogStdToyModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.compatible = nn.Parameter(torch.ones(2))
+            self.log_std = nn.Parameter(torch.full((3,), -1.0))
+
+    ckpt = tmp_path / "sharpened.pt"
+    torch.save(
+        {
+            "model_state_dict": {
+                "compatible": torch.full((2,), 7.0),
+                "log_std": torch.full((3,), -2.14),
+            }
+        },
+        ckpt,
+    )
+    model = _LogStdToyModel()
+
+    maybe_warm_start(
+        _warm_context(
+            init_from_checkpoint=str(ckpt),
+            warm_start_migration="compatible_exact",
+        ),
+        SimpleNamespace(model=model),
+    )
+
+    torch.testing.assert_close(model.compatible.detach(), torch.full((2,), 7.0))
+    torch.testing.assert_close(model.log_std.detach(), torch.full((3,), -1.0))
+
+
 def test_warm_start_migration_does_not_load_same_name_shape_mismatch(
     tmp_path, capsys
 ) -> None:

@@ -28,6 +28,17 @@ from train.mappo_runtime_context import RuntimeContext
 _WARM_START_MIGRATION_COMPATIBLE_EXACT = "compatible_exact"
 
 
+# Parameters a migration never carries over. Migration exists for
+# architecture changes whose new tensors must be re-derived by fresh
+# exploration; the checkpoint's log_std is exploration tuned for the OLD
+# tensors. Probe 2026-08-09 (phase4_cap_headwidth_probe): migrating
+# v5-0300's sharpened log_std (std 0.113) onto fresh heads killed
+# exploration completely — 300 updates flat at -20 reward, the policy
+# never once reached the objective. The config's action_log_std_init is
+# the intended exploration level for re-derivation; keep it.
+_MIGRATION_RESET_KEYS = frozenset({"log_std"})
+
+
 def _load_compatible_warm_start(
     model: nn.Module,
     checkpoint_state: dict[str, torch.Tensor],
@@ -36,8 +47,12 @@ def _load_compatible_warm_start(
     compatible: dict[str, torch.Tensor] = {}
     skipped_unexpected: list[str] = []
     skipped_shape_mismatch: list[str] = []
+    skipped_reset: list[str] = []
 
     for key, value in checkpoint_state.items():
+        if key in _MIGRATION_RESET_KEYS:
+            skipped_reset.append(key)
+            continue
         target_value = model_state.get(key)
         if target_value is None:
             skipped_unexpected.append(key)
@@ -55,6 +70,7 @@ def _load_compatible_warm_start(
         "missing": sorted(load_result.missing_keys),
         "skipped_unexpected": sorted(skipped_unexpected),
         "skipped_shape_mismatch": sorted(skipped_shape_mismatch),
+        "skipped_reset": sorted(skipped_reset),
     }
 
 
@@ -75,7 +91,8 @@ def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
             f"[{phase_label}/mappo] warm-start migration={warm_start_migration} "
             f"loaded={len(report['loaded'])} missing={report['missing']} "
             f"skipped_unexpected={report['skipped_unexpected']} "
-            f"skipped_shape_mismatch={report['skipped_shape_mismatch']}",
+            f"skipped_shape_mismatch={report['skipped_shape_mismatch']} "
+            f"skipped_reset={report['skipped_reset']}",
             flush=True,
         )
         print(f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}", flush=True)

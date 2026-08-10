@@ -3635,3 +3635,35 @@ Structural changes, cheapest-first, each measured by the fixed yardstick
 
 Standings unchanged: v5-0300 reigns; L3-0800 (score-edge fighter) and
 L4-0300 (best compromise) are the preserved candidates.
+
+## 2026-08-09 — cap_headwidth_probe v1: the probe tested nothing — migration carried a poison log_std
+
+**Status:** run complete (300 updates, head_hidden 64->128 via
+warm_start_migration compatible_exact of the v5-0300 trunk, fresh heads +
+critic). Artifacts `runs/phase4_cap_headwidth_probe/`.
+
+**Result: flat -20.000 reward at every eval, maj_sec 0.00 — the policy
+never once reached the objective in 300 updates.** Not a capacity
+verdict: a mechanistic failure. compatible_exact loaded the checkpoint's
+`log_std` (-2.14, std 0.113 — v5's SHARPENED exploration, tuned for its
+trained heads) because the tensor's shape matches; the config's
+action_log_std_init -1.0 was silently overwritten. Fresh random heads
+sampled at std 0.113 repeat the same wrong trajectories forever:
+behavior never sampled, the campaign's oldest theorem, this time
+self-inflicted at the migration layer.
+
+**Fix landed (tested):** migration never carries `log_std`
+(`_MIGRATION_RESET_KEYS` in mappo_pretrain_hooks) — migration exists for
+architecture changes whose new tensors need re-derivation, and the
+config's action_log_std_init is the intended exploration level for that.
+The migration report now prints `skipped_reset`.
+
+**Instrument lesson (appended to the list):** funnel stats, eased
+configs, greedy learners, greedy opponents, small samples, greedy
+selectors — and now inherited exploration. Every layer that silently
+reuses a trained artifact's settings for a differently-shaped learner is
+a place the same theorem fires.
+
+Probe v2 (`phase4_cap_headwidth_probe_v2.yaml`, identical but with live
+exploration via the fix) launched — the capacity question stands, now
+actually being asked.
