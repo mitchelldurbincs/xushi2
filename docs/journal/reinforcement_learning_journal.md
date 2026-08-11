@@ -3715,3 +3715,43 @@ heads into approach behavior -> PPO vs softened-then-native v2 at 3e-4.
 If the rung STILL does not clear, migration re-derivation is falsified
 wholesale and the capacity campaign pivots to aim/dodge pretraining of
 the existing 64-width architecture in the mini-envs (no migration).
+
+## 2026-08-11 — cap_headwidth probe series CLOSED: migration re-derivation is falsified wholesale
+
+**Status:** v5 stopped at 200/400 (anneal complete, native opponent from
+here; softened phase produced maj_sec 0.05-0.06 and zero conversions —
+score >= 2 by 400 implausible). Artifacts
+`runs/phase4_cap_headwidth_probe{,_v2,_v3,_v4,_v5}/`.
+
+### The five-layer ledger (each fix real, none sufficient)
+
+| ver | blocker found | fix | outcome |
+|---|---|---|---|
+| v1 | migrated sharpened log_std -> dead exploration | migration resets log_std (code, tested) | exploration lives |
+| v2 | approach dies to native v2 | handicap continuity (B2 recipe) | approach survives |
+| v3 | fresh heads at warm-start LR (1e-5) frozen | cold-start LR 3e-4 | heads train |
+| v4 | pure PPO never finds the objective | BC walk bootstrap (historical recipe) | reaches/contests point |
+| v5 | behaviors surface separately, never compose | — | shooting OR approaching, no conversion |
+
+By v5 the learner walks to the point (BC), lands hits (first in the
+series), and denies uncontested time — but PPO at 3e-4 with a live
+entropy bonus diffuses each behavior before the next stacks on it. The
+original project needed the whole phase-1..3 ladder plus v1-v5
+conversion campaigns to compose these skills at width 64; re-deriving
+that composition inside one 400-update run was never a probe, it was a
+compressed re-run of the program. **Verdict: warm-start migration is
+useful for CARRYING skills across architecture changes near the trunk,
+not for re-deriving head-encoded skills. The head-width capacity question
+stays open — unanswered, not answered negatively.**
+
+### Capacity campaign, corrected route (next)
+
+Grow capability, not architecture: aim/dodge pretraining of the EXISTING
+64-width net in the mini-envs (phase4_aim_only / combat_1v1 / cap_duel +
+the distill plumbing), warm starts intact throughout — no migration, no
+re-derivation. Measure with the fixed yardstick: B2 unchanged + the L4
+dual gate (n=96, 0xA11CE, committed CLI). The known risk is the old
+transfer problem (cap_duel skills not binding in full 3v3 — the May
+failure); the distill-anchor machinery built for that is unused since the
+gate redefinition and is the first thing to re-test at 600t, where
+conversion actually happens.
