@@ -3667,3 +3667,22 @@ a place the same theorem fires.
 Probe v2 (`phase4_cap_headwidth_probe_v2.yaml`, identical but with live
 exploration via the fix) launched — the capacity question stands, now
 actually being asked.
+
+## 2026-08-10 — cap_headwidth_probe v2: exploration lived, approach died; v3 adds handicap continuity
+
+**Status:** v2 stopped at 225/300 (slope decision: onpt pinned at 0.000
+throughout, eval flat -20 — score >= 1 by 300 implausible). Artifacts
+`runs/phase4_cap_headwidth_probe_v2/`.
+
+The log_std reset worked (entropy 3.30 vs v1's -0.25, dist shaping pulled
+the learner pointward early), but rollout onpt never left 0.000: approach
+attempts die to NATIVE weak_basic_v2 before conversion is sampled, and
+the death penalty converts approach into avoidance. The B-series failure
+mode, now at the re-derivation layer — fresh heads need what B1c/B2
+built: **v3 adds opponent_handicap_curriculum on weak_basic_v2**
+(1.5rad/60t -> native by 200, then 200 updates at full strength; eval
+unaffected, still native). Positive precedent at this exact tier: B2
+reached 2.35 v2-retention through handicap continuity. Same success bar
+(sampled eval >= 2 vs native v2). If v3 fails even softened, migration
+re-derivation is a dead end and the capacity campaign pivots to aim/dodge
+pretraining in the mini-envs.
