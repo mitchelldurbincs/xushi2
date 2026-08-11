@@ -3755,3 +3755,32 @@ transfer problem (cap_duel skills not binding in full 3v3 — the May
 failure); the distill-anchor machinery built for that is unused since the
 gate redefinition and is the first thing to re-test at 600t, where
 conversion actually happens.
+
+## 2026-08-11 — distill re-test blocked on lost artifacts; the campaign's next decision, stated
+
+Scoping the distill-anchor re-test at 600t found the dependency chain
+broken: the cap_duel v2 teacher checkpoint AND its warm start
+(basic_v6_5 ckpt_final) were gitignored run artifacts, since cleaned.
+Regenerating the teacher from its committed config would rebuild a
+FLAT-obs policy — the mini-env/distill tooling predates the entity-grid
+lineage (the BC aim tooling is explicitly flat-only) — while every
+current checkpoint of value is multi_enemy_entity_grid. The capacity
+campaign's real next step is therefore a fork needing a deliberate call:
+
+1. **Port the mini-env/distill tooling to entity-grid obs** (code work:
+   cap_duel/aim_only envs emitting entity-grid obs + distill hook obs
+   routing), then pretrain aim on the CURRENT lineage. Highest fidelity,
+   most work.
+2. **Target-lead features in the actor obs** (C++ obs change, new
+   variant): make aim cheap to represent instead of teaching it.
+   Moderate work, touches the sim's obs layer, partially re-derives the
+   embed (migration lesson applies — but only the embed, not the heads).
+3. **Accept the 64-width ceiling for Phase 4** and take the cleared
+   600t gate as this phase's result: promote v5-0300 as the Phase 4
+   champion, move to Phase 5 (entity attention was already pulled
+   forward), and revisit combat capacity there.
+
+The 08-09/08-11 evidence (league falsified, migration re-derivation
+falsified) says whichever of 1/2 is chosen, the yardstick stays B2
+unchanged + the L4 dual gate. No run launched on this; the fork is a
+design decision, not an experiment.
