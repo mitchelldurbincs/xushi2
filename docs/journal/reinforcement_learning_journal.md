@@ -3700,3 +3700,18 @@ inherited log_std -> dead exploration; native opponent -> approach dies;
 warm-start LR -> heads frozen in practice. **V4 = v3 + lr 3e-4.** The
 migrated trunk will drift at that LR; accepted — the probe's deliverable
 is any rung-clearing 128-head policy to serve as the capacity subject.
+
+## 2026-08-11 — cap_headwidth_probe v4 stopped at 150; v5 adds the historical BC bootstrap
+
+V4 (cold-start LR 3e-4) was stopped at 150/400: heads now train (entropy
+moves, policy responds) but rollout onpt never left 0.000 — pure PPO
+exploration does not find the objective from random heads in this env at
+any budget we've given it. This is the fourth mechanistic layer, and it
+is the one the project already solved once: the original bootstrap used
+bc_pretrain_walk_to_objective before PPO. **V5 = v4 + BC walk pretrain
+(500 steps, 1e-3, the historical recipe; entity-grid obs supported).**
+The pipeline is now: migrate trunk -> reset log_std -> BC the fresh
+heads into approach behavior -> PPO vs softened-then-native v2 at 3e-4.
+If the rung STILL does not clear, migration re-derivation is falsified
+wholesale and the capacity campaign pivots to aim/dodge pretraining of
+the existing 64-width architecture in the mini-envs (no migration).
