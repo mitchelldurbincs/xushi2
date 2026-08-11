@@ -3686,3 +3686,17 @@ reached 2.35 v2-retention through handicap continuity. Same success bar
 (sampled eval >= 2 vs native v2). If v3 fails even softened, migration
 re-derivation is a dead end and the capacity campaign pivots to aim/dodge
 pretraining in the mini-envs.
+
+## 2026-08-10 — cap_headwidth_probe v3 stopped at 50: the third layer was the learning rate
+
+V3 (handicap continuity) was stopped at 50/400 on a config-archaeology
+finding: fresh heads were training at the campaign's WARM-START LR
+(1e-5), while every successful from-scratch derivation in this project
+ran at 3e-4 (phase4_mappo_basic) — 30x faster. policy_loss printed
+0.000 throughout v2/v3; the heads were barely moving regardless of
+exploration (v2 fix) or opponent softness (v3 fix). Three stacked
+mechanistic blockers, each invisible until the previous was cleared:
+inherited log_std -> dead exploration; native opponent -> approach dies;
+warm-start LR -> heads frozen in practice. **V4 = v3 + lr 3e-4.** The
+migrated trunk will drift at that LR; accepted — the probe's deliverable
+is any rung-clearing 128-head policy to serve as the capacity subject.
