@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import gymnasium as gym
+import pytest
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM
+from xushi2 import vector_env
 from xushi2.vector_env import XushiAsyncVectorEnv, XushiVectorEnv
 
 
@@ -180,3 +182,94 @@ def test_async_vector_env_rejects_dict_action_space_with_clear_error() -> None:
         assert "serialization/stacking" in message
     else:
         raise AssertionError("expected Dict action space rejection")
+
+
+class _WorkerFailureEnv(gym.Env):
+    """Env whose async worker fails without replying on the first step.
+
+    ``PROBE`` selects the failure mode, set on the class before the worker is
+    spawned so the value travels with the pickled factory:
+
+    - ``"kill"``  -- the worker dies by signal, standing in for an abort
+      inside the C++ sim. The parent's pipe copy is already closed, so this
+      shows up as EOF rather than a hang.
+    - ``"wedge"`` -- the worker stays alive but never replies. Nothing closes
+      the pipe, so an unbounded recv() would block forever.
+    """
+
+    PROBE = "kill"
+
+    # This fake exists to die or wedge; no curriculum knob applies to it.
+    UNSUPPORTED_CURRICULUM_SETTERS = {
+        "set_team_spirit": "failure-injection fake; no reward path",
+        "set_majority_on_point_alpha": "failure-injection fake; no reward path",
+        "set_uncontested_on_point_alpha": "failure-injection fake; no reward path",
+        "set_objective_timing_seconds": "failure-injection fake; no objective",
+        "set_respawn_ticks": "failure-injection fake; no respawn",
+    }
+
+    def __init__(self) -> None:
+        self.observation_space = gym.spaces.Box(
+            low=-1.0, high=1.0, shape=(3, ACTOR_PHASE1_DIM), dtype=np.float32
+        )
+        self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(3, 6), dtype=np.float32)
+
+    def reset(self, *, seed: int | None = None, options=None):
+        return np.zeros((3, ACTOR_PHASE1_DIM), dtype=np.float32), {}
+
+    def step(self, action):
+        import os
+        import signal
+        import time
+
+        if _WorkerFailureEnv.PROBE == "kill":
+            os.kill(os.getpid(), signal.SIGKILL)
+        time.sleep(3600)
+
+    def build_critic_obs(self, out: np.ndarray) -> None:
+        out[:] = 0.0
+
+    def close(self) -> None:
+        return None
+
+
+def _make_killing_env() -> _WorkerFailureEnv:
+    _WorkerFailureEnv.PROBE = "kill"
+    return _WorkerFailureEnv()
+
+
+def _make_wedging_env() -> _WorkerFailureEnv:
+    _WorkerFailureEnv.PROBE = "wedge"
+    return _WorkerFailureEnv()
+
+
+@pytest.mark.timeout(120)
+def test_async_worker_signal_death_reports_worker_and_exitcode() -> None:
+    """A dead worker must name itself and its exit code, not raise a bare EOFError."""
+    env = XushiAsyncVectorEnv([_make_killing_env], critic_obs_dim=CRITIC_DIM)
+    try:
+        env.reset(seed=0)
+        with pytest.raises(RuntimeError) as excinfo:
+            env.step(np.zeros((1, 3, 6), dtype=np.float32))
+        message = str(excinfo.value)
+        assert "worker 0" in message
+        # -9 is SIGKILL; a negative exitcode is the signal-death signature.
+        assert "exitcode=-9" in message
+    finally:
+        env.close()
+
+
+@pytest.mark.timeout(120)
+def test_async_worker_wedge_times_out_instead_of_hanging(monkeypatch) -> None:
+    """An alive-but-wedged worker must time out rather than block forever."""
+    monkeypatch.setattr(vector_env, "_WORKER_RECV_TIMEOUT_SECONDS", 2.0)
+    env = XushiAsyncVectorEnv([_make_wedging_env], critic_obs_dim=CRITIC_DIM)
+    try:
+        env.reset(seed=0)
+        with pytest.raises(TimeoutError) as excinfo:
+            env.step(np.zeros((1, 3, 6), dtype=np.float32))
+        message = str(excinfo.value)
+        assert "worker 0" in message
+        assert "still alive" in message
+    finally:
+        env.close()

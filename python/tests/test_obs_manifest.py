@@ -177,3 +177,41 @@ def test_actor_expected_field_count_equals_spec():
     }
     got = {name for name, _, _ in ACTOR_PHASE1_FIELDS}
     assert got == expected
+
+
+def test_entity_layout_matches_native():
+    # Lockstep with src/sim/include/xushi2/sim/entity_obs.h and the native
+    # module attributes. C++ half:
+    # tests/observations/test_obs_dims.cpp::EntityGridObsLayoutMatchesPythonAdapter.
+    import xushi2.xushi2_cpp as _cpp
+
+    from xushi2.multi_enemy_obs import (
+        ENTITY_TOKEN_DIM,
+        GRID_CHANNELS,
+        GRID_SIZE,
+        MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+        MULTI_ENEMY_TOKEN_COUNT,
+    )
+
+    assert _cpp.ENTITY_TOKEN_DIM == ENTITY_TOKEN_DIM == 18
+    assert _cpp.ENTITY_TOKEN_COUNT == MULTI_ENEMY_TOKEN_COUNT == 5
+    assert _cpp.ENTITY_GRID_CHANNELS == GRID_CHANNELS == 3
+    assert _cpp.ENTITY_GRID_SIZE == GRID_SIZE == 32
+    assert _cpp.ENTITY_GRID_OBS_DIM == MULTI_ENEMY_ENTITY_GRID_OBS_DIM == 3167
+
+
+def test_reward_feature_layout_matches_native():
+    # Lockstep with src/sim/include/xushi2/sim/reward_features.h. C++ half:
+    # tests/observations/test_obs_dims.cpp::RewardFeatureDimIs48.
+    import xushi2.xushi2_cpp as _cpp
+
+    from xushi2.obs_manifest import (
+        REWARD_FEATURE_DIM,
+        REWARD_FEATURE_FIELDS,
+        reward_feature_slice,
+    )
+
+    assert sum(w for _, w, _ in REWARD_FEATURE_FIELDS) == REWARD_FEATURE_DIM
+    assert _cpp.REWARD_FEATURE_DIM == REWARD_FEATURE_DIM == 48
+    assert reward_feature_slice("tick") == slice(0, 1)
+    assert reward_feature_slice("dist_to_center_by_slot") == slice(42, 48)

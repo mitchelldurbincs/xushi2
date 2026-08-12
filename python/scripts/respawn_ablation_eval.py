@@ -26,7 +26,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from train.mappo import MappoActorCritic, MappoConfig, evaluate_mappo
+from train.mappo import MappoActorCritic, evaluate_mappo, mappo_config_from_checkpoint
 from train.mappo_evaluate import eval_stats_dict
 from train.runtime_adapter import resolve_runtime_env_factory
 
@@ -39,7 +39,7 @@ def _load_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     if not isinstance(ckpt, dict):
         raise TypeError(f"checkpoint at {path} must be a dict, got {type(ckpt)!r}")
     ckpt_config = ckpt.get("config", {})
-    cfg = MappoConfig(**ckpt_config["mappo"])
+    cfg = mappo_config_from_checkpoint(ckpt_config["mappo"])
     model = MappoActorCritic(cfg)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()

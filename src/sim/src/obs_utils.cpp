@@ -38,6 +38,21 @@ bool is_opposite_team(const HeroState& viewer,
            candidate.team != common::Team::Neutral;
 }
 
+VisibleEnemySlot make_visible_enemy_slot(const HeroState& h) noexcept {
+    VisibleEnemySlot out{};
+    out.present = true;
+    out.id = h.id;
+    out.alive = h.alive;
+    out.respawn_tick = h.respawn_tick;
+    out.world_position = h.position;
+    out.velocity = h.velocity;
+    out.health_centi_hp = h.health_centi_hp;
+    out.max_health_centi_hp = h.max_health_centi_hp;
+    return out;
+}
+
+}  // namespace
+
 bool observable_enemy(const Sim& sim,
                       std::uint32_t viewer_slot,
                       std::uint32_t enemy_slot) noexcept {
@@ -58,21 +73,6 @@ bool observable_enemy(const Sim& sim,
     }
     return sim.line_of_sight(viewer_slot, enemy_slot);
 }
-
-VisibleEnemySlot make_visible_enemy_slot(const HeroState& h) noexcept {
-    VisibleEnemySlot out{};
-    out.present = true;
-    out.id = h.id;
-    out.alive = h.alive;
-    out.respawn_tick = h.respawn_tick;
-    out.world_position = h.position;
-    out.velocity = h.velocity;
-    out.health_centi_hp = h.health_centi_hp;
-    out.max_health_centi_hp = h.max_health_centi_hp;
-    return out;
-}
-
-}  // namespace
 
 common::Vec2 mirror_position_for_team(common::Vec2 world_pos,
                                       common::Team viewer_team,
@@ -131,32 +131,6 @@ float wrap_angle_pi(float angle_radians) noexcept {
 void angle_to_unit(float angle_radians, float* out_sincos2) noexcept {
     out_sincos2[0] = std::sin(angle_radians);
     out_sincos2[1] = std::cos(angle_radians);
-}
-
-VisibleEnemySlot visible_enemy_1v1(const MatchState& s,
-                                   std::uint32_t viewer_slot) noexcept {
-    VisibleEnemySlot out{};
-    if (viewer_slot >= s.heroes.size()) {
-        return out;
-    }
-    const auto& viewer = s.heroes[viewer_slot];
-    if (!viewer.present || viewer.team == common::Team::Neutral) {
-        return out;
-    }
-    const common::Team viewer_team = viewer.team;
-    // Walk the fixed-size array once; no allocation. The first occupied
-    // opposite-team hero is the enemy at Phase 1 (1v1 Ranger).
-    for (std::uint32_t i = 0; i < s.heroes.size(); ++i) {
-        const auto& h = s.heroes[i];
-        if (!h.present) {
-            continue;
-        }
-        if (h.team == viewer_team || h.team == common::Team::Neutral) {
-            continue;
-        }
-        return make_visible_enemy_slot(h);
-    }
-    return out;
 }
 
 VisibleEnemySlot visible_enemy_1v1(const Sim& sim,

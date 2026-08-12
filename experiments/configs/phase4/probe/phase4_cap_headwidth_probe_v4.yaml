@@ -1,0 +1,203 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: cap_headwidth_probe_v4
+  status: experimental
+  expected_runtime: medium
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    V4, one delta from v3: learning_rate 3e-4 (the ORIGINAL cold-start
+    LR; phase4_mappo_basic derived everything from scratch at 3e-4). V3
+    was stopped at 50/400: even with live exploration (v2 fix) and a
+    softened opponent (v3 fix), fresh heads at the campaign's warm-start
+    LR of 1e-5 move ~30x slower than every successful from-scratch
+    derivation in this project — policy_loss printed 0.000 all run. The
+    migrated trunk will drift at 3e-4; accepted — the probe's deliverable
+    is ANY rung-clearing head_hidden-128 policy to serve as the capacity
+    subject, and migration still beats random init.
+    V3 rationale: one delta from v2: opponent handicap continuity on the
+    training rollouts. V2 fixed exploration (live entropy 3.3, dist
+    shaping pulled the learner toward the point early) but stalled at
+    onpt 0.000 for 225 updates: approach attempts die to native-strength
+    weak_basic_v2 before conversion is ever sampled, and the death
+    penalty converts that into avoidance — the B-series lesson at the
+    re-derivation layer. Fix with the machinery built for exactly this:
+    opponent_handicap_curriculum softens weak_basic_v2 (1.5rad/60t) so
+    approach survives, anneals to native by update 200, then 200 updates
+    train at full strength. Positive precedent AT THIS TIER: B2 reached
+    2.35 v2-retention from a warm start via handicap continuity. Success
+    unchanged: sampled eval score vs native weak_basic_v2 >= 2 by the
+    end (the eval env carries no handicap). If v3 recovers the rung, the
+    capacity question (does width 128 relax the retention/fighting
+    trade?) finally has its subject; if it fails even softened, migration
+    re-derivation is a dead end and the campaign goes through aim/dodge
+    pretraining in the mini-envs.
+    V2 rationale: one mechanistic fix: v1 (2026-08-09, flat -20 for 300
+    updates, never reached the objective) migrated v5-0300's sharpened
+    log_std (std 0.113) onto fresh random heads — exploration was dead on
+    arrival, so the probe never tested head capacity at all. Migration now
+    resets log_std to action_log_std_init (-1.0, std 0.37, the level every
+    successful cold/warm re-derivation in this project explored at); this
+    run is the same question asked with live exploration.
+    Original probe-1 rationale: First probe of the capacity campaign (journal 2026-08-09: the league
+    campaign is falsified; the retention/fighting trade is read as a
+    capacity limit of the 64-hidden policy class). The narrowest
+    capacity-growing change that keeps a warm start viable is head width:
+    warm_start_migration compatible_exact loads v5-0300's embed + GRU
+    trunk intact and reinitializes only the head MLPs at head_hidden 128
+    (a gru_hidden change would reinitialize the whole network — a
+    disguised cold start). Question 1 (this run): can fresh wide heads on
+    a migrated trunk RECOVER the cleared rung (stochastic conversion vs
+    weak_basic_v2) in 300 updates? Question 2 (only if yes, next run):
+    does the extra head capacity relax the retention/fighting trade under
+    the L4 recipe? Success: sampled eval score vs weak_basic_v2 >= 2 by
+    update 300 (v5-0300 baseline: 2.57 at n=96).
+  falsification_criteria: >
+    Falsified if sampled eval score vs weak_basic_v2 stays < 1 through
+    update 300 (fresh heads cannot re-derive the converting policy from
+    the migrated trunk at campaign LR — migration-based widening is a
+    dead end and the capacity campaign goes through aim/dodge
+    pretraining in the mini-envs instead); or on eval collapse for three
+    consecutive evals after update 100.
+  leading_indicators: >
+    Sampled eval score vs weak_basic_v2 climbing steadily from ~0
+    (fresh heads start near-random); hit_fire recovering toward the
+    0.03+ band; log_std stays near the migrated -2.14 (the parameter
+    loads with the trunk).
+  lineage: >
+    Warm-starts data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+    via warm_start_migration compatible_exact (trunk loads, heads
+    reinitialize at width 128). No anchor KL: the PPO-start frozen copy
+    would have random heads, so anchoring to it would be anchoring to
+    noise. First run of the capacity campaign.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 1815246233
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  # Re-derivation needs approach to survive long enough to sample
+  # conversion; handicap anneals rollout opponents to native by 200.
+  # The eval env is unaffected (eval measures native strength).
+  opponent_handicap_curriculum:
+    bot: weak_basic_v2
+    initial_aim_noise: 1.5
+    final_aim_noise: 0.0
+    initial_fire_cadence: 60
+    final_fire_cadence: 1
+    anneal_updates: 200
+  self_play:
+    enabled: false
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 15.0
+    initial_capture_seconds: 8.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 1
+    eval_canonical_every: 25
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 15.0
+    objective_capture_seconds: 8.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 1815246233
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 600
+
+model:
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 128
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  learning_rate: 3.0e-4
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  anchor_kl_coef: 0.0
+  anchor_kl_anneal_updates: 0
+  entropy_anneal_updates: 0
+  entropy_final_scale: 0.1
+
+run:
+  total_updates: 400
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_cap_headwidth_probe_v4
+  init_from_checkpoint: data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+  warm_start_migration: compatible_exact
+  eval_opponent:
+    bot: weak_basic_v2
+    stochastic: true
+  matrix_eval:
+    episodes: 96
+    stochastic: true
+    canonical: false
+    anchor_bots:
+      - weak_basic_v2
+    opponent_checkpoints:
+      - data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+    transfer_bots:
+      - weak_basic_v2
+      - phase4_v5_upd300_stochastic_600t_converter.pt
+    output: matrix_eval.json

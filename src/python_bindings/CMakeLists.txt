@@ -6,6 +6,7 @@ target_link_libraries(xushi2_cpp
     PRIVATE
         xushi2::sim
         xushi2::bots
+        xushi2::pool
 )
 
 # Output next to the Python package so `pip install -e ../python` finds it.

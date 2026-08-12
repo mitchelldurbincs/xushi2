@@ -477,17 +477,16 @@ def test_damage_dealt_negative_coef_rejected():
         RewardCalculator(damage_dealt_coef=-0.01)
 
 
-def test_damage_dealt_no_op_on_scalar_path():
-    """damage_dealt_coef has no effect on the scalar (default) path —
-    that path doesn't read damage_dealt_by_slot."""
-    rc = RewardCalculator(damage_dealt_coef=0.001)  # per_agent_rewards=False
-    sim = _FakeSim()
-    rc.reset(sim)
-    sim.damage_dealt_by_slot = [7500, 0, 0, 0, 0, 0]
-    a, b = rc.step(sim)
-    assert isinstance(a, float)
-    assert a == pytest.approx(0.0)
-    assert b == pytest.approx(0.0)
+def test_damage_dealt_coef_rejected_on_scalar_path():
+    """The scalar path has no per-slot damage attribution, so asking for
+    damage shaping there is a configuration error rather than a silent no-op.
+
+    This previously asserted the no-op as intended behavior, which is how six
+    committed self-play configs came to request damage shaping and receive
+    none with nothing in the metrics to show it.
+    """
+    with pytest.raises(ValueError, match="requires per_agent_rewards=True"):
+        RewardCalculator(damage_dealt_coef=0.001)  # per_agent_rewards=False
 
 
 # --- per-agent rewards (opt-in flag) -----------------------------------
@@ -978,3 +977,85 @@ def test_conversion_negative_params_rejected():
         RewardCalculator(cap_progress_potential_coef=-0.01)
     with pytest.raises(ValueError):
         RewardCalculator(capture_completed_bonus=-0.01)
+
+
+# --- scalar-path team symmetry -----------------------------------------
+#
+# The scalar path used to compute Team B's reward as -raw_a. That is only
+# equivalent to computing B from its own counters when kill_bonus equals
+# death_penalty. With asymmetric coefficients the mirror silently paid Team B
+# `death_penalty` per kill and charged it `kill_bonus` per death -- its
+# opponent's coefficients. Under self-play a single shared policy sees both,
+# so it would learn slot-conditional aggression with no basis in the game.
+
+
+def _asym_calc_and_sim():
+    rc = RewardCalculator(kill_bonus=0.1, death_penalty=0.5)
+    sim = _FakeSim()
+    rc.reset(sim)
+    return rc, sim
+
+
+def test_asymmetric_coefficients_pay_each_team_its_own_kill_bonus():
+    rc, sim = _asym_calc_and_sim()
+    sim.team_a_kills = 1
+    a, b = rc.step(sim)
+    # A killed: A earns its kill_bonus, B pays its death_penalty.
+    assert a == pytest.approx(0.1)
+    assert b == pytest.approx(-0.5)
+
+
+def test_asymmetric_coefficients_are_mirror_symmetric_between_teams():
+    rc_a, sim_a = _asym_calc_and_sim()
+    sim_a.team_a_kills = 1
+    a_kills, b_suffers = rc_a.step(sim_a)
+
+    rc_b, sim_b = _asym_calc_and_sim()
+    sim_b.team_b_kills = 1
+    a_suffers, b_kills = rc_b.step(sim_b)
+
+    # Swapping which team got the kill must swap the two rewards exactly.
+    assert b_kills == pytest.approx(a_kills)
+    assert a_suffers == pytest.approx(b_suffers)
+
+
+def test_symmetric_coefficients_remain_zero_sum():
+    # The default kill_bonus == death_penalty case must be unchanged.
+    rc, sim = _fresh_calc_and_sim()
+    sim.team_a_kills = 2
+    sim.team_b_kills = 1
+    sim.team_a_score_ticks = _cpp.TICK_HZ
+    a, b = rc.step(sim)
+    assert a + b == pytest.approx(0.0, abs=1e-9)
+
+
+def test_asymmetric_kill_death_is_not_zero_sum_and_that_is_correct():
+    rc, sim = _asym_calc_and_sim()
+    sim.team_a_kills = 1
+    a, b = rc.step(sim)
+    # +0.1 for the killer, -0.5 for the victim: deliberately not zero-sum,
+    # because the coefficients themselves are asymmetric.
+    assert a + b == pytest.approx(-0.4)
+
+
+# --- damage shaping requires the per-agent path ------------------------
+
+
+def test_damage_dealt_coef_rejected_without_per_agent_rewards():
+    # Six committed self-play configs set damage_dealt_coef on the scalar
+    # path, where it was silently ignored. Fail loudly instead.
+    with pytest.raises(ValueError, match="requires per_agent_rewards=True"):
+        RewardCalculator(damage_dealt_coef=0.01)
+
+
+def test_damage_dealt_coef_accepted_with_per_agent_rewards():
+    rc = RewardCalculator(damage_dealt_coef=0.01, per_agent_rewards=True)
+    sim = _FakeSim()
+    rc.reset(sim)
+    sim.damage_dealt_by_slot = [100, 0, 0, 0, 0, 0]
+    a, _b = rc.step(sim)
+    assert a[0] > 0.0
+
+
+def test_zero_damage_dealt_coef_still_allowed_on_scalar_path():
+    RewardCalculator(damage_dealt_coef=0.0)

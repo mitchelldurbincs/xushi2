@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from train.mappo import MappoActorCritic, MappoConfig
+from train.mappo import MappoActorCritic, mappo_config_from_checkpoint
 from train.checkpoint_runtime import checkpoint_runtime
 
 from .formatting import (
@@ -21,7 +21,7 @@ def load_mappo_checkpoint(path: str | Path) -> tuple[MappoActorCritic, dict]:
     if not isinstance(ckpt, dict):
         raise TypeError(f"checkpoint at {path} must be a dict, got {type(ckpt)!r}")
     ckpt_config = ckpt.get("config", {})
-    cfg = MappoConfig(**ckpt_config["mappo"])
+    cfg = mappo_config_from_checkpoint(ckpt_config["mappo"])
     model = MappoActorCritic(cfg)
     model.load_state_dict(ckpt["model_state_dict"])
     model.eval()

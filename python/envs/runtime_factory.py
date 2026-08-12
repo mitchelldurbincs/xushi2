@@ -7,11 +7,100 @@ through explicit runtime capabilities.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from functools import partial
 from typing import Any
 
 import gymnasium as gym
+
+_LOGGER = logging.getLogger(__name__)
+
+# Which parameters each env variant actually honors. Anything else the caller
+# supplies is dropped, and dropping used to be silent: a config asking for
+# team-shared fog on a self-play run produced a full run with fog off and
+# metrics that looked entirely plausible.
+#
+# Two grades of dropped parameter, because they are not equally serious:
+#
+#  - Semantic ones change what is being simulated or what shape the policy
+#    sees. Dropping them invalidates the experiment, so they raise.
+#  - The rest only make the config a misleading description of the run (a
+#    mini-game that ignores opponent_bot still runs the intended mini-game), so
+#    they warn. Several committed configs carry these, and failing them would
+#    block work without protecting a result.
+_COMMON_PARAMS = frozenset({"sim_cfg", "reward_cfg", "opponent_bot", "learner_team"})
+_VARIANT_PARAMS: dict[str, frozenset[str]] = {
+    # cap_duel is fully self-contained; it takes only its own mini-game config
+    # and the self-play schedule.
+    "cap_duel": frozenset(
+        {"mini_game", "mini_game_cfg", "self_play", "self_play_schedule", "snapshot_league"}
+    ),
+    # n_agents is honored in the sense that this env is inherently six-agent,
+    # so a caller passing 6 is agreeing with it rather than being overridden.
+    "self_play": frozenset(
+        {"sim_cfg", "reward_cfg", "self_play", "self_play_schedule", "snapshot_league", "n_agents"}
+    ),
+    "phase11": frozenset(
+        {"sim_cfg", "reward_cfg", "fog_mode", "visible_radius", "map_randomization",
+         "self_play_schedule", "snapshot_league", "n_agents", "actor_obs"}
+    ),
+    "aim_only": frozenset({"mini_game", "mini_game_cfg"}),
+    "combat_1v1": frozenset({"mini_game", "mini_game_cfg"}),
+    "multi_enemy": _COMMON_PARAMS | frozenset({"actor_obs"}),
+    "flat": _COMMON_PARAMS,
+}
+
+# Dropping one of these changes the simulation or the observation shape.
+_SEMANTIC_PARAMS = frozenset({"fog_mode", "visible_radius", "map_randomization", "actor_obs"})
+
+# Defaults used to decide whether the caller actually asked for something. A
+# value equal to its default carries no intent, so it is never a conflict.
+_PARAM_DEFAULTS: dict[str, Any] = {
+    "opponent_bot": "basic",
+    "learner_team": "A",
+    "actor_obs": "flat",
+    "fog_mode": "none",
+    "visible_radius": 0.65,
+    "map_randomization": {},
+    "mini_game": None,
+    "mini_game_cfg": {},
+    "self_play": False,
+    "self_play_schedule": None,
+    "snapshot_league": None,
+    "n_agents": 3,
+    "reward_cfg": {},
+}
+
+
+def _check_ignored_params(variant: str, supplied: dict[str, Any]) -> None:
+    """Raise on semantic drops, warn on merely-misleading ones."""
+    honored = _VARIANT_PARAMS[variant]
+    ignored = sorted(
+        name
+        for name, value in supplied.items()
+        if name not in honored
+        and name in _PARAM_DEFAULTS
+        and value != _PARAM_DEFAULTS[name]
+    )
+    if not ignored:
+        return
+    semantic = [name for name in ignored if name in _SEMANTIC_PARAMS]
+    if semantic:
+        raise ValueError(
+            f"env variant {variant!r} cannot honor {semantic}, and dropping "
+            "them changes what is simulated or what the policy observes. "
+            "Running anyway would produce a result whose config does not "
+            "describe it. Remove them, or pick a variant that supports them "
+            f"(this variant honors: {sorted(honored)})."
+        )
+    cosmetic = [name for name in ignored if name not in _SEMANTIC_PARAMS]
+    _LOGGER.warning(
+        "env variant %r ignores %s from the config; the run is unaffected but "
+        "the config does not describe it accurately",
+        variant,
+        cosmetic,
+    )
 
 
 def make_mappo_match_env(
@@ -28,9 +117,8 @@ def make_mappo_match_env(
     mini_game_cfg: dict[str, Any] | None = None,
     self_play: bool = False,
     self_play_schedule: dict[str, Any] | None = None,
-    snapshot_paths: tuple[str, ...] = (),
     snapshot_league: dict[str, Any] | None = None,
-    target_slot: bool = False,
+    snapshot_paths: tuple[str, ...] = (),
     n_agents: int = 3,
     opponent_snapshot_stochastic: bool = False,
 ) -> gym.Env:
@@ -40,7 +128,24 @@ def make_mappo_match_env(
     map_cfg = dict(map_randomization or {})
     league_cfg = dict(snapshot_league or {})
 
+    supplied = {
+        "opponent_bot": opponent_bot,
+        "learner_team": learner_team,
+        "reward_cfg": reward,
+        "actor_obs": actor_obs,
+        "fog_mode": fog_mode,
+        "visible_radius": visible_radius,
+        "map_randomization": map_cfg,
+        "mini_game": mini_game,
+        "mini_game_cfg": mini_cfg,
+        "self_play": self_play,
+        "self_play_schedule": self_play_schedule,
+        "snapshot_league": snapshot_league,
+        "n_agents": n_agents,
+    }
+
     if mini_game == "cap_duel":
+        _check_ignored_params("cap_duel", supplied)
         from envs.phase4_cap_duel_mappo import Phase4CapDuelMappoEnv
 
         return Phase4CapDuelMappoEnv(
@@ -52,6 +157,10 @@ def make_mappo_match_env(
     if self_play:
         if mini_game not in (None, ""):
             raise ValueError("current self-play can only be combined with cap_duel mini_game")
+        # Checked before phase11 so `self_play + n_agents: 6` resolves here, as
+        # it always has. The rejection makes the precedence visible instead of
+        # letting the losing branch's parameters vanish.
+        _check_ignored_params("self_play", supplied)
         from envs.phase4_selfplay_mappo import Phase4CurrentSelfplayMappoEnv
 
         return Phase4CurrentSelfplayMappoEnv(
@@ -61,6 +170,7 @@ def make_mappo_match_env(
             snapshot_league=snapshot_league,
         )
     if int(n_agents) == 6:
+        _check_ignored_params("phase11", supplied)
         from envs.phase11_current_selfplay_mappo import Phase11CurrentSelfplayMappoEnv
 
         return Phase11CurrentSelfplayMappoEnv(
@@ -74,10 +184,12 @@ def make_mappo_match_env(
         )
 
     if mini_game == "aim_only":
+        _check_ignored_params("aim_only", supplied)
         from envs.phase4_aim_only_mappo import Phase4AimOnlyMappoEnv
 
         return Phase4AimOnlyMappoEnv(**mini_cfg)
     if mini_game == "combat_1v1":
+        _check_ignored_params("combat_1v1", supplied)
         from envs.phase4_combat_1v1_mappo import Phase4Combat1v1MappoEnv
 
         return Phase4Combat1v1MappoEnv(**mini_cfg)
@@ -103,6 +215,7 @@ def make_mappo_match_env(
         )
 
     if actor_obs == "multi_enemy_entity_grid":
+        _check_ignored_params("multi_enemy", supplied)
         from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
 
         return Phase4MultiEnemyMappoEnv(
@@ -116,6 +229,7 @@ def make_mappo_match_env(
     if actor_obs != "flat":
         raise ValueError(f"unknown mappo actor_obs {actor_obs!r}")
 
+    _check_ignored_params("flat", supplied)
     from envs.phase4_mappo import Phase4MappoEnv
 
     return Phase4MappoEnv(
@@ -133,6 +247,24 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
     sim_cfg = dict(cfg.get("sim", {}))
     reward_cfg = dict(cfg.get("reward", {}))
     self_play_cfg = dict(cfg.get("self_play", {}))
+    # `snapshot_paths` and `target_slot` were accepted here and by
+    # make_mappo_match_env, and referenced by neither. Reject them rather than
+    # keeping a config surface that does nothing.
+    # Only a key that actually asks for something is an error; several configs
+    # carry an explicit `target_slot: false`, which requests nothing.
+    # NOTE: `snapshot_paths` was on this dead-key list when it was authored
+    # (pre-fork it was accepted and read by nothing), but the 2026-07-31
+    # self-play campaign implemented it: it seeds the snapshot opponent pool
+    # for opponent_bot "snapshot". Only `target_slot` remains dead.
+    features = dict(cfg.get("features", {}))
+    for dead_key, replacement in (
+        ("target_slot", "ppo.target_selection_dim"),
+    ):
+        if cfg.get(dead_key) or features.get(dead_key):
+            raise ValueError(
+                f"env.{dead_key} is not implemented and was silently ignored; "
+                f"use {replacement} instead"
+            )
     return partial(
         make_mappo_match_env,
         sim_cfg=sim_cfg,
@@ -149,11 +281,10 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
         self_play_schedule=(
             dict(cfg.get("self_play_schedule", {})) if "self_play_schedule" in cfg else None
         ),
-        snapshot_paths=tuple(str(p) for p in cfg.get("snapshot_paths", ())),
         snapshot_league=(
             dict(cfg.get("snapshot_league", {})) if "snapshot_league" in cfg else None
         ),
-        target_slot=bool(cfg.get("target_slot", cfg.get("features", {}).get("target_slot", False))),
+        snapshot_paths=tuple(str(p) for p in cfg.get("snapshot_paths", ())),
         n_agents=int(cfg.get("n_agents", cfg.get("team_size", 3))),
         opponent_snapshot_stochastic=bool(
             cfg.get("opponent_snapshot_stochastic", False)

@@ -205,3 +205,50 @@ TEST(ActorObs, RoundTimerGrowsWithTick) {
 }
 
 }  // namespace
+
+// The CONTESTED field is a straight read of ObjectiveState::contested. It used
+// to be re-derived here by iterating every hero's true world position, which
+// violated the structural invariant this TU must hold: nothing reachable from
+// the actor builder may iterate hidden enemy state (observation_spec.md).
+// Deriving it in the sim and reading it here keeps the same public value while
+// removing the full-state walk. These tests pin that equivalence for both
+// teams' viewpoints so the field cannot silently drift from the sim.
+TEST(ActorObs, ContestedMirrorsObjectiveState) {
+    MatchConfig cfg = xushi2::test_support::make_test_config();
+    cfg.round_length_seconds = 240;
+    Sim sim(cfg);
+
+    // Fresh state: nobody has walked in yet.
+    EXPECT_FALSE(sim.state().objective.contested);
+    EXPECT_NEAR(build_obs(sim, 0)[idx::CONTESTED], 0.0F, kEps);
+
+    // Park both Rangers on the objective and step once so the state machine
+    // recomputes presence.
+    auto& state = const_cast<xushi2::sim::MatchState&>(sim.state());
+    state.heroes[0].position = xushi2::common::Vec2{25.0F, 25.0F};
+    state.heroes[3].position = xushi2::common::Vec2{25.0F, 25.5F};
+    std::array<Action, kAgentsPerMatch> noop{};
+    sim.step(noop);
+
+    ASSERT_TRUE(sim.state().objective.contested);
+    // Both viewpoints see the same public flag.
+    EXPECT_NEAR(build_obs(sim, 0)[idx::CONTESTED], 1.0F, kEps);
+    EXPECT_NEAR(build_obs(sim, 3)[idx::CONTESTED], 1.0F, kEps);
+}
+
+TEST(ActorObs, ContestedIsZeroWhenOnlyOneTeamIsOnPoint) {
+    MatchConfig cfg = xushi2::test_support::make_test_config();
+    cfg.round_length_seconds = 240;
+    Sim sim(cfg);
+
+    auto& state = const_cast<xushi2::sim::MatchState&>(sim.state());
+    state.heroes[0].position = xushi2::common::Vec2{25.0F, 25.0F};
+    state.heroes[3].position = xushi2::common::Vec2{45.0F, 45.0F};
+    std::array<Action, kAgentsPerMatch> noop{};
+    sim.step(noop);
+
+    ASSERT_FALSE(sim.state().objective.contested);
+    auto obs = build_obs(sim, 0);
+    EXPECT_NEAR(obs[idx::SELF_ON_POINT], 1.0F, kEps);
+    EXPECT_NEAR(obs[idx::CONTESTED], 0.0F, kEps);
+}

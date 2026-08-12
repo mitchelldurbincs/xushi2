@@ -1,0 +1,180 @@
+phase: 4
+metadata:
+  phase: phase4
+  purpose: selfplay_l4
+  status: experimental
+  expected_runtime: long
+  gate_relevance:
+    - phase4_objective_conversion
+  hypothesis: >
+    Leg 4 = retention repair on the leg-3 fighter. The 08-09 re-baseline
+    corrected the standings: L3-0800 holds a mean-score edge over sampled
+    v5-0300 (4.56/3.21 at n=96x2 seeds) but loses the win count (41/51,
+    40/53), and its weak_basic_v2 anchor game is dead (0/31/65). The bet:
+    the fighting skill is worth keeping and the anchor game is
+    recoverable — warm-start L3-0800, fatten the anchor share to 0.45
+    (leg-2 showed 0.30 is the retention edge; L3 at 0.35 still lost it by
+    upd 800), keep sampled v5-0300 and a frozen self-copy as the fighting
+    mix, and point best-eval at the real objective via run.eval_opponent
+    (sampled v5-0300) so ckpt selection tracks fighting, not warmup.
+    Success (from the COMMITTED eval path, n>=96, seed 0xA11CE): beat
+    sampled v5-0300 on wins AND weak_basic_v2 retention score >= 2.
+  falsification_criteria: >
+    Falsified if weak_basic_v2 retention stays < 1 at every checkpoint
+    (the anchor game is not recoverable from this warm start at 0.45 —
+    retention and fighting compete for capacity; next lever is a fresh
+    warm start from v5-0300 trained against sampled L3-0800); or if the
+    win count vs sampled v5-0300 drops below the warm start's own 41/96
+    while retention also fails (pure regression — stop the league loop
+    and go to capacity work, option 2 of the 08-01 fork); or on eval
+    collapse for three consecutive evals.
+  leading_indicators: >
+    eval/mean_score (vs sampled v5-0300 via run.eval_opponent) holding at
+    or above the warm start's level while rollout performance on the 45%
+    weak_basic_v2 envs climbs off zero within the first 150 updates
+    (anchor KL fully annealed by then).
+  lineage: >
+    Warm-starts data/checkpoints/phase4_l3_upd800_best_fighter.pt
+    (= selfplay_l3 ckpt_0800, the corrected-standings best fighter, score
+    edge only). Successor to selfplay_l3 under the 08-09 re-baseline and
+    the provenance doctrine (gate numbers from committed CLI only).
+    Anchor KL on the warm start, annealed by 150.
+
+wandb:
+  enabled: true
+  required: false
+  init_timeout_seconds: 30
+  group: phase4_conversion
+
+env:
+  actor_obs: multi_enemy_entity_grid
+  seed_base: 4083920117
+  opponent_bot: weak_basic_v2
+  learner_team: A
+  # Leg 4: retention repair. Anchor fattened to 0.45 (the one deliberate
+  # change from leg 3's 0.35); fighting mix is sampled v5-0300 (the
+  # opponent that matters) plus a frozen copy of the warm start itself.
+  opponent_snapshot_stochastic: true
+  opponent_bot_mix:
+    weak_basic_v2: 0.45
+    "snapshot:data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt": 0.35
+    "snapshot:data/checkpoints/phase4_l3_upd800_best_fighter.pt": 0.2
+  self_play:
+    enabled: false
+  objective_timing_curriculum:
+    enabled: true
+    initial_unlock_seconds: 15.0
+    initial_capture_seconds: 8.0
+    final_unlock_seconds: 15.0
+    final_capture_seconds: 8.0
+    anneal_updates: 1
+    eval_canonical_every: 25
+  reward:
+    shaping_clip: 30.0
+    score_per_second: 1.0
+    time_penalty_per_second: 0.05
+    death_penalty: 0.5
+    kill_bonus: 0.1
+    damage_dealt_coef: 0.005
+    distance_shaping_coef: 0.005
+    on_point_shaping_coef: 0.02
+    majority_on_point_coef: 0.0
+    uncontested_on_point_coef: 0.15
+    uncontested_on_point_anneal_updates: 0
+    uncontested_on_point_distribute: on_point
+    cap_progress_potential_coef: 1.0
+    capture_completed_bonus: 2.0
+  sim:
+    round_length_seconds: 60
+    objective_unlock_seconds: 15.0
+    objective_capture_seconds: 8.0
+    fog_of_war_enabled: false
+    randomize_map: false
+    seed: 4083920117
+    action_repeat: 3
+    mechanics:
+      revolver_damage_centi_hp: 1000
+      revolver_fire_cooldown_ticks: 15
+      revolver_hitbox_radius: 0.75
+      respawn_ticks: 600
+
+model:
+  obs_encoder: entity_attention_grid
+  entity_token_count: 5
+  entity_token_dim: 18
+  entity_num_heads: 2
+  grid_channels: 3
+  grid_size: 32
+  embed_dim: 64
+  gru_hidden: 64
+  head_hidden: 64
+  action_log_std_init: -1.0
+
+ppo:
+  num_envs: 64
+  rollout_len: 128
+  num_epochs: 2
+  learning_rate: 1.0e-5
+  value_normalization: true
+  vector_env: sync
+  torch_num_threads: 1
+  lr_schedule: cosine
+  lr_final_ratio: 0.1
+  warmup_updates: 0
+  clip_ratio: 0.2
+  value_clip_ratio: 0.2
+  gamma: 0.997
+  gae_lambda: 0.95
+  entropy_coef: 0.02
+  entropy_coef_move: 0.01
+  entropy_coef_aim: 0.03
+  entropy_coef_binary: 0.02
+  value_coef: 0.5
+  max_grad_norm: 0.5
+  team_spirit_initial: 1.0
+  team_spirit_final: 1.0
+  team_spirit_ramp_fraction: 0.0
+  target_selection_dim: 0
+  target_conditioned_combat: false
+  target_selection_aux_coef: 0.0
+  critic_warmup_updates: 10
+  # Anchor protects the warm start's fighting through warmup, then gets
+  # out of the way of retention repair (L3-0800's retention is the thing
+  # being fixed, so anchoring to it long would fight the objective).
+  anchor_kl_coef: 1.0
+  anchor_kl_anneal_updates: 150
+  entropy_anneal_updates: 0
+  entropy_final_scale: 0.1
+
+run:
+  total_updates: 600
+  eval_every: 25
+  eval_episodes: 50
+  checkpoint_every: 25
+  log_every: 5
+  output_dir: runs/phase4_selfplay_l4
+  init_from_checkpoint: data/checkpoints/phase4_l3_upd800_best_fighter.pt
+  # Best-eval tracks the run's actual objective: sampled v5-0300 (the
+  # 2026-08-02 fix; without this, ckpt_final aliases to warmup checkpoints
+  # that happen to farm the config opponent).
+  eval_opponent:
+    bot: "snapshot:data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt"
+    stochastic_snapshot: true
+  matrix_eval:
+    episodes: 96
+    stochastic: true
+    canonical: false
+    anchor_bots:
+      - weak_basic_v2
+      - basic
+    opponent_checkpoints:
+      - data/checkpoints/phase4_v5_upd300_stochastic_600t_converter.pt
+      - data/checkpoints/phase4_l3_upd800_best_fighter.pt
+      - data/checkpoints/phase4_selfplay_l1_champion.pt
+    transfer_bots:
+      - weak_basic_v2
+      - basic
+      - phase4_v5_upd300_stochastic_600t_converter.pt
+      - phase4_l3_upd800_best_fighter.pt
+      - phase4_selfplay_l1_champion.pt
+    output: matrix_eval.json

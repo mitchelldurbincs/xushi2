@@ -41,6 +41,18 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
     critic_obs_dim: int = CRITIC_DIM
     action_dim: int = 6
 
+    # See xushi2.env_capabilities. This env inherits Phase4MappoEnv's
+    # set_team_spirit, but builds its RewardCalculator without
+    # per_agent_rewards, and team_spirit only shapes the per-agent step path.
+    # The inherited setter would therefore accept a ramp and change nothing, so
+    # declare it unsupported and let a configured ramp fail at startup instead.
+    UNSUPPORTED_CURRICULUM_SETTERS: ClassVar[dict[str, str]] = {
+        "set_team_spirit": (
+            "reward is computed on the scalar path (per_agent_rewards=False), "
+            "which team_spirit does not shape"
+        ),
+    }
+
     def __init__(
         self,
         sim_cfg: dict,
@@ -152,11 +164,7 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
                 opponent = np.asarray(
-                    self._opponent_policy.act(
-                        self._sim,
-                        (3, 4, 5),
-                        map_bounds=map_bounds_from_sim_cfg(self._sim_cfg),
-                    ),
+                    self._opponent_policy.act(self._sim, (3, 4, 5)),
                     dtype=np.float32,
                 )
                 if opponent.shape[0] != 3 or opponent.shape[1] < 6:
@@ -185,12 +193,15 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
                         dtype=np.float32,
                     )
         previous_damage = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64)
-        combat_metrics = self._combat_metrics_before_step(actions)
         objective_before = self._objective_snapshot()
+        # Same ordering contract as Phase4MappoEnv.step: derive the contest
+        # state once, pre-step, and hand it to both metric functions.
+        contested_majority_team = self._contested_majority_team(objective_before)
+        combat_metrics = self._combat_metrics_before_step(actions, contested_majority_team)
 
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
-        self._attach_damage_metrics(combat_metrics, damage_delta)
+        self._attach_damage_metrics(combat_metrics, damage_delta, contested_majority_team)
         objective_metrics = self._objective_metrics_after_step(objective_before)
 
         r_a, r_b = self._reward_calc.step(self._sim)
@@ -198,8 +209,13 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
         reward_metrics.update(self._reward_calc.uncontested_on_point_metrics())
         reward = np.asarray([r_a, r_a, r_a, r_b, r_b, r_b], dtype=np.float32)
 
-        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
-        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
+        # terminated == the MDP genuinely ended (a team reached the score
+        # threshold); truncated == the round timer cut it off. Deriving
+        # these from `winner` labelled a timeout-with-a-winner as
+        # terminated and a draw as truncated, which inverts the common
+        # case: reaching the score threshold is rare, timing out is not.
+        terminated = bool(self._sim.score_threshold_reached)
+        truncated = bool(self._sim.episode_over) and not terminated
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)
             reward += np.asarray([ta, ta, ta, tb, tb, tb], dtype=np.float32)

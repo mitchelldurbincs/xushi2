@@ -1,6 +1,7 @@
 add_subdirectory(common)
 add_subdirectory(sim)
 add_subdirectory(bots)
+add_subdirectory(pool)
 add_subdirectory(sim/tools)
 
 if(XUSHI2_BUILD_VIEWER)

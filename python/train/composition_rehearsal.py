@@ -12,7 +12,12 @@ import torch
 import torch.nn as nn
 
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
-from train.mappo_model import MappoActorCritic, MappoConfig, mode_aux_loss_and_accuracy
+from train.mappo_model import (
+    MappoActorCritic,
+    MappoConfig,
+    mappo_config_from_checkpoint,
+    mode_aux_loss_and_accuracy,
+)
 from envs import make_mappo_match_env
 from xushi2.obs_manifest import actor_field_slice
 
@@ -37,7 +42,7 @@ def load_frozen_mappo_teacher(checkpoint_path: str | Path) -> MappoActorCritic:
     ckpt_cfg_raw = dict(raw.get("config", {}).get("mappo", {}))
     if not ckpt_cfg_raw:
         raise ValueError(f"checkpoint {checkpoint_path} does not contain config.mappo")
-    model = MappoActorCritic(MappoConfig(**ckpt_cfg_raw))
+    model = MappoActorCritic(mappo_config_from_checkpoint(ckpt_cfg_raw))
     model.load_state_dict(raw["model_state_dict"], strict=True)
     model.eval()
     for param in model.parameters():
@@ -327,11 +332,9 @@ def build_mappo_env_fn_with_overrides(
             if "self_play_schedule" in env_cfg
             else None
         ),
-        snapshot_paths=tuple(str(p) for p in env_cfg.get("snapshot_paths", ())),
         snapshot_league=(
             dict(env_cfg.get("snapshot_league", {})) if "snapshot_league" in env_cfg else None
         ),
-        target_slot=bool(env_cfg.get("target_slot", False)),
         n_agents=int(env_cfg.get("n_agents", env_cfg.get("team_size", 3))),
     )
 

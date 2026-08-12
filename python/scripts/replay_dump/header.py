@@ -104,6 +104,9 @@ def header_fields(ckpt_config: dict, *, seed: int) -> dict[str, Any]:
             fields["snapshot"] = Path(sample.path).name
     if runtime.has_fog:
         fields["fog"] = 1
+        # True for every side since the 2026-08-12 native-obs cutover:
+        # phase>=7 snapshot opponents observe through a per-checkpoint
+        # ObservationEngine with last-seen enabled, same as the learner.
         fields["last_seen"] = 1
         fields["fog_mode"] = str(env_cfg.get("fog_mode", env_cfg.get("features", {}).get("fog", "team_shared")))
     if env_cfg.get("match_type") and "match_type" not in fields:

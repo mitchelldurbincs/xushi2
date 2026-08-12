@@ -29,20 +29,9 @@ void objective_tick_update(ObjectiveState& obj,
     const std::uint32_t unlock_ticks = config.objective_unlock_ticks;
     const std::uint32_t capture_ticks = config.objective_capture_ticks;
 
-    // Initial lock: no state changes during the first objective_unlock_ticks
-    // ticks. The `now + 1` comparison is because state.tick is incremented
-    // AFTER this function runs — callers observe tick N's state after
-    // calling sim.step() N+1 times. Unlock during tick unlock_ticks-1
-    // processing so "15 seconds of lock" is observable after exactly
-    // objective_unlock_ticks sim.step() calls. Once unlocked, runtime
-    // curriculum updates must not re-lock an in-progress episode.
-    if (!obj.unlocked && now + 1 < unlock_ticks) {
-        obj.unlocked = false;
-        return;
-    }
-    obj.unlocked = true;
-
-    // Living heroes inside the objective circle, by team.
+    // Living heroes inside the objective circle, by team. Computed before the
+    // lock check because `obj.contested` is public HUD state that the actor
+    // observation reads every tick, including during the lock window.
     bool present_a = false;
     bool present_b = false;
     for (std::uint32_t i = 0; i < kAgentsPerMatch; ++i) {
@@ -59,6 +48,20 @@ void objective_tick_update(ObjectiveState& obj,
             present_b = true;
         }
     }
+    obj.contested = present_a && present_b;
+
+    // Initial lock: no state changes during the first objective_unlock_ticks
+    // ticks. The `now + 1` comparison is because state.tick is incremented
+    // AFTER this function runs — callers observe tick N's state after
+    // calling sim.step() N+1 times. Unlock during tick unlock_ticks-1
+    // processing so "15 seconds of lock" is observable after exactly
+    // objective_unlock_ticks sim.step() calls. Once unlocked, runtime
+    // curriculum updates must not re-lock an in-progress episode.
+    if (!obj.unlocked && now + 1 < unlock_ticks) {
+        obj.unlocked = false;
+        return;
+    }
+    obj.unlocked = true;
 
     const std::uint32_t a_before = obj.team_a_score_ticks;
     const std::uint32_t b_before = obj.team_b_score_ticks;

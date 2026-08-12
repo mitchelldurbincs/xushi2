@@ -41,6 +41,20 @@ Two invariants hold across every phase:
    most important rule in the project (see `rl_design.md` §10). Sharing
    a code path that touches hidden state is the most likely way to
    accidentally leak enemy information to the actor.
+
+   Since the 2026-08-12 native-obs cutover this invariant is
+   architectural, not conventional: **the critic tensor is never an
+   input to actor-visible assembly, and the only actor-obs entity path
+   in the codebase is `ObservationEngine::build_entity_obs`**
+   (`src/sim/src/entity_obs.cpp`). Inside that translation unit,
+   `fog_gate` is the one function permitted to read enemy `HeroState`
+   for actor-destined data; token/grid writers see only the
+   `FoggedEnemyView` it emits. Fog mode (team-shared vs per-agent),
+   visibility radius, and last-seen memory are `ObsConfig` fields
+   (`src/sim/include/xushi2/sim/obs_config.h`), enforced by the fog-ON
+   counterfactual suite in `tests/observations/test_entity_obs_leak.cpp`
+   and sealed end-to-end by
+   `python/tests/test_entity_obs_native.py::test_hidden_enemy_state_never_reaches_env_step_obs`.
 2. **All spatial features are in team-relative coordinates.** Team A sees
    the map from the A-side orientation; Team B sees it mirrored. The
    sim runs in world coordinates; the mirroring happens in the obs

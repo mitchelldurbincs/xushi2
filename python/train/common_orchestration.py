@@ -13,6 +13,18 @@ CheckpointPayloadT = TypeVar("CheckpointPayloadT")
 
 @dataclass(frozen=True)
 class LoopConfig:
+    """Cadence and LR schedule for :func:`run_training_loop`.
+
+    Cadence convention, uniform across all three knobs: a value of ``0``
+    disables the periodic action, and negative values are a config error
+    rejected at parse time (see ``train.mappo_runtime_context``).
+
+    Disabling is *periodic only*. The final update always evaluates and
+    always checkpoints regardless of ``eval_every`` / ``checkpoint_every``,
+    because ``last_eval`` is the training loop's return value and a run that
+    saved nothing is worse than one that saved once.
+    """
+
     total_updates: int
     eval_every: int
     checkpoint_every: int
@@ -21,6 +33,10 @@ class LoopConfig:
     lr_schedule: str
     lr_final_ratio: float
     warmup_updates: int
+    # First update to run. Resuming starts after the last completed update
+    # while keeping total_updates fixed, so the LR schedule continues from
+    # where it left off instead of restarting.
+    start_update: int = 1
 
 
 class OrchestrationHooks(Protocol[RolloutT, UpdateMetricsT, EvalResultT, CheckpointPayloadT]):
@@ -45,7 +61,7 @@ def run_training_loop(
     cfg: LoopConfig,
     hooks: OrchestrationHooks[RolloutT, UpdateMetricsT, EvalResultT, CheckpointPayloadT],
 ) -> None:
-    for update_idx in range(1, cfg.total_updates + 1):
+    for update_idx in range(max(1, cfg.start_update), cfg.total_updates + 1):
         lr = lr_for_update(
             update_idx,
             cfg.total_updates,
@@ -61,12 +77,14 @@ def run_training_loop(
         if cfg.log_every > 0 and update_idx % cfg.log_every == 0:
             hooks.on_log(update_idx, lr, metrics)
 
+        is_final_update = update_idx == cfg.total_updates
+
         should_stop = False
-        if update_idx % cfg.eval_every == 0 or update_idx == cfg.total_updates:
+        if is_final_update or (cfg.eval_every > 0 and update_idx % cfg.eval_every == 0):
             eval_result = hooks.evaluate_step(update_idx, lr)
             should_stop = hooks.on_eval(update_idx, lr, eval_result)
 
-        if update_idx % cfg.checkpoint_every == 0 or update_idx == cfg.total_updates:
+        if is_final_update or (cfg.checkpoint_every > 0 and update_idx % cfg.checkpoint_every == 0):
             hooks.on_checkpoint(update_idx, hooks.checkpoint_payload(update_idx))
 
         if should_stop:

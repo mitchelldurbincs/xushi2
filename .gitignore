@@ -54,6 +54,7 @@ data/replays/*
 !data/replays/.gitkeep
 # Committed deterministic-replay artifact (regenerate with xushi2-eval --dump-golden).
 !data/replays/golden_phase0_basic.txt
+!data/replays/golden_phase0_basic.darwin-arm64.txt
 data/eval/*
 !data/eval/.gitkeep
 experiments/checkpoints/*

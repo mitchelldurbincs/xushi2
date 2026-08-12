@@ -46,7 +46,6 @@ class MappoConfig:
     max_grad_norm: float
     learning_rate: float
     num_epochs: int
-    minibatch_size: int
     # Escape Protocol 5.2: optional per-action entropy coefficients. When
     # omitted, each component defaults to `entropy_coef` for back-compat.
     entropy_coef_move: float | None = None
@@ -121,6 +120,20 @@ class MappoConfig:
     # ``"cpu"``, ``"cuda"``, ``"cuda:N"``, or ``"auto"`` (CUDA if available
     # else CPU). Resolved to ``torch.device`` once in the trainer.
     device: str = "cpu"
+
+
+# Keys that older checkpoints carry in their stored ``mappo`` config but that
+# MappoConfig no longer accepts (removed as never-read; see config_schema).
+# Checkpoints are immutable historical artifacts, so loading tolerates exactly
+# this list — anything else unknown is still a hard error.
+_REMOVED_CHECKPOINT_KEYS = frozenset({"minibatch_size", "use_recurrence"})
+
+
+def mappo_config_from_checkpoint(ckpt_cfg: dict) -> MappoConfig:
+    """Build a MappoConfig from a checkpoint's stored config dict."""
+    return MappoConfig(
+        **{k: v for k, v in ckpt_cfg.items() if k not in _REMOVED_CHECKPOINT_KEYS}
+    )
 
 
 @dataclass(frozen=True)

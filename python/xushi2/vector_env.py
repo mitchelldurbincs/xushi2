@@ -10,6 +10,34 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 
+from .env_capabilities import (
+    CURRICULUM_SETTERS,
+    resolve_curriculum_setter,
+    supported_curriculum_setters,
+)
+
+# Upper bound on how long the parent waits for a single worker reply.
+#
+# A worker that *dies* does not hang the parent: __init__ closes the parent's
+# copy of the child pipe end, so a dead worker surfaces as EOF right away
+# (measured: exitcode -9 reported in ~0.0s). What does hang the parent is a
+# worker that is alive but wedged -- deadlocked, or stuck in native code --
+# because nothing ever closes the pipe. An unbounded recv() then blocks
+# forever and the run holds its allocation with no output and no error.
+#
+# Generous enough that a slow first step or a large model never trips it; the
+# point is to bound the hang, not to police latency.
+_WORKER_RECV_TIMEOUT_SECONDS: float = 300.0
+
+# Shorter bound during shutdown, where a worker is expected to be exiting
+# and a slow reply is not worth waiting five minutes for.
+_WORKER_CLOSE_TIMEOUT_SECONDS: float = 10.0
+
+# A dead worker's pipe closes before the OS reaps it, so Process.exitcode can
+# still be None at the moment we notice. Join briefly before reporting, or the
+# error says "exitcode=None" and tells the operator nothing.
+_WORKER_REAP_TIMEOUT_SECONDS: float = 5.0
+
 
 def _worker_critic_obs(env: gym.Env, critic_obs_dim: int) -> np.ndarray:
     out = np.zeros(critic_obs_dim, dtype=np.float32)
@@ -28,6 +56,7 @@ def _auto_reset_transition_metadata(
     seed_base: int,
     env_idx: int,
     obs_dtype: np.dtype[Any],
+    final_critic_obs: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], int, int | None, np.ndarray]:
     info_out = dict(info)
     obs_out = np.asarray(obs, dtype=obs_dtype)
@@ -36,6 +65,14 @@ def _auto_reset_transition_metadata(
     if (term or trunc) and auto_reset:
         info_out["final_info"] = dict(info_out)
         info_out["final_observation"] = obs_out
+        # The critic observation of the pre-reset state. Without it the value
+        # of a truncated state is unrecoverable -- critic_obs() below is called
+        # after the auto-reset and therefore describes the NEW episode -- and
+        # MAPPO cannot bootstrap a time-limit cutoff correctly.
+        if final_critic_obs is not None:
+            info_out["final_critic_observation"] = np.asarray(
+                final_critic_obs, dtype=np.float32
+            )
         next_episode_count += 1
         reset_seed = seed_base + 10_000 * next_episode_count + env_idx
     return info_out, next_episode_count, reset_seed, obs_out
@@ -63,6 +100,11 @@ def _async_worker(
                 obs, reward, term, trunc, info = env.step(payload)
                 term = bool(term)
                 trunc = bool(trunc)
+                # Read the terminal state's critic obs before any auto-reset
+                # replaces it with the next episode's.
+                final_critic = (
+                    _worker_critic_obs(env, critic_obs_dim) if (term or trunc) else None
+                )
                 info, episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
                     obs=obs,
                     info=dict(info),
@@ -73,6 +115,7 @@ def _async_worker(
                     seed_base=seed_base,
                     env_idx=env_idx,
                     obs_dtype=env.observation_space.dtype,
+                    final_critic_obs=final_critic,
                 )
                 if reset_seed is not None:
                     obs, reset_info = env.reset(seed=reset_seed)
@@ -90,29 +133,14 @@ def _async_worker(
                 )
             elif cmd == "critic_obs":
                 conn.send(_worker_critic_obs(env, critic_obs_dim))
-            elif cmd == "set_team_spirit":
-                env.set_team_spirit(float(payload))
-                conn.send(None)
-            elif cmd == "set_majority_on_point_alpha":
-                setter = getattr(env, "set_majority_on_point_alpha", None)
+            elif cmd == "supported_curriculum_setters":
+                conn.send(supported_curriculum_setters(env))
+            elif cmd in CURRICULUM_SETTERS:
+                # Generic dispatch: payload is always the argument tuple, so
+                # adding a curriculum knob does not mean adding a branch here.
+                setter = resolve_curriculum_setter(env, cmd)
                 if setter is not None:
-                    setter(float(payload))
-                conn.send(None)
-            elif cmd == "set_uncontested_on_point_alpha":
-                setter = getattr(env, "set_uncontested_on_point_alpha", None)
-                if setter is not None:
-                    setter(float(payload))
-                conn.send(None)
-            elif cmd == "set_objective_timing_seconds":
-                unlock_seconds, capture_seconds = payload
-                setter = getattr(env, "set_objective_timing_seconds", None)
-                if setter is not None:
-                    setter(float(unlock_seconds), float(capture_seconds))
-                conn.send(None)
-            elif cmd == "set_respawn_ticks":
-                setter = getattr(env, "set_respawn_ticks", None)
-                if setter is not None:
-                    setter(int(payload))
+                    setter(*payload)
                 conn.send(None)
             elif cmd == "set_opponent_bot":
                 setter = getattr(env, "set_opponent_bot", None)
@@ -200,6 +228,13 @@ class XushiVectorEnv:
             ),
             dtype=first.action_space.dtype,
         )
+        # Validate capability declarations up front: an env that neither
+        # implements nor declares a curriculum setter fails here, at
+        # construction, instead of silently dropping the curriculum later.
+        # Runs after the space checks so their more specific errors win.
+        self._supported_setters = frozenset.intersection(
+            *(supported_curriculum_setters(env) for env in self.envs)
+        )
         self._last_obs: np.ndarray | None = None
 
     def reset(
@@ -248,6 +283,12 @@ class XushiVectorEnv:
             obs, reward, term, trunc, info = env.step(actions[i])
             term = bool(term)
             trunc = bool(trunc)
+            final_critic = None
+            if term or trunc:
+                # Terminal-state critic obs, read before the auto-reset below
+                # swaps in the next episode's.
+                final_critic = np.zeros(self.critic_obs_dim, dtype=np.float32)
+                env.build_critic_obs(final_critic)
             info, next_episode_count, reset_seed, obs_out = _auto_reset_transition_metadata(
                 obs=obs,
                 info=dict(info),
@@ -258,6 +299,7 @@ class XushiVectorEnv:
                 seed_base=self.seed_base,
                 env_idx=i,
                 obs_dtype=self.single_observation_space.dtype,
+                final_critic_obs=final_critic,
             )
             terminated[i] = term
             truncated[i] = trunc
@@ -275,43 +317,38 @@ class XushiVectorEnv:
         self._last_obs = obs_batch
         return obs_batch, reward_batch, terminated, truncated, self.critic_obs(), infos
 
-    def set_team_spirit(self, value: float) -> None:
-        """Push team_spirit value to every wrapped env. Envs that don't
-        define ``set_team_spirit`` (scalar-reward envs) are skipped."""
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Setter names every wrapped env can apply.
+
+        Intersected across envs so a caller that checks this cannot be told a
+        knob is available when only some envs would honor it.
+        """
+        return self._supported_setters
+
+    def _apply_setter(self, name: str, *args: Any) -> None:
         for env in self.envs:
-            setter = getattr(env, "set_team_spirit", None)
+            setter = resolve_curriculum_setter(env, name)
             if setter is not None:
-                setter(float(value))
+                setter(*args)
+
+    def set_team_spirit(self, value: float) -> None:
+        self._apply_setter("set_team_spirit", float(value))
 
     def set_majority_on_point_alpha(self, value: float) -> None:
-        """Push majority-on-point reward alpha to envs that support it."""
-        for env in self.envs:
-            setter = getattr(env, "set_majority_on_point_alpha", None)
-            if setter is not None:
-                setter(float(value))
+        self._apply_setter("set_majority_on_point_alpha", float(value))
 
     def set_uncontested_on_point_alpha(self, value: float) -> None:
-        """Push uncontested-on-point reward alpha to envs that support it."""
-        for env in self.envs:
-            setter = getattr(env, "set_uncontested_on_point_alpha", None)
-            if setter is not None:
-                setter(float(value))
+        self._apply_setter("set_uncontested_on_point_alpha", float(value))
 
     def set_objective_timing_seconds(
         self, unlock_seconds: float, capture_seconds: float
     ) -> None:
-        """Push objective timing to envs that support timing curricula."""
-        for env in self.envs:
-            setter = getattr(env, "set_objective_timing_seconds", None)
-            if setter is not None:
-                setter(float(unlock_seconds), float(capture_seconds))
+        self._apply_setter(
+            "set_objective_timing_seconds", float(unlock_seconds), float(capture_seconds)
+        )
 
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
-        """Push respawn curriculum ticks to envs that support the setter."""
-        for env in self.envs:
-            setter = getattr(env, "set_respawn_ticks", None)
-            if setter is not None:
-                setter(int(respawn_ticks))
+        self._apply_setter("set_respawn_ticks", int(respawn_ticks))
 
     def set_opponent_bots(self, opponent_bots: Sequence[str]) -> None:
         """Push a per-env opponent assignment (opponent-mix curriculum)."""
@@ -418,9 +455,59 @@ class XushiAsyncVectorEnv:
             self._conns.append(parent_conn)
             self._procs.append(proc)
         self._last_critic_obs = np.zeros((self.num_envs, self.critic_obs_dim), dtype=np.float32)
+        # Ask each worker what its env can apply. This also runs the capability
+        # validation inside the worker, so an env that neither implements nor
+        # declares a curriculum setter surfaces here rather than dropping the
+        # curriculum silently for the whole run.
+        for conn in self._conns:
+            conn.send(("supported_curriculum_setters", ()))
+        self._supported_setters = frozenset.intersection(
+            *(frozenset(self._recv(i)) for i in range(self.num_envs))
+        )
 
-    def _recv(self, idx: int):
-        msg = self._conns[idx].recv()
+    def _recv(self, idx: int, timeout: float | None = None):
+        """Receive one worker reply, bounding the wait.
+
+        Two distinct failure modes, neither previously diagnosable:
+
+        - The worker died (signal, OOM kill). The parent closes its copy of
+          the child pipe end at construction, so this surfaces as EOF rather
+          than a hang -- but as a bare ``EOFError`` with an empty message and
+          no indication of which worker or why.
+        - The worker is alive but wedged (deadlock, stuck in native code).
+          Nothing closes the pipe, so an unbounded ``recv()`` blocks forever
+          and the training run hangs silently, holding its allocation.
+
+        The timeout is resolved here rather than as a default argument so
+        the module constant stays late-bound and overridable.
+        """
+        deadline = _WORKER_RECV_TIMEOUT_SECONDS if timeout is None else timeout
+        conn = self._conns[idx]
+        if not conn.poll(deadline):
+            proc = self._procs[idx]
+            if not proc.is_alive():
+                raise RuntimeError(
+                    f"async env worker {idx} died without reporting an error "
+                    f"(exitcode={proc.exitcode}). A negative exitcode is a signal "
+                    f"death; the usual cause is an abort inside the C++ sim from "
+                    f"an invalid MatchConfig."
+                )
+            raise TimeoutError(
+                f"async env worker {idx} did not respond within {deadline:.0f}s "
+                f"(pid={proc.pid}, still alive). The worker is wedged rather than "
+                f"dead -- inspect that pid before retrying."
+            )
+        try:
+            msg = conn.recv()
+        except EOFError as exc:
+            proc = self._procs[idx]
+            proc.join(timeout=_WORKER_REAP_TIMEOUT_SECONDS)
+            raise RuntimeError(
+                f"async env worker {idx} closed its pipe without replying "
+                f"(exitcode={proc.exitcode}). A negative exitcode is a signal "
+                f"death; the usual cause is an abort inside the C++ sim from "
+                f"an invalid MatchConfig."
+            ) from exc
         if isinstance(msg, BaseException):
             raise RuntimeError(f"async env worker {idx} failed") from msg
         return msg
@@ -500,57 +587,41 @@ class XushiAsyncVectorEnv:
             infos,
         )
 
-    def set_team_spirit(self, value: float) -> None:
-        """Push team_spirit value to every worker. Awaits per-worker ack."""
+    def supported_curriculum_setters(self) -> frozenset[str]:
+        """Setter names every worker's env can apply.
+
+        Queried once at construction; the workers' envs are built there and do
+        not change identity afterwards.
+        """
+        return self._supported_setters
+
+    def _broadcast_setter(self, name: str, *args: Any) -> None:
+        """Send a curriculum setter to every worker and await each ack."""
         if self._closed:
             raise RuntimeError("vector env is closed")
-        value = float(value)
         for conn in self._conns:
-            conn.send(("set_team_spirit", value))
+            conn.send((name, args))
         for i in range(self.num_envs):
             self._recv(i)
+
+    def set_team_spirit(self, value: float) -> None:
+        self._broadcast_setter("set_team_spirit", float(value))
 
     def set_majority_on_point_alpha(self, value: float) -> None:
-        """Push majority-on-point reward alpha to every worker."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        value = float(value)
-        for conn in self._conns:
-            conn.send(("set_majority_on_point_alpha", value))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_majority_on_point_alpha", float(value))
 
     def set_uncontested_on_point_alpha(self, value: float) -> None:
-        """Push uncontested-on-point reward alpha to every worker."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        value = float(value)
-        for conn in self._conns:
-            conn.send(("set_uncontested_on_point_alpha", value))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_uncontested_on_point_alpha", float(value))
 
     def set_objective_timing_seconds(
         self, unlock_seconds: float, capture_seconds: float
     ) -> None:
-        """Push objective timing to every worker that supports it."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        payload = (float(unlock_seconds), float(capture_seconds))
-        for conn in self._conns:
-            conn.send(("set_objective_timing_seconds", payload))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter(
+            "set_objective_timing_seconds", float(unlock_seconds), float(capture_seconds)
+        )
 
     def set_respawn_ticks(self, respawn_ticks: int) -> None:
-        """Push respawn curriculum ticks to every worker that supports it."""
-        if self._closed:
-            raise RuntimeError("vector env is closed")
-        ticks = int(respawn_ticks)
-        for conn in self._conns:
-            conn.send(("set_respawn_ticks", ticks))
-        for i in range(self.num_envs):
-            self._recv(i)
+        self._broadcast_setter("set_respawn_ticks", int(respawn_ticks))
 
     def set_opponent_bots(self, opponent_bots: Sequence[str]) -> None:
         """Push a per-env opponent assignment (opponent-mix curriculum)."""
@@ -588,8 +659,10 @@ class XushiAsyncVectorEnv:
         for i, conn in enumerate(self._conns):
             try:
                 if self._procs[i].is_alive():
-                    self._recv(i)
-            except (BrokenPipeError, EOFError, RuntimeError):
+                    self._recv(i, timeout=_WORKER_CLOSE_TIMEOUT_SECONDS)
+            except (BrokenPipeError, EOFError, RuntimeError, TimeoutError):
+                # Shutdown is best-effort; the join/terminate below is what
+                # actually guarantees the workers go away.
                 pass
             conn.close()
         for proc in self._procs:
@@ -622,4 +695,77 @@ def make_xushi_vector_env(
             seed_base=seed_base,
             auto_reset=auto_reset,
         )
-    raise ValueError(f"vector backend must be 'sync' or 'async', got {backend!r}")
+    if backend == "sim_pool":
+        return _make_sim_pool_vector_env(
+            env_fns,
+            critic_obs_dim=critic_obs_dim,
+            seed_base=seed_base,
+            auto_reset=auto_reset,
+        )
+    raise ValueError(
+        f"vector backend must be 'sync', 'async', or 'sim_pool', got {backend!r}"
+    )
+
+
+def _make_sim_pool_vector_env(
+    env_fns: Sequence[Callable[[], gym.Env]],
+    *,
+    critic_obs_dim: int,
+    seed_base: int,
+    auto_reset: bool,
+):
+    """Build a SimPoolVectorEnv from the trainer's env factories.
+
+    The trainer only hands us env factories, but the batched pool needs the
+    underlying env parameters, so this reads them off the
+    ``make_mappo_match_env`` partial that ``mappo_env_fn_from_config``
+    produces. Any configuration the pool backend cannot reproduce exactly
+    (self-play, snapshot opponents, mini-games, flat obs, legacy Python obs
+    assembly) is rejected loudly rather than approximated.
+    """
+    import functools
+
+    from envs.runtime_factory import make_mappo_match_env
+    from xushi2.sim_pool_env import SimPoolVectorEnv
+
+    fn = env_fns[0]
+    if not (isinstance(fn, functools.partial) and fn.func is make_mappo_match_env):
+        raise ValueError(
+            "vector_env 'sim_pool' requires envs built by "
+            "envs.runtime_factory.mappo_env_fn_from_config"
+        )
+    kw = dict(fn.keywords)
+
+    def _reject(condition: bool, what: str) -> None:
+        if condition:
+            raise ValueError(
+                f"vector_env 'sim_pool' does not support {what}; use "
+                "vector_env 'sync' or 'async' for this config"
+            )
+
+    _reject(bool(kw.get("self_play")), "current self-play")
+    _reject(kw.get("mini_game") not in (None, ""), "mini-games")
+    _reject(int(kw.get("n_agents", 3)) != 3, "six-agent (phase11) envs")
+    _reject(
+        str(kw.get("actor_obs")) != "multi_enemy_entity_grid",
+        f"actor_obs {kw.get('actor_obs')!r}",
+    )
+    opponent_bot = str(kw.get("opponent_bot", "basic"))
+    _reject(opponent_bot == "snapshot", "snapshot opponents")
+    fog_mode = kw.get("fog_mode")
+    _reject(
+        fog_mode not in (None, "", "none"),
+        f"fog_mode {fog_mode!r} on the 3-agent wrapper",
+    )
+    _reject(bool(kw.get("map_randomization")), "map randomization")
+
+    return SimPoolVectorEnv(
+        num_envs=len(env_fns),
+        sim_cfg=dict(kw.get("sim_cfg", {})),
+        opponent_bot=opponent_bot,
+        learner_team=str(kw.get("learner_team", "A")),
+        reward_cfg=dict(kw.get("reward_cfg", {}) or {}),
+        critic_obs_dim=critic_obs_dim,
+        seed_base=seed_base,
+        auto_reset=auto_reset,
+    )

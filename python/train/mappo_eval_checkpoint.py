@@ -9,6 +9,7 @@ from train.mappo_pretrain_hooks import (
     maybe_run_composition_pretrain,
     maybe_run_full_env_rehearsal,
     maybe_run_multi_enemy_supervised_bridge,
+    maybe_resume,
     maybe_warm_start,
 )
 from train.mappo_rollout_trainer import MappoTrainer
@@ -61,6 +62,9 @@ def train_mappo_from_config(config: dict) -> dict[str, float]:
     # to seed a basic-opponent run from a noop-trained policy that already
     # knows how to hold the cap. Loaded BEFORE BC pretrain so BC, if also
     # configured, fine-tunes on top of the warm-started weights.
+    # Resume first: it validates that resume_from and init_from_checkpoint are
+    # not both set, before warm start tries to open a checkpoint.
+    start_update = maybe_resume(context, trainer)
     maybe_warm_start(context, trainer)
     configure_cap_duel_distill_anchor(context, trainer)
 
@@ -115,6 +119,7 @@ def train_mappo_from_config(config: dict) -> dict[str, float]:
                 lr_schedule=cfg.lr_schedule,
                 lr_final_ratio=cfg.lr_final_ratio,
                 warmup_updates=cfg.warmup_updates,
+                start_update=start_update,
             ),
             hooks,
         )

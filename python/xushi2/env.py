@@ -171,8 +171,13 @@ class XushiEnv(gym.Env):
         r_a, r_b = self._reward_calc.step(self._sim)
         step_reward = r_a if self._learner_team_str == "A" else r_b
 
-        terminated = bool(self._sim.episode_over) and (self._sim.winner != _cpp.Team.Neutral)
-        truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
+        # terminated == the MDP genuinely ended (a team reached the score
+        # threshold); truncated == the round timer cut it off. Deriving
+        # these from `winner` labelled a timeout-with-a-winner as
+        # terminated and a draw as truncated, which inverts the common
+        # case: reaching the score threshold is rare, timing out is not.
+        terminated = bool(self._sim.score_threshold_reached)
+        truncated = bool(self._sim.episode_over) and not terminated
 
         if terminated or truncated:
             ta, tb = self._reward_calc.add_terminal(self._sim)

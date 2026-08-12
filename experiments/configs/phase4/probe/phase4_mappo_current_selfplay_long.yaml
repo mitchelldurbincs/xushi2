@@ -26,7 +26,6 @@ env:
     time_penalty_per_second: 0.05
     death_penalty: 1.0
     kill_bonus: 1.0
-    damage_dealt_coef: 0.01
     distance_shaping_coef: 0.005
     on_point_shaping_coef: 0.0
   sim:
@@ -42,7 +41,6 @@ env:
       respawn_ticks: 240
 
 model:
-  use_recurrence: true
   embed_dim: 64
   gru_hidden: 64
   head_hidden: 64
@@ -52,7 +50,6 @@ ppo:
   num_envs: 32
   rollout_len: 128
   num_epochs: 2
-  minibatch_size: 256
   learning_rate: 1.0e-6
   value_normalization: true
   value_per_agent: true

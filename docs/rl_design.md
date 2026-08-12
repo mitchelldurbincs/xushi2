@@ -310,7 +310,7 @@ Still flat obs, still fixed map.
 
 **Phase 6 — Add the egocentric grid. *OA5-analog milestone.*** Concat a small CNN feature with the entity features. 3v3 Vanguard / Ranger / Mender. Fixed map. **Full vision.** This is the phase where "teamfights emerge from self-play without explicit communication" becomes a testable claim: the information structure (team-shared/full vision, no pings, no learned comms, recurrent policy per agent, centralized critic, `team_spirit`-scalarized reward — see §5) mirrors OpenAI Five's setup. If teamfights do not emerge here, no amount of fog-of-war polish will rescue them in Phase 7; debugging stops here until they do.
 
-**Phase 7 — Partial observation.** Split into two sub-phases so the fog delta is incremental on a working Phase-6 policy, not a cold start:
+**Phase 7 — Partial observation.** Split into two sub-phases so the fog delta is incremental on a working Phase-6 policy, not a cold start. (Since the 2026-08-12 native-obs cutover both modes are one-line `ObsConfig` deltas on the C++ `ObservationEngine` — `fog_mode: team_shared` vs `per_agent` — with the semantic difference pinned by `EntityObsLeak.TeamSharedRevealsWhatPerAgentHides`.)
 
 - **Phase 7a — Team-shared fog of war.** Walls block line-of-sight, but visible-enemy sets are unioned across teammates before building each agent's observation (Dota / OA5 fog model). Goal: show teamfights survive partial observation of the *map* without yet requiring agents to infer what teammates see. This is the strict OA5 parity point.
 - **Phase 7b — Per-agent fog of war.** Drop the team-shared union. Each agent sees only what *it* directly has line-of-sight to; the only cross-agent information channel is allies-through-walls (position/HP/alive-state) plus each agent's own last-seen enemy markers. This is the research-novel claim — teamfights survive genuine per-agent partial observation. *Note: Phase-1 heroes (Vanguard / Ranger / Mender) have no team-level reveal abilities (game-design §4), so coordination here must emerge from positioning alone.*
@@ -470,6 +470,8 @@ Any leak of hidden enemy state into the actor silently degrades the entire resea
 ```
 
 "Public events" is an explicit, small allowlist. There is no generic "enemy triggered an event" loophole: any new event that could reveal hidden enemy presence needs an explicit design decision and an updated leak test. In particular, **muzzle traces from hidden enemy fire are renderer-only in MVP** — they appear in the omniscient viewer but are not part of any actor observation. A deliberate hidden-fire perception ablation (approximate direction / distance band, no exact position) may be added later.
+
+*Status (2026-08-12 native-obs cutover):* the list above is implemented by the fog-ON counterfactual suites `tests/observations/test_entity_obs_leak.cpp` (hidden movement/aim/weapon state, radius, last-seen covert channel, team-shared vs per-agent semantics — each with positive controls) and `tests/observations/test_actor_leak.cpp`, plus the end-to-end FFI seal `python/tests/test_entity_obs_native.py`. The structural half is now architecture rather than convention: the only actor-obs entity path is `ObservationEngine::build_entity_obs` (`src/sim/src/entity_obs.cpp`), the critic tensor is never an input to actor-visible assembly, and fog semantics live in `ObsConfig` — see observation_spec.md invariant 1.
 
 ### Recurrent MAPPO silent failure modes
 

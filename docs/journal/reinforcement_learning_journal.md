@@ -3458,3 +3458,364 @@ The best fighter exists and needs retention repair, not more fighting:
 warm-start L3-0800, anchor share >= 0.45, `run.eval_opponent` = sampled
 v5-0300 (so best-eval tracks the real objective), gate at n=96: beat
 v5-0300 AND retention >= 2.
+
+## 2026-08-09 — Engineering-review merge, re-baseline, and a third retracted crown
+
+**Status:** both external engineering-review branches merged into main
+(`repo-engineering-review-hnzrb6`: truncation-vs-termination bootstrapping,
+atomic/resumable checkpoints, config-key validation, contested derived in
+the sim, explicit env curriculum capabilities; `repository-engineering-
+review-86xqx6`: fog-filtered contested in the actor obs, metrics
+attribution fixes, bounded async worker waits, boundary validation in the
+bindings, golden fixture restore). C++ suite 143/143, Python 605/605.
+
+### Merge reconciliations (both branches predate the campaign)
+
+- Config-key registry taught the post-fork campaign keys (opponent_bot_mix,
+  opponent_handicap_curriculum, opponent_recent_self,
+  opponent_snapshot_stochastic, snapshot_paths, entropy/log_std anneals,
+  run.eval_opponent); dead minibatch_size / use_recurrence keys removed
+  from the 10 post-fork configs.
+- `mappo_config_from_checkpoint` tolerates the two removed keys inside
+  historical checkpoints' stored configs (checkpoints are immutable).
+- `env.snapshot_paths` left the dead-key lists: the self-play campaign
+  implemented it after the branches forked.
+- Contested: sim keeps public `ObjectiveState.contested` (HUD state); the
+  actor obs derives it through the fog filter — bit-identical fog-off,
+  leak-safe fog-on. Both branches' tests pass.
+
+### Golden replay: the "corruption" was platform divergence
+
+The abf98a1 fixture, retracted upstream as corrupt, is reproduced
+bit-exactly by every commit since May on darwin-arm64; the restored
+pre-abf98a1 fixture is what linux reproduces. The scripted trajectory is
+deterministic per platform, not across platforms (libm/codegen float
+differences). Fixtures are now per-platform
+(`golden_phase0_basic.darwin-arm64.txt` beside the linux default) with a
+compile-time platform check. Corollary: cross-machine bit-reproducibility
+of runs was never real; per-machine determinism still is.
+
+### Re-baseline at n=96, seed 0xA11CE, sampled, as-trained 600t
+
+| matchup | 08-02 claim | 08-09 re-run |
+|---|---|---|
+| v5-0300 vs weak_basic_v2 | 77/3/16, 2.57 | **77/3/16, 2.5722 — exact** |
+| L3-0800 vs weak_basic_v2 | 3/30/63, 0.06 | 0/31/65, 0.00 — consistent |
+| L3-0800 vs sampled v5-0300 | 54/35/7, 5.37/2.87 | **41/51/4, 4.56/3.21** |
+
+The retention rows confirm the merge changed no eval behavior. The
+head-to-head row does not: re-run at a second seed (0xBEEF) gives 40/53/3,
+and a pre-merge (40d1be8) control at the original seed gives 41/51/4 —
+bit-identical to the merged run. The 54/35/7 row cannot be blamed on the
+merge, the seed, or the code: it was produced by an ad-hoc, uncommitted
+eval path and does not reproduce under the committed one
+(`eval_mappo_matrix.py --stochastic-snapshot`, added this entry).
+
+- **"L3-0800 decisively beats v5-0300": RETRACTED** — the third false
+  crown, and the first retracted under the n>=96 doctrine itself. At
+  n=96x2 seeds L3-0800 loses the win count (41/51, 40/53) while holding
+  the mean-score edge (4.56/3.21, 4.49/3.33): it wins big and loses
+  often. No decisive fighter exists.
+- **Doctrine addendum:** a gate/crowning number only counts if produced by
+  a committed CLI invocation recorded with its artifact. The sample-size
+  clause was necessary but not sufficient; the instrument lesson now
+  includes the instrument's provenance.
+
+### Leg 4 implication
+
+The leg-4 premise ("best fighter exists, needs retention repair")
+weakens: L3-0800 holds a score edge but not a win edge over v5-0300, and
+its anchor game is confirmed dead. Warm-starting L3-0800 is still
+defensible (score edge is real, and retention repair was the plan), but
+the gate should now require the win count too: beat sampled v5-0300 on
+wins at n>=96 AND retention >= 2 vs weak_basic_v2, both from the
+committed eval path. v5-0300 remains the reigning all-rounder.
+
+## 2026-08-09 — selfplay_l4: retention repair works, then sampled play collapses; gate failed
+
+**Status:** run complete (600 updates, warm start L3-0800, anchor 0.45
+weak_basic_v2 + sampled v5-0300 0.35 + sampled self-copy 0.20,
+`run.eval_opponent` = sampled v5-0300, anchor KL annealed by 150).
+Artifacts `runs/phase4_selfplay_l4/`. Gate artifacts
+`docs/reports/2026-08-09-l4-gate-ckpt0250.json` / `-ckpt0300.json`.
+
+### Result (committed CLI, n=96, seed 0xA11CE, sampled, as-trained 600t)
+
+| checkpoint | vs weak_basic_v2 | vs sampled v5-0300 |
+|---|---|---|
+| ckpt_0250 | 21/38/37, 1.13 | 23/68/5, 3.11/4.65 |
+| **ckpt_0300** | **29/35/32, 1.59** | **31/61/4, 3.50/3.86** |
+
+**Gate: FAILED** on both legs (retention < 2; no win-count edge). Copied
+ckpt_0300 to `data/checkpoints/phase4_l4_upd300_repair_candidate.pt` —
+the best retention+fighting compromise any self-play leg has produced.
+
+### What the run established
+
+1. **Retention repair is real but paid for.** Dead anchor game (0.00 at
+   warm start) climbed to 1.59 by upd 300 under the 0.45 anchor share —
+   while the v5 head-to-head slid 41/51 -> 31/61. Retention and fighting
+   competed for capacity along the whole trajectory; no checkpoint held
+   both. Second consecutive league leg to fail this way (L3's fighter had
+   dead retention; L4's repair dulled the fighter).
+2. **New instrument failure: greedy best-eval is blind to sampled-play
+   collapse.** From upd 350 SAMPLED play collapsed in BOTH matchups
+   (probe: 1/21 vs v5, 0-1 wins vs weak) while every greedy in-training
+   eval stayed in the 18-33/50 band, and log_std was flat (~0.113) — the
+   policy's mean stayed strong while its sampled behavior died. Fix
+   landed: `run.eval_opponent.stochastic: true` makes in-training eval
+   (and best-eval selection) sample. Future legs must set it: the gate
+   measures sampled play, so the selector has to.
+3. **n=24 flattered again**: ckpt_0300 read 10/13 (42%) vs v5 at n=24,
+   31/61 (34%) at n=96. Direction-finding only, as doctrined.
+
+### Verdict and the fork
+
+Falsified as designed ("retention and fighting compete for capacity" is
+now the confirmed reading, not just a clause). Two league legs from two
+directions produced no both-skills checkpoint. The evidence has shifted
+decisively toward the 08-01 fork's option 2: **combat/policy capacity is
+the binding constraint** — aim/dodge pretraining in the mini-envs or
+obs/action/network upgrades, with B2-unchanged (and now also "hold both
+L4 gate legs at once") as the capacity metric. A cheap intermediate probe
+first: rerun a short L4 variant with `eval_opponent.stochastic: true` to
+test whether sampled-aware selection alone finds a both-skills
+checkpoint before concluding capacity work is unavoidable.
+
+## 2026-08-09 — selfplay_l4b: stopped at 400 by its own criteria; the league campaign is falsified
+
+**Status:** run stopped early at update 400/600 (falsification clause:
+retention < 1 at every checkpoint AND fighting at-or-below warm start).
+Two deltas from leg 4: sampled-aware best-eval
+(`run.eval_opponent.stochastic: true`, its first use) and a fresh seed.
+Artifacts `runs/phase4_selfplay_l4b/`, gate artifact
+`docs/reports/2026-08-09-l4b-gate-ckpt0150.json`.
+
+### Result
+
+- The sampled eval worked as an instrument: it caught the sampled-play
+  collapse LIVE at update 175 (6/41/3 immediately after the anchor
+  released — leg 4's greedy eval had been blind to the same collapse at
+  350) and pinned best-eval at upd 150.
+- **Formal gate on that selector's pick (n=96, committed CLI): FAILED
+  both legs.** ckpt_0150 vs weak_basic_v2: 0/31/65, 0.00 — retention
+  dead, the warm start's exact shape. vs sampled v5-0300: 36/57/3
+  (4.49/3.41) — score edge, no win edge. The in-run 31/50 (62%) at
+  n=50/varied seeds flattened to 37.5% at the decision seed: selection
+  optimism, the small-sample lesson at the selector layer.
+- This trajectory never repaired retention at all — by upd 300 it had
+  found a stalemate equilibrium instead (0/1/23 vs weak, opponent score
+  collapsed 3.47 -> 0.09): deny-don't-convert, the avoidance family's
+  newest member. Post-anchor fighting oscillated underwater (aim_err
+  compressing 1.6 -> 1.17 while both play modes degraded — mean
+  over-sharpening into brittleness).
+
+### The campaign verdict
+
+Four league legs (L1, L3, L4, L4b) from three different warm starts and
+two selection instruments produced ZERO checkpoints that hold fighting
+and retention simultaneously. Leg 4 traded retention up (0 -> 1.69) as
+fighting fell (41/51 -> 31/61); leg 4b held fighting briefly and never
+gained retention. The trade is bidirectional, smooth, and no selector
+can route around it because no point on any trajectory has both. The
+curricular explanations are exhausted: **the retention/fighting trade is
+a capacity limit of the current policy class** (64-hidden GRU, flat aim
+heads, entity-grid obs). The league campaign is falsified as a path to a
+both-skills champion at this capacity.
+
+### Next campaign: capacity (the 08-01 fork, option 2, now unblocked)
+
+Structural changes, cheapest-first, each measured by the fixed yardstick
+(B2 unchanged + the L4 dual gate at n=96/0xA11CE via committed CLI):
+
+1. Target-lead features in the actor obs — make aim cheap to represent.
+2. Dedicated aim/dodge pretraining in the existing mini-envs
+   (phase4_aim_only, combat_1v1, cap_duel + distill plumbing).
+3. Bigger/specialized heads (aim head width, or gru_hidden 64 -> 128).
+
+Standings unchanged: v5-0300 reigns; L3-0800 (score-edge fighter) and
+L4-0300 (best compromise) are the preserved candidates.
+
+## 2026-08-09 — cap_headwidth_probe v1: the probe tested nothing — migration carried a poison log_std
+
+**Status:** run complete (300 updates, head_hidden 64->128 via
+warm_start_migration compatible_exact of the v5-0300 trunk, fresh heads +
+critic). Artifacts `runs/phase4_cap_headwidth_probe/`.
+
+**Result: flat -20.000 reward at every eval, maj_sec 0.00 — the policy
+never once reached the objective in 300 updates.** Not a capacity
+verdict: a mechanistic failure. compatible_exact loaded the checkpoint's
+`log_std` (-2.14, std 0.113 — v5's SHARPENED exploration, tuned for its
+trained heads) because the tensor's shape matches; the config's
+action_log_std_init -1.0 was silently overwritten. Fresh random heads
+sampled at std 0.113 repeat the same wrong trajectories forever:
+behavior never sampled, the campaign's oldest theorem, this time
+self-inflicted at the migration layer.
+
+**Fix landed (tested):** migration never carries `log_std`
+(`_MIGRATION_RESET_KEYS` in mappo_pretrain_hooks) — migration exists for
+architecture changes whose new tensors need re-derivation, and the
+config's action_log_std_init is the intended exploration level for that.
+The migration report now prints `skipped_reset`.
+
+**Instrument lesson (appended to the list):** funnel stats, eased
+configs, greedy learners, greedy opponents, small samples, greedy
+selectors — and now inherited exploration. Every layer that silently
+reuses a trained artifact's settings for a differently-shaped learner is
+a place the same theorem fires.
+
+Probe v2 (`phase4_cap_headwidth_probe_v2.yaml`, identical but with live
+exploration via the fix) launched — the capacity question stands, now
+actually being asked.
+
+## 2026-08-10 — cap_headwidth_probe v2: exploration lived, approach died; v3 adds handicap continuity
+
+**Status:** v2 stopped at 225/300 (slope decision: onpt pinned at 0.000
+throughout, eval flat -20 — score >= 1 by 300 implausible). Artifacts
+`runs/phase4_cap_headwidth_probe_v2/`.
+
+The log_std reset worked (entropy 3.30 vs v1's -0.25, dist shaping pulled
+the learner pointward early), but rollout onpt never left 0.000: approach
+attempts die to NATIVE weak_basic_v2 before conversion is sampled, and
+the death penalty converts approach into avoidance. The B-series failure
+mode, now at the re-derivation layer — fresh heads need what B1c/B2
+built: **v3 adds opponent_handicap_curriculum on weak_basic_v2**
+(1.5rad/60t -> native by 200, then 200 updates at full strength; eval
+unaffected, still native). Positive precedent at this exact tier: B2
+reached 2.35 v2-retention through handicap continuity. Same success bar
+(sampled eval >= 2 vs native v2). If v3 fails even softened, migration
+re-derivation is a dead end and the capacity campaign pivots to aim/dodge
+pretraining in the mini-envs.
+
+## 2026-08-10 — cap_headwidth_probe v3 stopped at 50: the third layer was the learning rate
+
+V3 (handicap continuity) was stopped at 50/400 on a config-archaeology
+finding: fresh heads were training at the campaign's WARM-START LR
+(1e-5), while every successful from-scratch derivation in this project
+ran at 3e-4 (phase4_mappo_basic) — 30x faster. policy_loss printed
+0.000 throughout v2/v3; the heads were barely moving regardless of
+exploration (v2 fix) or opponent softness (v3 fix). Three stacked
+mechanistic blockers, each invisible until the previous was cleared:
+inherited log_std -> dead exploration; native opponent -> approach dies;
+warm-start LR -> heads frozen in practice. **V4 = v3 + lr 3e-4.** The
+migrated trunk will drift at that LR; accepted — the probe's deliverable
+is any rung-clearing 128-head policy to serve as the capacity subject.
+
+## 2026-08-11 — cap_headwidth_probe v4 stopped at 150; v5 adds the historical BC bootstrap
+
+V4 (cold-start LR 3e-4) was stopped at 150/400: heads now train (entropy
+moves, policy responds) but rollout onpt never left 0.000 — pure PPO
+exploration does not find the objective from random heads in this env at
+any budget we've given it. This is the fourth mechanistic layer, and it
+is the one the project already solved once: the original bootstrap used
+bc_pretrain_walk_to_objective before PPO. **V5 = v4 + BC walk pretrain
+(500 steps, 1e-3, the historical recipe; entity-grid obs supported).**
+The pipeline is now: migrate trunk -> reset log_std -> BC the fresh
+heads into approach behavior -> PPO vs softened-then-native v2 at 3e-4.
+If the rung STILL does not clear, migration re-derivation is falsified
+wholesale and the capacity campaign pivots to aim/dodge pretraining of
+the existing 64-width architecture in the mini-envs (no migration).
+
+## 2026-08-11 — cap_headwidth probe series CLOSED: migration re-derivation is falsified wholesale
+
+**Status:** v5 stopped at 200/400 (anneal complete, native opponent from
+here; softened phase produced maj_sec 0.05-0.06 and zero conversions —
+score >= 2 by 400 implausible). Artifacts
+`runs/phase4_cap_headwidth_probe{,_v2,_v3,_v4,_v5}/`.
+
+### The five-layer ledger (each fix real, none sufficient)
+
+| ver | blocker found | fix | outcome |
+|---|---|---|---|
+| v1 | migrated sharpened log_std -> dead exploration | migration resets log_std (code, tested) | exploration lives |
+| v2 | approach dies to native v2 | handicap continuity (B2 recipe) | approach survives |
+| v3 | fresh heads at warm-start LR (1e-5) frozen | cold-start LR 3e-4 | heads train |
+| v4 | pure PPO never finds the objective | BC walk bootstrap (historical recipe) | reaches/contests point |
+| v5 | behaviors surface separately, never compose | — | shooting OR approaching, no conversion |
+
+By v5 the learner walks to the point (BC), lands hits (first in the
+series), and denies uncontested time — but PPO at 3e-4 with a live
+entropy bonus diffuses each behavior before the next stacks on it. The
+original project needed the whole phase-1..3 ladder plus v1-v5
+conversion campaigns to compose these skills at width 64; re-deriving
+that composition inside one 400-update run was never a probe, it was a
+compressed re-run of the program. **Verdict: warm-start migration is
+useful for CARRYING skills across architecture changes near the trunk,
+not for re-deriving head-encoded skills. The head-width capacity question
+stays open — unanswered, not answered negatively.**
+
+### Capacity campaign, corrected route (next)
+
+Grow capability, not architecture: aim/dodge pretraining of the EXISTING
+64-width net in the mini-envs (phase4_aim_only / combat_1v1 / cap_duel +
+the distill plumbing), warm starts intact throughout — no migration, no
+re-derivation. Measure with the fixed yardstick: B2 unchanged + the L4
+dual gate (n=96, 0xA11CE, committed CLI). The known risk is the old
+transfer problem (cap_duel skills not binding in full 3v3 — the May
+failure); the distill-anchor machinery built for that is unused since the
+gate redefinition and is the first thing to re-test at 600t, where
+conversion actually happens.
+
+## 2026-08-11 — distill re-test blocked on lost artifacts; the campaign's next decision, stated
+
+Scoping the distill-anchor re-test at 600t found the dependency chain
+broken: the cap_duel v2 teacher checkpoint AND its warm start
+(basic_v6_5 ckpt_final) were gitignored run artifacts, since cleaned.
+Regenerating the teacher from its committed config would rebuild a
+FLAT-obs policy — the mini-env/distill tooling predates the entity-grid
+lineage (the BC aim tooling is explicitly flat-only) — while every
+current checkpoint of value is multi_enemy_entity_grid. The capacity
+campaign's real next step is therefore a fork needing a deliberate call:
+
+1. **Port the mini-env/distill tooling to entity-grid obs** (code work:
+   cap_duel/aim_only envs emitting entity-grid obs + distill hook obs
+   routing), then pretrain aim on the CURRENT lineage. Highest fidelity,
+   most work.
+2. **Target-lead features in the actor obs** (C++ obs change, new
+   variant): make aim cheap to represent instead of teaching it.
+   Moderate work, touches the sim's obs layer, partially re-derives the
+   embed (migration lesson applies — but only the embed, not the heads).
+3. **Accept the 64-width ceiling for Phase 4** and take the cleared
+   600t gate as this phase's result: promote v5-0300 as the Phase 4
+   champion, move to Phase 5 (entity attention was already pulled
+   forward), and revisit combat capacity there.
+
+The 08-09/08-11 evidence (league falsified, migration re-derivation
+falsified) says whichever of 1/2 is chosen, the yardstick stays B2
+unchanged + the L4 dual gate. No run launched on this; the fork is a
+design decision, not an experiment.
+
+## 2026-08-12 — native-obs cutover: the leak invariant is now architecture
+
+The Phase-3 cutover from the native-obs campaign (plan:
+docs/plans/active/2026-08-12-native-obs-cutover-plan.md; flag-gated
+foundation landed in 37726dd) executed today. The `native_entity_obs`
+flag is gone and so are all five legacy Python re-derivations of the
+visibility rule: phase11's `_enemy_visibility_matrix` + last-seen
+buffers, the phase4 multi-enemy wrapper's mask + `zero_masked` pass,
+SnapshotPolicy's `_visible_enemy_matrix`/`_convert_multi_enemy_obs`
+(and the `map_bounds` threading that existed only for it), and the
+multi_enemy_obs adapter itself. The only actor-obs entity path in the
+codebase is now `ObservationEngine::build_entity_obs` in C++, behind
+fog-ON counterfactual leak tests; the critic tensor can no longer be
+an input to actor-visible assembly because no code path exists that
+would do it. Phase 7a→7b is a one-line ObsConfig delta.
+
+Verification: pytest 614, ctest 163, train-smoke, grep gates all
+green; the entity-obs golden fixtures passed UNCHANGED through the
+deletion; and a 30-update same-seed phase11 run at the pre-cutover
+commit vs HEAD produced bit-identical training metrics — the gate
+asked for "within seed noise" and got equality.
+
+Disclosed behavior change (was the point, not a side effect): frozen
+snapshot opponents now observe with their TRAINING-time semantics per
+checkpoint. Phase-7+ snapshots gain last-seen markers (the legacy
+serving path never provided them); dup-C phase-4 snapshots stop being
+served team-shared fog at radius 0.65 that their training never had.
+Bot-anchored gate evals (weak_basic_v2, 0xA11CE, n=96) are unaffected;
+any standings comparison that used a SNAPSHOT opponent must be
+re-based at n=96 before crossing the cutover. The three-way capacity
+fork stated on 08-11 is unchanged by this work, but note option 2's
+cost dropped: "touches the sim's obs layer" now means one ObsConfig /
+entity_obs.cpp change with an existing counterfactual harness around
+it.

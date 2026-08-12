@@ -55,3 +55,47 @@ def test_trigger_cadence_static() -> None:
     assert hooks.logs == [2, 4, 6, 8, 10]
     assert hooks.evals == [4, 8, 10]
     assert hooks.ckpts == [3, 6, 9, 10]
+
+
+def _loop_cfg(*, total_updates: int, eval_every: int, checkpoint_every: int, log_every: int):
+    return LoopConfig(
+        total_updates=total_updates,
+        eval_every=eval_every,
+        checkpoint_every=checkpoint_every,
+        log_every=log_every,
+        base_lr=1e-3,
+        lr_schedule="constant",
+        lr_final_ratio=1.0,
+        warmup_updates=0,
+    )
+
+
+def test_zero_cadence_disables_periodic_action_without_dividing_by_zero() -> None:
+    """`0` used to raise ZeroDivisionError at update 1; it now means disabled.
+
+    checkpoint_every was the worst case: the crash landed *after* update()
+    had already run, so the run did real work and saved nothing.
+    """
+    hooks = _Hooks()
+    run_training_loop(
+        _loop_cfg(total_updates=5, eval_every=0, checkpoint_every=0, log_every=0),
+        hooks,
+    )
+    # Periodic actions disabled, but the final update still evaluates and
+    # checkpoints -- last_eval is the loop's return value, and a run that
+    # saved nothing is worse than one that saved once.
+    assert hooks.logs == []
+    assert hooks.evals == [5]
+    assert hooks.ckpts == [5]
+
+
+def test_positive_cadence_unchanged() -> None:
+    """Guard the common path against the disable branch changing behaviour."""
+    hooks = _Hooks()
+    run_training_loop(
+        _loop_cfg(total_updates=6, eval_every=2, checkpoint_every=3, log_every=1),
+        hooks,
+    )
+    assert hooks.logs == [1, 2, 3, 4, 5, 6]
+    assert hooks.evals == [2, 4, 6]
+    assert hooks.ckpts == [3, 6]

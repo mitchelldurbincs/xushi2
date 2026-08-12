@@ -133,3 +133,26 @@ def test_mappo_runtime_context_uses_explicit_runtime_yaml(tmp_path) -> None:
     assert context.ckpt_env_cfg["kind"] == "mappo_match"
     assert context.output_dir == tmp_path / "runtime_smoke" / "mappo"
     assert context.output_dir.is_dir()
+
+
+@pytest.mark.parametrize("cadence_key", ["eval_every", "checkpoint_every", "log_every"])
+def test_negative_cadence_rejected_at_parse_time(cadence_key: str, tmp_path) -> None:
+    """Reject bad cadence before the env and model are built, not at update 1."""
+    config = _runtime_mappo_flat_smoke_config()
+    config["run"] = dict(config["run"])
+    config["run"]["output_dir"] = str(tmp_path / "cadence")
+    config["run"][cadence_key] = -1
+
+    with pytest.raises(ValueError, match=cadence_key):
+        build_runtime_context(config)
+
+
+@pytest.mark.parametrize("cadence_key", ["eval_every", "checkpoint_every", "log_every"])
+def test_zero_cadence_accepted_as_disabled(cadence_key: str, tmp_path) -> None:
+    config = _runtime_mappo_flat_smoke_config()
+    config["run"] = dict(config["run"])
+    config["run"]["output_dir"] = str(tmp_path / f"cadence_zero_{cadence_key}")
+    config["run"][cadence_key] = 0
+
+    context = build_runtime_context(config)
+    assert context is not None

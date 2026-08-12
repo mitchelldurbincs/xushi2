@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -27,6 +28,17 @@ from train.mappo_runtime_context import RuntimeContext
 _WARM_START_MIGRATION_COMPATIBLE_EXACT = "compatible_exact"
 
 
+# Parameters a migration never carries over. Migration exists for
+# architecture changes whose new tensors must be re-derived by fresh
+# exploration; the checkpoint's log_std is exploration tuned for the OLD
+# tensors. Probe 2026-08-09 (phase4_cap_headwidth_probe): migrating
+# v5-0300's sharpened log_std (std 0.113) onto fresh heads killed
+# exploration completely — 300 updates flat at -20 reward, the policy
+# never once reached the objective. The config's action_log_std_init is
+# the intended exploration level for re-derivation; keep it.
+_MIGRATION_RESET_KEYS = frozenset({"log_std"})
+
+
 def _load_compatible_warm_start(
     model: nn.Module,
     checkpoint_state: dict[str, torch.Tensor],
@@ -35,8 +47,12 @@ def _load_compatible_warm_start(
     compatible: dict[str, torch.Tensor] = {}
     skipped_unexpected: list[str] = []
     skipped_shape_mismatch: list[str] = []
+    skipped_reset: list[str] = []
 
     for key, value in checkpoint_state.items():
+        if key in _MIGRATION_RESET_KEYS:
+            skipped_reset.append(key)
+            continue
         target_value = model_state.get(key)
         if target_value is None:
             skipped_unexpected.append(key)
@@ -54,6 +70,7 @@ def _load_compatible_warm_start(
         "missing": sorted(load_result.missing_keys),
         "skipped_unexpected": sorted(skipped_unexpected),
         "skipped_shape_mismatch": sorted(skipped_shape_mismatch),
+        "skipped_reset": sorted(skipped_reset),
     }
 
 
@@ -74,7 +91,8 @@ def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
             f"[{phase_label}/mappo] warm-start migration={warm_start_migration} "
             f"loaded={len(report['loaded'])} missing={report['missing']} "
             f"skipped_unexpected={report['skipped_unexpected']} "
-            f"skipped_shape_mismatch={report['skipped_shape_mismatch']}",
+            f"skipped_shape_mismatch={report['skipped_shape_mismatch']} "
+            f"skipped_reset={report['skipped_reset']}",
             flush=True,
         )
         print(f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}", flush=True)
@@ -107,6 +125,52 @@ def maybe_warm_start(context: RuntimeContext, trainer: MappoTrainer) -> None:
     else:
         trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
     print(f"[{phase_label}/mappo] warm-start: loaded {init_ckpt}", flush=True)
+
+
+def maybe_resume(context: RuntimeContext, trainer: MappoTrainer) -> int:
+    """Continue a previous run from ``run.resume_from``. Returns the next update.
+
+    Distinct from ``run.init_from_checkpoint`` (warm start), which deliberately
+    starts a *new* run from someone else's weights. Resuming restores the
+    optimizer moments, RNG streams, recurrent hidden state, and update index, so
+    the LR schedule and exploration continue rather than restarting.
+
+    Scope: the learner's state is restored, the environment's is not. The C++
+    Sim cannot be serialized from Python, so the first resumed update begins
+    from a freshly reset episode rather than mid-episode. A resumed run
+    therefore does not reproduce an uninterrupted one bit for bit; it continues
+    optimization correctly, which is the part that a weights-only restart got
+    wrong.
+    """
+    resume_path = context.run_cfg.get("resume_from")
+    if not resume_path:
+        return 1
+    if context.run_cfg.get("init_from_checkpoint"):
+        raise ValueError(
+            "run.resume_from and run.init_from_checkpoint are mutually exclusive: "
+            "the first continues this run, the second starts a new one from "
+            "foreign weights. Pick one."
+        )
+    path = Path(resume_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"run.resume_from checkpoint not found: {path}")
+    raw = torch.load(path, map_location="cpu", weights_only=False)
+    trainer.model.load_state_dict(raw["model_state_dict"], strict=True)
+    resume_state = raw.get("resume_state")
+    if resume_state is None:
+        raise ValueError(
+            f"{path} has no resume_state, so it can only be warm-started from. "
+            "It was written before resumable checkpoints existed, or by a code "
+            "path that does not record optimizer/RNG state. Use "
+            "run.init_from_checkpoint if a fresh optimizer is acceptable."
+        )
+    completed = trainer.load_resume_state(resume_state)
+    print(
+        f"[{context.phase_label}/mappo] resume: {path} at update {completed}; "
+        f"continuing at {completed + 1}",
+        flush=True,
+    )
+    return completed + 1
 
 
 def maybe_run_composition_pretrain(

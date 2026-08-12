@@ -9,6 +9,7 @@ function(xushi2_add_test name)
             GTest::gtest_main
             xushi2::sim
             xushi2::bots
+            xushi2::pool
             xushi2::common
     )
     gtest_discover_tests(${name})
@@ -29,6 +30,9 @@ xushi2_add_test(test_obs_dims             observations/test_obs_dims.cpp)
 xushi2_add_test(test_obs_utils            observations/test_obs_utils.cpp)
 xushi2_add_test(test_actor_obs            observations/test_actor_obs.cpp)
 xushi2_add_test(test_critic_obs           observations/test_critic_obs.cpp)
+xushi2_add_test(test_entity_obs           observations/test_entity_obs.cpp)
+xushi2_add_test(test_entity_obs_leak      observations/test_entity_obs_leak.cpp)
+xushi2_add_test(test_sim_pool             pool/test_sim_pool.cpp)
 xushi2_add_test(test_integration          integration/test_smoke.cpp)
 
 # The golden-replay test reads data/replays/golden_phase0_basic.txt from the
