@@ -71,7 +71,6 @@ def _env_fns(num_envs: int):
         learner_team="A",
         reward_cfg=dict(_REWARD_CFG),
         actor_obs="multi_enemy_entity_grid",
-        native_entity_obs=True,
     )
     return [fn for _ in range(num_envs)]
 
@@ -159,16 +158,6 @@ def test_sim_pool_env_matches_legacy_vector_env() -> None:
 
 
 def test_sim_pool_backend_rejects_unsupported_configs() -> None:
-    fn = functools.partial(
-        make_mappo_match_env,
-        sim_cfg=dict(_SIM_CFG),
-        opponent_bot="weak_basic_v2",
-        actor_obs="multi_enemy_entity_grid",
-        native_entity_obs=False,
-    )
-    with pytest.raises(ValueError, match="legacy Python obs path"):
-        make_xushi_vector_env([fn], critic_obs_dim=135, backend="sim_pool")
-
     fn_flat = functools.partial(
         make_mappo_match_env,
         sim_cfg=dict(_SIM_CFG),
@@ -177,3 +166,12 @@ def test_sim_pool_backend_rejects_unsupported_configs() -> None:
     )
     with pytest.raises(ValueError, match="actor_obs"):
         make_xushi_vector_env([fn_flat], critic_obs_dim=135, backend="sim_pool")
+
+    fn_snapshot = functools.partial(
+        make_mappo_match_env,
+        sim_cfg=dict(_SIM_CFG),
+        opponent_bot="snapshot",
+        actor_obs="multi_enemy_entity_grid",
+    )
+    with pytest.raises(ValueError, match="snapshot"):
+        make_xushi_vector_env([fn_snapshot], critic_obs_dim=135, backend="sim_pool")

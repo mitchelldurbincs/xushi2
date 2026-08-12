@@ -750,10 +750,6 @@ def _make_sim_pool_vector_env(
         str(kw.get("actor_obs")) != "multi_enemy_entity_grid",
         f"actor_obs {kw.get('actor_obs')!r}",
     )
-    _reject(
-        not bool(kw.get("native_entity_obs", False)),
-        "the legacy Python obs path (set env.native_entity_obs: true)",
-    )
     opponent_bot = str(kw.get("opponent_bot", "basic"))
     _reject(opponent_bot == "snapshot", "snapshot opponents")
     fog_mode = kw.get("fog_mode")

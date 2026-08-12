@@ -174,36 +174,31 @@ def test_snapshot_policy_loads_and_emits_actions(shared_snapshot_path: Path) -> 
     assert policy.cfg.obs_encoder == "entity_attention_grid"
 
 
-def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
+def test_snapshot_policy_observes_live_sim_geometry(
     shared_snapshot_path: Path,
     monkeypatch,
 ) -> None:
+    # Under map randomization the frozen opponent must see the LIVE map, not
+    # the checkpoint's stored one. The legacy conversion threaded a
+    # map_bounds argument (and this test used to pin that plumbing); the
+    # native ObservationEngine reads sim.config().map directly, so the check
+    # is now that act()'s internal obs match a reference engine build on the
+    # same live sim — including one with bounds unlike the checkpoint's.
+    from xushi2.entity_obs_native import snapshot_obs_config
+    from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+
     policy = SnapshotPolicy(shared_snapshot_path)
-    live_bounds = {
-        "min_x": -11.0,
-        "min_y": -13.0,
-        "max_x": 61.0,
-        "max_y": 67.0,
-    }
-    captured_multi: list[dict[str, float]] = []
-    captured_norm: list[dict[str, float]] = []
+    assert policy._obs_engine is not None
 
-    def fake_multi_enemy_obs(flat, **kwargs):
-        captured_multi.append(dict(kwargs["map_bounds"]))
-        return np.zeros((flat.shape[0], policy.cfg.obs_dim), dtype=np.float32)
+    captured: list[np.ndarray] = []
+    real_greedy = policy.model.greedy_action
 
-    def fake_normalize_world_for_team(world_xy, map_bounds, *, team_b_view):
-        captured_norm.append(dict(map_bounds))
-        return np.zeros(2, dtype=np.float32)
+    def capture_greedy(obs_t, h):
+        captured.append(obs_t.cpu().numpy().copy())
+        return real_greedy(obs_t, h)
 
-    monkeypatch.setattr(
-        "xushi2.snapshot_policy.actor_obs_to_multi_enemy_entity_grid_obs",
-        fake_multi_enemy_obs,
-    )
-    monkeypatch.setattr(
-        "xushi2.snapshot_policy.normalize_world_for_team",
-        fake_normalize_world_for_team,
-    )
+    monkeypatch.setattr(policy.model, "greedy_action", capture_greedy)
+
     with open(
         config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
         encoding="utf-8",
@@ -211,10 +206,26 @@ def test_snapshot_policy_uses_live_map_bounds_for_randomized_obs(
         config = yaml.safe_load(fh)
     cfg = _build_config(config["env"]["sim"], seed_override=123)
     cfg.team_size = 3
+    # Live map deliberately unlike the checkpoint's stored sim config.
+    cfg.map.min_x = -11.0
+    cfg.map.min_y = -13.0
+    cfg.map.max_x = 61.0
+    cfg.map.max_y = 67.0
     sim = _cpp.Sim(cfg)
 
-    policy.act(sim, (3, 4, 5), map_bounds=live_bounds)
+    policy.act(sim, (3, 4, 5))
 
-    assert captured_multi == [live_bounds]
-    assert captured_norm
-    assert all(bounds == live_bounds for bounds in captured_norm)
+    reference = _cpp.ObservationEngine(
+        snapshot_obs_config(policy.phase, policy.env_cfg)
+    )
+    expected = np.zeros((3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM), dtype=np.float32)
+    for i, slot in enumerate((3, 4, 5)):
+        reference.build_entity_obs(sim, slot, expected[i])
+
+    assert len(captured) == 1
+    np.testing.assert_array_equal(captured[0], expected)
+    # The self token's normalized position only lands in [-1, 1] if the
+    # LIVE bounds were used; the checkpoint's 50x50 map would put the
+    # spawn elsewhere.
+    self_pos = captured[0][:, 8:10]
+    assert np.all(np.abs(self_pos) <= 1.0)

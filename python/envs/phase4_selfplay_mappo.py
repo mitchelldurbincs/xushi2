@@ -164,11 +164,7 @@ class Phase4CurrentSelfplayMappoEnv(Phase4MappoEnv):
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
                 opponent = np.asarray(
-                    self._opponent_policy.act(
-                        self._sim,
-                        (3, 4, 5),
-                        map_bounds=map_bounds_from_sim_cfg(self._sim_cfg),
-                    ),
+                    self._opponent_policy.act(self._sim, (3, 4, 5)),
                     dtype=np.float32,
                 )
                 if opponent.shape[0] != 3 or opponent.shape[1] < 6:

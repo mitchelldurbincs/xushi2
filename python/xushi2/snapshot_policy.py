@@ -13,13 +13,8 @@ import torch
 from train.mappo import MappoActorCritic, mappo_config_from_checkpoint
 from xushi2 import xushi2_cpp as _cpp
 from xushi2.entity_obs_native import snapshot_obs_config
-from xushi2.multi_enemy_obs import (
-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
-    actor_obs_to_multi_enemy_entity_grid_obs,
-    map_bounds_from_sim_cfg,
-    normalize_world_for_team,
-)
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
+from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+from xushi2.obs_manifest import ACTOR_PHASE1_DIM
 from xushi2.partial_obs import actor_obs_to_entity_grid_obs, actor_obs_to_partial_entity_grid_obs
 
 
@@ -34,11 +29,7 @@ class SnapshotPolicy:
     """
 
     def __init__(
-        self,
-        checkpoint_path: str | Path,
-        *,
-        stochastic: bool = False,
-        native_entity_obs: bool = False,
+        self, checkpoint_path: str | Path, *, stochastic: bool = False
     ) -> None:
         checkpoint_path = self._resolve_checkpoint_path(checkpoint_path)
         self.checkpoint_path = str(checkpoint_path)
@@ -51,14 +42,14 @@ class SnapshotPolicy:
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
         self.h = self.model.init_hidden(self.cfg.n_agents)
-        # Native path: obs come from a per-checkpoint ObservationEngine
-        # configured with the checkpoint's TRAINING-time semantics (see
-        # snapshot_obs_config). Only the multi-enemy entity-grid shape is
-        # native; flat and 3-token checkpoints keep the legacy conversion.
+        # Multi-enemy entity-grid checkpoints observe through a
+        # per-checkpoint ObservationEngine configured with the checkpoint's
+        # TRAINING-time semantics (see snapshot_obs_config) — serving skew
+        # is impossible by construction. Flat and 3-token checkpoints keep
+        # their legacy conversions (deliberately not migrated).
         self._obs_engine = None
         if (
-            native_entity_obs
-            and self.cfg.obs_encoder == "entity_attention_grid"
+            self.cfg.obs_encoder == "entity_attention_grid"
             and self.cfg.entity_token_count > 3
         ):
             self._obs_engine = _cpp.ObservationEngine(
@@ -96,13 +87,7 @@ class SnapshotPolicy:
         self._episode_counter += 1
         self._seed_generator()
 
-    def act(
-        self,
-        sim: _cpp.Sim,
-        slots: Sequence[int],
-        *,
-        map_bounds: dict[str, float] | None = None,
-    ) -> np.ndarray:
+    def act(self, sim: _cpp.Sim, slots: Sequence[int]) -> np.ndarray:
         if self._obs_engine is not None:
             obs = np.zeros(
                 (len(slots), MULTI_ENEMY_ENTITY_GRID_OBS_DIM), dtype=np.float32
@@ -113,7 +98,7 @@ class SnapshotPolicy:
             flat = np.zeros((len(slots), ACTOR_PHASE1_DIM), dtype=np.float32)
             for i, slot in enumerate(slots):
                 _cpp.build_actor_obs(sim, int(slot), flat[i])
-            obs = self._convert_obs(sim, flat, slots, map_bounds=map_bounds)
+            obs = self._convert_obs(flat)
         obs_t = torch.as_tensor(obs, dtype=torch.float32)
         if self.h.shape[0] != len(slots):
             self.reset(batch_size=len(slots))
@@ -126,30 +111,15 @@ class SnapshotPolicy:
                 action, self.h = self.model.greedy_action(obs_t, self.h)
         return action.cpu().numpy().astype(np.float32)
 
-    def _convert_obs(
-        self,
-        sim: _cpp.Sim,
-        flat: np.ndarray,
-        slots: Sequence[int],
-        *,
-        map_bounds: dict[str, float] | None = None,
-    ) -> np.ndarray:
+    def _convert_obs(self, flat: np.ndarray) -> np.ndarray:
+        # Multi-enemy entity-grid checkpoints never reach here — act()
+        # builds their obs natively via the ObservationEngine.
         if self.cfg.obs_encoder == "flat":
             return flat.astype(np.float32, copy=False)
         if self.cfg.obs_encoder == "entity_attention":
             raise ValueError("entity_attention snapshot observations are no longer supported")
         if self.cfg.obs_encoder == "entity_attention_grid":
-            # Route on the checkpoint's own encoder shape, not just its
-            # phase stamp: phase-4 multi-enemy checkpoints (entity_token_count
-            # 5) need the multi-enemy conversion even though phase < 7.
-            if self.phase >= 7 or self.cfg.entity_token_count > 3:
-                if self.cfg.entity_token_count > 3:
-                    return self._convert_multi_enemy_obs(
-                        sim,
-                        flat,
-                        slots,
-                        map_bounds=map_bounds,
-                    )
+            if self.phase >= 7:
                 return actor_obs_to_partial_entity_grid_obs(
                     flat,
                     visible_radius=float(self.env_cfg.get("visible_radius", 0.65)),
@@ -157,91 +127,6 @@ class SnapshotPolicy:
                 )
             return actor_obs_to_entity_grid_obs(flat)
         raise ValueError(f"unsupported snapshot obs_encoder {self.cfg.obs_encoder!r}")
-
-    def _convert_multi_enemy_obs(
-        self,
-        sim: _cpp.Sim,
-        flat: np.ndarray,
-        slots: Sequence[int],
-        *,
-        map_bounds: dict[str, float] | None = None,
-    ) -> np.ndarray:
-        rows = len(slots)
-        bounds = self._map_bounds(map_bounds)
-        critic = np.zeros((rows, CRITIC_DIM), dtype=np.float32)
-        team_b_view = np.asarray([int(slot) >= 3 for slot in slots], dtype=bool)
-        if bool(team_b_view[0]):
-            _cpp.build_critic_obs(sim, _cpp.Team.B, critic[0])
-        else:
-            _cpp.build_critic_obs(sim, _cpp.Team.A, critic[0])
-        critic[1:] = critic[0]
-        visible = self._visible_enemy_matrix(
-            sim,
-            flat,
-            critic,
-            slots,
-            team_b_view,
-            map_bounds=bounds,
-        )
-        return actor_obs_to_multi_enemy_entity_grid_obs(
-            flat,
-            critic_obs=critic,
-            map_bounds=bounds,
-            visible_radius=float(self.env_cfg.get("visible_radius", 0.65)),
-            visible_override=visible,
-            team_b_view=team_b_view,
-        )
-
-    def _visible_enemy_matrix(
-        self,
-        sim: _cpp.Sim,
-        flat: np.ndarray,
-        critic: np.ndarray,
-        slots: Sequence[int],
-        team_b_view: np.ndarray,
-        *,
-        map_bounds: dict[str, float],
-    ) -> np.ndarray:
-        rows = len(slots)
-        own_pos = flat[:, actor_field_slice("own_position")]
-        enemy_pos = np.zeros((rows, 3, 2), dtype=np.float32)
-        alive = np.zeros((rows, 3), dtype=bool)
-        for row in range(rows):
-            for enemy_idx in range(3):
-                enemy_pos[row, enemy_idx] = normalize_world_for_team(
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/world_position")],
-                    map_bounds,
-                    team_b_view=bool(team_b_view[row]),
-                )
-                alive[row, enemy_idx] = (
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
-                )
-        radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
-            self.env_cfg.get("visible_radius", 0.65)
-        )
-        los = np.zeros((rows, 3), dtype=bool)
-        team_shared = str(self.env_cfg.get("fog_mode", "team_shared")) == "team_shared"
-        for row, slot in enumerate(slots):
-            enemy_slots = range(0, 3) if int(slot) >= 3 else range(3, 6)
-            if team_shared:
-                ally_slots = range(3, 6) if int(slot) >= 3 else range(0, 3)
-                team_rows = slice(0, rows)
-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
-                    los[row, enemy_idx] = any(
-                        bool(_cpp.observable_enemy_slots(sim, ally)[enemy_slot])
-                        for ally in ally_slots
-                    )
-                    radius[row, enemy_idx] = bool(radius[team_rows, enemy_idx].any())
-            else:
-                native = _cpp.observable_enemy_slots(sim, int(slot))
-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
-                    los[row, enemy_idx] = bool(native[enemy_slot])
-        return alive & radius & los
-
-    def _map_bounds(self, map_bounds: dict[str, float] | None) -> dict[str, float]:
-        if map_bounds is not None:
-            return dict(map_bounds)
-        return map_bounds_from_sim_cfg(dict(self.env_cfg.get("sim", {})))
 
     @staticmethod
     def _resolve_checkpoint_path(path: str | Path) -> Path:

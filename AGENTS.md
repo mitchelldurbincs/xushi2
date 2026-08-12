@@ -193,7 +193,7 @@ If any of these change, call it out explicitly in the card summary and flag it f
 
 > No function that iterates over hidden enemies or full state may be called by `actor_obs_builder`.
 
-A leak silently invalidates the research contribution. Any change to `python/xushi2/{entity_obs,partial_obs,multi_enemy_obs,obs_manifest}.py`, `python/train/mappo_model.py`, or the C++ observation builders requires the existing leak tests to be run and the test list to be cited in completion metadata.
+A leak silently invalidates the research contribution. Any change to `src/sim/include/xushi2/sim/{entity_obs.h,obs_config.h,obs_utils.h}`, `src/sim/src/{entity_obs,obs_utils,actor_obs,critic_obs}.cpp`, `python/xushi2/{entity_obs_native,partial_obs,multi_enemy_obs,obs_manifest}.py`, or `python/train/mappo_model.py` requires the leak tests to be run and the test list cited in completion metadata: `test_entity_obs_leak` + `test_actor_leak` (ctest) and `python/tests/test_entity_obs_native.py` + `test_entity_obs_golden.py` (pytest). The only actor-obs entity path is `ObservationEngine::build_entity_obs` (`src/sim/src/entity_obs.cpp`); the critic tensor is never an input to actor-visible assembly.
 
 ## Testing priorities
 

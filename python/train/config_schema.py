@@ -74,9 +74,6 @@ _ENV_KEYS = frozenset(
         "fog_mode",
         "visible_radius",
         "map_randomization",
-        # Native entity-obs pipeline flag (ObservationEngine), read by
-        # runtime_factory; required by the sim_pool vector backend.
-        "native_entity_obs",
         "mini_game",
         "mini_game_config",
         "objective_timing_curriculum",

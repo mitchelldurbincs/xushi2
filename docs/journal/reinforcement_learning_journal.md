@@ -3784,3 +3784,38 @@ The 08-09/08-11 evidence (league falsified, migration re-derivation
 falsified) says whichever of 1/2 is chosen, the yardstick stays B2
 unchanged + the L4 dual gate. No run launched on this; the fork is a
 design decision, not an experiment.
+
+## 2026-08-12 — native-obs cutover: the leak invariant is now architecture
+
+The Phase-3 cutover from the native-obs campaign (plan:
+docs/plans/active/2026-08-12-native-obs-cutover-plan.md; flag-gated
+foundation landed in 37726dd) executed today. The `native_entity_obs`
+flag is gone and so are all five legacy Python re-derivations of the
+visibility rule: phase11's `_enemy_visibility_matrix` + last-seen
+buffers, the phase4 multi-enemy wrapper's mask + `zero_masked` pass,
+SnapshotPolicy's `_visible_enemy_matrix`/`_convert_multi_enemy_obs`
+(and the `map_bounds` threading that existed only for it), and the
+multi_enemy_obs adapter itself. The only actor-obs entity path in the
+codebase is now `ObservationEngine::build_entity_obs` in C++, behind
+fog-ON counterfactual leak tests; the critic tensor can no longer be
+an input to actor-visible assembly because no code path exists that
+would do it. Phase 7a→7b is a one-line ObsConfig delta.
+
+Verification: pytest 614, ctest 163, train-smoke, grep gates all
+green; the entity-obs golden fixtures passed UNCHANGED through the
+deletion; and a 30-update same-seed phase11 run at the pre-cutover
+commit vs HEAD produced bit-identical training metrics — the gate
+asked for "within seed noise" and got equality.
+
+Disclosed behavior change (was the point, not a side effect): frozen
+snapshot opponents now observe with their TRAINING-time semantics per
+checkpoint. Phase-7+ snapshots gain last-seen markers (the legacy
+serving path never provided them); dup-C phase-4 snapshots stop being
+served team-shared fog at radius 0.65 that their training never had.
+Bot-anchored gate evals (weak_basic_v2, 0xA11CE, n=96) are unaffected;
+any standings comparison that used a SNAPSHOT opponent must be
+re-based at n=96 before crossing the cutover. The three-way capacity
+fork stated on 08-11 is unchanged by this work, but note option 2's
+cost dropped: "touches the sim's obs layer" now means one ObsConfig /
+entity_obs.cpp change with an existing counterfactual harness around
+it.

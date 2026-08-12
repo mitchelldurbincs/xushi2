@@ -1,12 +1,12 @@
-"""Per-platform golden regression for the NATIVE entity-obs path.
+"""Per-platform golden regression for the native entity-obs path.
 
-The parity suite (test_entity_obs_native_parity.py) checks native-vs-legacy;
-it dies with the legacy code at the Phase-3 cutover. THIS test pins the
-native path against committed fixtures so post-cutover regressions are
-caught. Fixtures are per-platform (repo convention: no cross-machine
-bit-reproducibility) and live in
-tests/fixtures/entity_obs/<platform>/<scenario>.npz, holding a sha256 of the
-full obs stream plus full tensors at sampled steps for debuggability.
+The legacy Python obs assembly (and the native-vs-legacy parity suite that
+guarded the migration) was deleted at the Phase-3 cutover; these fixtures
+are the regression seal for the ObservationEngine path since. Fixtures are
+per-platform (repo convention: no cross-machine bit-reproducibility) and
+live in tests/fixtures/entity_obs/<platform>/<scenario>.npz, holding a
+sha256 of the full obs stream plus full tensors at sampled steps for
+debuggability.
 
 Regenerate after an INTENTIONAL obs change:
 
@@ -57,7 +57,6 @@ def _scenario_env(name: str):
             fog_mode=name.removeprefix("phase11_"),
             visible_radius=0.65,
             map_randomization={},
-            native_entity_obs=True,
         )
     if name == "phase4_multi_enemy":
         return Phase4MultiEnemyMappoEnv(
@@ -71,7 +70,6 @@ def _scenario_env(name: str):
                 "mechanics": dict(_MECHANICS),
             },
             opponent_bot="basic",
-            native_entity_obs=True,
         )
     raise ValueError(f"unknown scenario {name!r}")
 

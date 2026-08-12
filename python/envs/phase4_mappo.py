@@ -176,11 +176,7 @@ class Phase4MappoEnv(gym.Env):
         opponent_actions = np.zeros((3, 6), dtype=np.float32)
         if self._opponent_policy is not None:
             enemy_actions = np.asarray(
-                self._opponent_policy.act(
-                    self._sim,
-                    self._enemy_slots,
-                    map_bounds=map_bounds_from_sim_cfg(self._sim_cfg),
-                ),
+                self._opponent_policy.act(self._sim, self._enemy_slots),
                 dtype=np.float32,
             )
             if enemy_actions.shape[0] != 3 or enemy_actions.shape[1] < 6:

@@ -24,11 +24,7 @@ from xushi2.map_randomization import (
     randomized_wall_segments,
     sim_cfg_with_map_bounds,
 )
-from xushi2.multi_enemy_obs import (
-    actor_obs_to_multi_enemy_entity_grid_obs,
-    normalize_world_for_team,
-)
-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
+from xushi2.obs_manifest import CRITIC_DIM
 from xushi2.reward import RewardCalculator
 from xushi2.runner import _build_config
 from xushi2.self_play_schedule import SelfPlayMatch, SelfPlaySchedule
@@ -70,7 +66,6 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         map_randomization: dict[str, Any] | None = None,
         self_play_schedule: dict[str, Any] | None = None,
         snapshot_league: dict[str, Any] | None = None,
-        native_entity_obs: bool = False,
     ) -> None:
         super().__init__()
         self._base_sim_cfg = dict(sim_cfg)
@@ -84,19 +79,12 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._reward_cfg["per_agent_rewards"] = _PHASE11_PER_AGENT_REWARDS
         self._reward_calc = RewardCalculator(**self._reward_cfg)
         self._fog_mode = str(fog_mode)
-        self._team_shared = self._fog_mode == "team_shared"
         self._visible_radius = float(visible_radius)
-        # Native path: the C++ ObservationEngine owns visibility, last-seen
-        # memory, and entity assembly; _convert_obs collapses to one call.
-        # Parity with the legacy path below is pinned by
-        # python/tests/test_entity_obs_native_parity.py.
-        self._native_entity_obs = bool(native_entity_obs)
-        self._obs_engine = (
-            _cpp.ObservationEngine(
-                phase11_obs_config(self._fog_mode, self._visible_radius)
-            )
-            if self._native_entity_obs
-            else None
+        # The C++ ObservationEngine is the sole owner of visibility,
+        # last-seen memory, and entity assembly (docs/observation_spec.md
+        # invariant 1). Regression seal: python/tests/test_entity_obs_golden.py.
+        self._obs_engine = _cpp.ObservationEngine(
+            phase11_obs_config(self._fog_mode, self._visible_radius)
         )
         self._map_randomization = dict(map_randomization or {})
         self._schedule = (
@@ -106,7 +94,6 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         )
         self._sim: _cpp.Sim | None = None
         self._opponent_policy: SnapshotPolicy | None = None
-        self._flat_actor_obs = np.zeros((_AGENTS_PER_MATCH, ACTOR_PHASE1_DIM), dtype=np.float32)
         self._last_map_bounds: dict[str, float] | None = None
         self._last_cover_markers: list[dict[str, float]] = []
         self._last_wall_segments: list[dict[str, float]] = []
@@ -114,8 +101,6 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._last_match = SelfPlayMatch(match_type="current", group="current")
         self._last_loss_mask = np.ones(_AGENTS_PER_MATCH, dtype=np.float32)
         self._last_opponent_actions = np.zeros((3, 6), dtype=np.float32)
-        self._last_seen_enemy_position = np.zeros((_AGENTS_PER_MATCH, 3, 2), dtype=np.float32)
-        self._last_seen_valid = np.zeros((_AGENTS_PER_MATCH, 3), dtype=bool)
 
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -206,8 +191,6 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._last_layout_hash = layout_hash
         self._last_match = match
         self._last_opponent_actions = np.zeros((3, 6), dtype=np.float32)
-        self._last_seen_enemy_position[:] = 0.0
-        self._last_seen_valid[:] = False
         self._last_loss_mask = (
             np.ones(_AGENTS_PER_MATCH, dtype=np.float32)
             if match.match_type == "current"
@@ -221,19 +204,15 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         cfg = _build_config(sim_cfg, seed_override=seed)
         cfg.team_size = 3
         self._sim = _cpp.Sim(cfg)
-        if self._obs_engine is not None:
-            self._obs_engine.reset()
+        self._obs_engine.reset()
         self._opponent_policy = (
-            SnapshotPolicy(
-                match.snapshot_path, native_entity_obs=self._native_entity_obs
-            )
+            SnapshotPolicy(match.snapshot_path)
             if match.snapshot_path is not None and match.match_type != "current"
             else None
         )
         if self._opponent_policy is not None:
             self._opponent_policy.reset(batch_size=3)
         self._reward_calc.reset(self._sim)
-        self._build_actor_obs_all()
         return self._convert_obs(), self._make_info()
 
     def step(self, action: np.ndarray):
@@ -251,11 +230,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         if self._last_match.match_type != "current":
             if self._opponent_policy is not None:
                 opponent = np.asarray(
-                    self._opponent_policy.act(
-                        self._sim,
-                        (3, 4, 5),
-                        map_bounds=dict(self._last_map_bounds or {}),
-                    ),
+                    self._opponent_policy.act(self._sim, (3, 4, 5)),
                     dtype=np.float32,
                 )
                 if opponent.shape[0] != 3 or opponent.shape[1] < 6:
@@ -304,7 +279,6 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
                 team_rewards[i] += team_a_term
                 team_rewards[i + 3] += team_b_term
 
-        self._build_actor_obs_all()
         info = self._make_info()
         info["reward_team_a"] = float(team_a_step)
         info["reward_team_b"] = float(team_b_step)
@@ -358,90 +332,15 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
     def close(self) -> None:
         self._sim = None
 
-    def _build_actor_obs_all(self) -> None:
-        for slot in range(_AGENTS_PER_MATCH):
-            _cpp.build_actor_obs(self._sim, slot, self._flat_actor_obs[slot])
-
     def _convert_obs(self) -> np.ndarray:
-        if self._obs_engine is not None:
-            out = np.zeros(
-                (_AGENTS_PER_MATCH, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
-                dtype=np.float32,
-            )
-            self._obs_engine.build_entity_obs_all(self._sim, out.reshape(-1))
-            return out
-        critic = np.zeros((_AGENTS_PER_MATCH, CRITIC_DIM), dtype=np.float32)
-        self.build_critic_obs(critic.reshape(-1))
-        visible = self._enemy_visibility_matrix(critic)
-        for row in range(_AGENTS_PER_MATCH):
-            for enemy_idx in range(3):
-                if visible[row, enemy_idx]:
-                    self._last_seen_enemy_position[row, enemy_idx] = self._enemy_norm_position(
-                        critic[row],
-                        enemy_idx,
-                        team_b_view=row >= 3,
-                    )
-                    self._last_seen_valid[row, enemy_idx] = True
-        return actor_obs_to_multi_enemy_entity_grid_obs(
-            self._flat_actor_obs,
-            critic_obs=critic,
-            map_bounds=dict(self._last_map_bounds or {}),
-            visible_radius=self._visible_radius,
-            visible_override=visible,
-            last_seen_enemy_position=self._last_seen_enemy_position,
-            last_seen_valid=self._last_seen_valid,
-            team_b_view=np.array([False, False, False, True, True, True]),
-        )
-
-    def _enemy_visibility_matrix(self, critic: np.ndarray) -> np.ndarray:
         if self._sim is None:
             raise RuntimeError("reset() must be called before converting obs")
-        own_pos = self._flat_actor_obs[:, actor_field_slice("own_position")]
-        enemy_pos = np.zeros((_AGENTS_PER_MATCH, 3, 2), dtype=np.float32)
-        alive = np.zeros((_AGENTS_PER_MATCH, 3), dtype=bool)
-        for row in range(_AGENTS_PER_MATCH):
-            for enemy_idx in range(3):
-                enemy_pos[row, enemy_idx] = self._enemy_norm_position(
-                    critic[row],
-                    enemy_idx,
-                    team_b_view=row >= 3,
-                )
-                alive[row, enemy_idx] = (
-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
-                )
-        radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
-            self._visible_radius
+        out = np.zeros(
+            (_AGENTS_PER_MATCH, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
+            dtype=np.float32,
         )
-        los = np.zeros((_AGENTS_PER_MATCH, 3), dtype=bool)
-        for slot in range(_AGENTS_PER_MATCH):
-            enemy_slots = range(3, 6) if slot < 3 else range(0, 3)
-            if self._team_shared:
-                ally_slots = range(0, 3) if slot < 3 else range(3, 6)
-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
-                    los[slot, enemy_idx] = any(
-                        bool(_cpp.observable_enemy_slots(self._sim, ally)[enemy_slot])
-                        for ally in ally_slots
-                    )
-                    team_rows = slice(0, 3) if slot < 3 else slice(3, 6)
-                    radius[slot, enemy_idx] = bool(radius[team_rows, enemy_idx].any())
-            else:
-                native = _cpp.observable_enemy_slots(self._sim, slot)
-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
-                    los[slot, enemy_idx] = bool(native[enemy_slot])
-        return alive & radius & los
-
-    def _enemy_norm_position(
-        self,
-        critic: np.ndarray,
-        enemy_idx: int,
-        *,
-        team_b_view: bool,
-    ) -> np.ndarray:
-        return normalize_world_for_team(
-            critic[critic_field_slice(f"enemy{enemy_idx}/world_position")],
-            dict(self._last_map_bounds or {}),
-            team_b_view=team_b_view,
-        )
+        self._obs_engine.build_entity_obs_all(self._sim, out.reshape(-1))
+        return out
 
     def _make_info(self) -> dict[str, Any]:
         s = self._sim

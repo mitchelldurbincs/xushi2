@@ -43,23 +43,16 @@ _VARIANT_PARAMS: dict[str, frozenset[str]] = {
     ),
     "phase11": frozenset(
         {"sim_cfg", "reward_cfg", "fog_mode", "visible_radius", "map_randomization",
-         "self_play_schedule", "snapshot_league", "n_agents", "actor_obs",
-         "native_entity_obs"}
+         "self_play_schedule", "snapshot_league", "n_agents", "actor_obs"}
     ),
     "aim_only": frozenset({"mini_game", "mini_game_cfg"}),
     "combat_1v1": frozenset({"mini_game", "mini_game_cfg"}),
-    "multi_enemy": _COMMON_PARAMS | frozenset({"actor_obs", "native_entity_obs"}),
+    "multi_enemy": _COMMON_PARAMS | frozenset({"actor_obs"}),
     "flat": _COMMON_PARAMS,
 }
 
 # Dropping one of these changes the simulation or the observation shape.
-# native_entity_obs is semantic even though the native path is parity-tested
-# against the legacy one: a run whose config claims the native pipeline but
-# silently ran the legacy one is a misdescribed experiment.
-_SEMANTIC_PARAMS = frozenset(
-    {"fog_mode", "visible_radius", "map_randomization", "actor_obs",
-     "native_entity_obs"}
-)
+_SEMANTIC_PARAMS = frozenset({"fog_mode", "visible_radius", "map_randomization", "actor_obs"})
 
 # Defaults used to decide whether the caller actually asked for something. A
 # value equal to its default carries no intent, so it is never a conflict.
@@ -77,7 +70,6 @@ _PARAM_DEFAULTS: dict[str, Any] = {
     "snapshot_league": None,
     "n_agents": 3,
     "reward_cfg": {},
-    "native_entity_obs": False,
 }
 
 
@@ -129,7 +121,6 @@ def make_mappo_match_env(
     snapshot_paths: tuple[str, ...] = (),
     n_agents: int = 3,
     opponent_snapshot_stochastic: bool = False,
-    native_entity_obs: bool = False,
 ) -> gym.Env:
     reward = dict(reward_cfg or {})
     mini_cfg = dict(mini_game_cfg or {})
@@ -151,7 +142,6 @@ def make_mappo_match_env(
         "self_play_schedule": self_play_schedule,
         "snapshot_league": snapshot_league,
         "n_agents": n_agents,
-        "native_entity_obs": native_entity_obs,
     }
 
     if mini_game == "cap_duel":
@@ -191,7 +181,6 @@ def make_mappo_match_env(
             map_randomization=map_cfg,
             self_play_schedule=self_play_schedule,
             snapshot_league=league_cfg,
-            native_entity_obs=bool(native_entity_obs),
         )
 
     if mini_game == "aim_only":
@@ -222,9 +211,7 @@ def make_mappo_match_env(
                 "snapshot_league.latest"
             )
         opponent_policy = SnapshotPolicy(
-            pool[0],
-            stochastic=bool(opponent_snapshot_stochastic),
-            native_entity_obs=bool(native_entity_obs),
+            pool[0], stochastic=bool(opponent_snapshot_stochastic)
         )
 
     if actor_obs == "multi_enemy_entity_grid":
@@ -238,7 +225,6 @@ def make_mappo_match_env(
             reward_cfg=reward,
             opponent_policy=opponent_policy,
             opponent_snapshot_stochastic=bool(opponent_snapshot_stochastic),
-            native_entity_obs=bool(native_entity_obs),
         )
     if actor_obs != "flat":
         raise ValueError(f"unknown mappo actor_obs {actor_obs!r}")
@@ -303,5 +289,4 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
         opponent_snapshot_stochastic=bool(
             cfg.get("opponent_snapshot_stochastic", False)
         ),
-        native_entity_obs=bool(cfg.get("native_entity_obs", False)),
     )
