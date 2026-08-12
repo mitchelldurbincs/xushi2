@@ -10,6 +10,7 @@ from gymnasium import spaces
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2 import xushi2_cpp as _cpp
+from xushi2.entity_obs_native import phase4_multi_enemy_obs_config
 from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.multi_enemy_obs import (
     actor_obs_to_multi_enemy_entity_grid_obs,
@@ -46,8 +47,18 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
         reward_cfg: dict[str, Any] | None = None,
         opponent_policy: Any | None = None,
         opponent_snapshot_stochastic: bool = False,
+        native_entity_obs: bool = False,
     ) -> None:
         super().__init__()
+        # Native path: visibility (alive & native LoS, no radius) and token
+        # zeroing move into the C++ ObservationEngine. Parity with the
+        # legacy path is pinned by test_entity_obs_native_parity.py.
+        self._native_entity_obs = bool(native_entity_obs)
+        self._obs_engine = (
+            _cpp.ObservationEngine(phase4_multi_enemy_obs_config())
+            if self._native_entity_obs
+            else None
+        )
         self._base = Phase4MappoEnv(
             dict(sim_cfg),
             opponent_bot=opponent_bot,
@@ -67,6 +78,8 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         obs, info = self._base.reset(seed=seed, options=options)
+        if self._obs_engine is not None:
+            self._obs_engine.reset()
         return self._convert(obs), dict(info)
 
     def step(self, action: np.ndarray):
@@ -132,6 +145,13 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
     def _convert(self, obs: np.ndarray) -> np.ndarray:
         if self._base._sim is None:
             raise RuntimeError("reset() must be called before converting obs")
+        if self._obs_engine is not None:
+            out = np.zeros((3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM), dtype=np.float32)
+            for row, own_slot in enumerate(self._own_slots):
+                self._obs_engine.build_entity_obs(
+                    self._base._sim, int(own_slot), out[row]
+                )
+            return out
         critic = np.zeros((3, CRITIC_DIM), dtype=np.float32)
         self._base.build_critic_obs(critic[0])
         critic[1:] = critic[0]

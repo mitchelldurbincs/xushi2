@@ -92,6 +92,15 @@ VisibleEnemySlot visible_enemy_1v1(const Sim& sim,
 std::array<bool, kAgentsPerMatch>
 observable_enemy_slots(const Sim& sim, std::uint32_t viewer_slot) noexcept;
 
+// The single viewer→enemy observability predicate behind
+// `observable_enemy_slots` and `visible_enemy_1v1`: false unless the slots
+// name a valid opposite-team pair; then `!fog_of_war_enabled || !enemy.alive`
+// is observable, else line-of-sight decides. Exposed so ObservationEngine
+// (entity_obs.h) applies the identical native rule instead of re-deriving it.
+[[nodiscard]] bool observable_enemy(const Sim& sim,
+                                    std::uint32_t viewer_slot,
+                                    std::uint32_t enemy_slot) noexcept;
+
 // Geometry helper exposed because both actor and critic need it. Wraps the
 // private `inside_objective` used inside the sim tick pipeline.
 bool position_on_objective(common::Vec2 world_pos,

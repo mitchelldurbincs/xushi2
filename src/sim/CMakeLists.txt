@@ -3,6 +3,8 @@ add_library(xushi2_sim STATIC
     src/obs_utils.cpp
     src/actor_obs.cpp
     src/critic_obs.cpp
+    src/entity_obs.cpp
+    src/reward_features.cpp
     src/internal/sim_combat.cpp
     src/internal/sim_hash.cpp
     src/internal/sim_objective.cpp

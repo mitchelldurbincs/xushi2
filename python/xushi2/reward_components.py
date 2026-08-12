@@ -87,7 +87,19 @@ class ObsAccessor:
         return owner_sign, cap_sign, progress
 
     def distance_term(self, sim, coef: float) -> float:
-        if coef <= 0.0 or self.obs_buf_a is None or self.obs_buf_b is None or self.pos_slice is None:
+        if coef <= 0.0:
+            return 0.0
+        # Fake-sim hook (same pattern as on_point_by_slot /
+        # objective_conversion_state): the SimPool feature view supplies the
+        # per-slot team-frame center distances directly, so no actor obs
+        # need rebuilding here.
+        fake = getattr(sim, "dist_to_center_by_slot", None)
+        if fake is not None:
+            dist = np.asarray(fake, dtype=np.float32)
+            return -coef * (
+                float(dist[_TEAM_A_RANGER_SLOT]) - float(dist[_TEAM_B_RANGER_SLOT])
+            )
+        if self.obs_buf_a is None or self.obs_buf_b is None or self.pos_slice is None:
             return 0.0
         _cpp.build_actor_obs(sim, _TEAM_A_RANGER_SLOT, self.obs_buf_a)
         _cpp.build_actor_obs(sim, _TEAM_B_RANGER_SLOT, self.obs_buf_b)
@@ -101,6 +113,11 @@ class ObsAccessor:
         return coef * (self.team_on_point_fraction(sim, (0, 1, 2)) - self.team_on_point_fraction(sim, (3, 4, 5)))
 
     def team_on_point_fraction(self, sim, slots: tuple[int, int, int]) -> float:
+        # Fake-sim hook, mirroring RewardCalculator._slot_on_point_values.
+        fake = getattr(sim, "on_point_by_slot", None)
+        if fake is not None:
+            values = np.asarray(fake, dtype=np.float32)
+            return float(values[list(slots)].sum()) / float(len(slots))
         if self.obs_bufs is None or self.on_point_slice is None:
             return 0.0
         on_point = 0.0

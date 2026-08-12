@@ -12,7 +12,9 @@ import torch
 
 from train.mappo import MappoActorCritic, mappo_config_from_checkpoint
 from xushi2 import xushi2_cpp as _cpp
+from xushi2.entity_obs_native import snapshot_obs_config
 from xushi2.multi_enemy_obs import (
+    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
     actor_obs_to_multi_enemy_entity_grid_obs,
     map_bounds_from_sim_cfg,
     normalize_world_for_team,
@@ -32,7 +34,11 @@ class SnapshotPolicy:
     """
 
     def __init__(
-        self, checkpoint_path: str | Path, *, stochastic: bool = False
+        self,
+        checkpoint_path: str | Path,
+        *,
+        stochastic: bool = False,
+        native_entity_obs: bool = False,
     ) -> None:
         checkpoint_path = self._resolve_checkpoint_path(checkpoint_path)
         self.checkpoint_path = str(checkpoint_path)
@@ -45,6 +51,19 @@ class SnapshotPolicy:
         self.model.load_state_dict(ckpt["model_state_dict"])
         self.model.eval()
         self.h = self.model.init_hidden(self.cfg.n_agents)
+        # Native path: obs come from a per-checkpoint ObservationEngine
+        # configured with the checkpoint's TRAINING-time semantics (see
+        # snapshot_obs_config). Only the multi-enemy entity-grid shape is
+        # native; flat and 3-token checkpoints keep the legacy conversion.
+        self._obs_engine = None
+        if (
+            native_entity_obs
+            and self.cfg.obs_encoder == "entity_attention_grid"
+            and self.cfg.entity_token_count > 3
+        ):
+            self._obs_engine = _cpp.ObservationEngine(
+                snapshot_obs_config(self.phase, self.env_cfg)
+            )
         self.stochastic = bool(stochastic)
         self._episode_counter = 0
         self._env_seed = 0
@@ -68,6 +87,10 @@ class SnapshotPolicy:
         self.h = self.model.init_hidden(
             self.cfg.n_agents if batch_size is None else int(batch_size)
         )
+        if self._obs_engine is not None:
+            # Episode boundary: last-seen memory must not carry across
+            # matches, exactly like the training env's reset.
+            self._obs_engine.reset()
         if seed is not None:
             self._env_seed = int(seed)
         self._episode_counter += 1
@@ -80,10 +103,17 @@ class SnapshotPolicy:
         *,
         map_bounds: dict[str, float] | None = None,
     ) -> np.ndarray:
-        flat = np.zeros((len(slots), ACTOR_PHASE1_DIM), dtype=np.float32)
-        for i, slot in enumerate(slots):
-            _cpp.build_actor_obs(sim, int(slot), flat[i])
-        obs = self._convert_obs(sim, flat, slots, map_bounds=map_bounds)
+        if self._obs_engine is not None:
+            obs = np.zeros(
+                (len(slots), MULTI_ENEMY_ENTITY_GRID_OBS_DIM), dtype=np.float32
+            )
+            for i, slot in enumerate(slots):
+                self._obs_engine.build_entity_obs(sim, int(slot), obs[i])
+        else:
+            flat = np.zeros((len(slots), ACTOR_PHASE1_DIM), dtype=np.float32)
+            for i, slot in enumerate(slots):
+                _cpp.build_actor_obs(sim, int(slot), flat[i])
+            obs = self._convert_obs(sim, flat, slots, map_bounds=map_bounds)
         obs_t = torch.as_tensor(obs, dtype=torch.float32)
         if self.h.shape[0] != len(slots):
             self.reset(batch_size=len(slots))

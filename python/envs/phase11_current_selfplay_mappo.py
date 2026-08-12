@@ -15,6 +15,7 @@ from gymnasium import spaces
 
 from envs.phase4_mappo import Phase4MappoEnv
 from xushi2 import xushi2_cpp as _cpp
+from xushi2.entity_obs_native import phase11_obs_config
 from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
 from xushi2.map_randomization import (
     map_layout_hash,
@@ -69,6 +70,7 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         map_randomization: dict[str, Any] | None = None,
         self_play_schedule: dict[str, Any] | None = None,
         snapshot_league: dict[str, Any] | None = None,
+        native_entity_obs: bool = False,
     ) -> None:
         super().__init__()
         self._base_sim_cfg = dict(sim_cfg)
@@ -84,6 +86,18 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         self._fog_mode = str(fog_mode)
         self._team_shared = self._fog_mode == "team_shared"
         self._visible_radius = float(visible_radius)
+        # Native path: the C++ ObservationEngine owns visibility, last-seen
+        # memory, and entity assembly; _convert_obs collapses to one call.
+        # Parity with the legacy path below is pinned by
+        # python/tests/test_entity_obs_native_parity.py.
+        self._native_entity_obs = bool(native_entity_obs)
+        self._obs_engine = (
+            _cpp.ObservationEngine(
+                phase11_obs_config(self._fog_mode, self._visible_radius)
+            )
+            if self._native_entity_obs
+            else None
+        )
         self._map_randomization = dict(map_randomization or {})
         self._schedule = (
             SelfPlaySchedule(weights={"current": 1.0})
@@ -207,8 +221,12 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
         cfg = _build_config(sim_cfg, seed_override=seed)
         cfg.team_size = 3
         self._sim = _cpp.Sim(cfg)
+        if self._obs_engine is not None:
+            self._obs_engine.reset()
         self._opponent_policy = (
-            SnapshotPolicy(match.snapshot_path)
+            SnapshotPolicy(
+                match.snapshot_path, native_entity_obs=self._native_entity_obs
+            )
             if match.snapshot_path is not None and match.match_type != "current"
             else None
         )
@@ -345,6 +363,13 @@ class Phase11CurrentSelfplayMappoEnv(gym.Env):
             _cpp.build_actor_obs(self._sim, slot, self._flat_actor_obs[slot])
 
     def _convert_obs(self) -> np.ndarray:
+        if self._obs_engine is not None:
+            out = np.zeros(
+                (_AGENTS_PER_MATCH, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
+                dtype=np.float32,
+            )
+            self._obs_engine.build_entity_obs_all(self._sim, out.reshape(-1))
+            return out
         critic = np.zeros((_AGENTS_PER_MATCH, CRITIC_DIM), dtype=np.float32)
         self.build_critic_obs(critic.reshape(-1))
         visible = self._enemy_visibility_matrix(critic)

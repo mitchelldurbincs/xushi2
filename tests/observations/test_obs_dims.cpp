@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <xushi2/sim/entity_obs.h>
 #include <xushi2/sim/obs.h>
+#include <xushi2/sim/reward_features.h>
 
 // The C++ obs dim constants must match python/xushi2/obs_manifest.py. This
 // test exists so that a drift between the two surfaces is a build-time /
@@ -21,4 +23,24 @@ TEST(ObsDims, CriticDimIs135) {
 
 TEST(ObsDims, CriticIsAtLeastAsWideAsActor) {
     EXPECT_GE(xushi2::sim::kCriticObsDim, xushi2::sim::kActorObsPhase1Dim);
+}
+
+TEST(ObsDims, EntityGridObsLayoutMatchesPythonAdapter) {
+    // Must equal python/xushi2/multi_enemy_obs.py: ENTITY_TOKEN_DIM,
+    // MULTI_ENEMY_TOKEN_COUNT, GRID_CHANNELS, GRID_SIZE, and
+    // MULTI_ENEMY_ENTITY_GRID_OBS_DIM. The Python lockstep half is
+    // python/tests/test_obs_manifest.py::test_entity_layout_matches_native.
+    EXPECT_EQ(xushi2::sim::kEntityTokenDim, 18U);
+    EXPECT_EQ(xushi2::sim::kEntityTokenCount, 5U);
+    EXPECT_EQ(xushi2::sim::kEntityGridChannels, 3U);
+    EXPECT_EQ(xushi2::sim::kEntityGridSize, 32U);
+    EXPECT_EQ(xushi2::sim::kEntityGridObsDim, 3167U);
+}
+
+TEST(ObsDims, RewardFeatureDimIs48) {
+    // Must equal python/xushi2/obs_manifest.py::REWARD_FEATURE_DIM. Python
+    // half: python/tests/test_obs_manifest.py::test_reward_feature_layout_matches_native.
+    EXPECT_EQ(xushi2::sim::kRewardFeatureDim, 48U);
+    EXPECT_EQ(xushi2::sim::reward_features::kDistToCenterBySlot + 6U,
+              xushi2::sim::kRewardFeatureDim);
 }

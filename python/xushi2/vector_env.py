@@ -695,4 +695,81 @@ def make_xushi_vector_env(
             seed_base=seed_base,
             auto_reset=auto_reset,
         )
-    raise ValueError(f"vector backend must be 'sync' or 'async', got {backend!r}")
+    if backend == "sim_pool":
+        return _make_sim_pool_vector_env(
+            env_fns,
+            critic_obs_dim=critic_obs_dim,
+            seed_base=seed_base,
+            auto_reset=auto_reset,
+        )
+    raise ValueError(
+        f"vector backend must be 'sync', 'async', or 'sim_pool', got {backend!r}"
+    )
+
+
+def _make_sim_pool_vector_env(
+    env_fns: Sequence[Callable[[], gym.Env]],
+    *,
+    critic_obs_dim: int,
+    seed_base: int,
+    auto_reset: bool,
+):
+    """Build a SimPoolVectorEnv from the trainer's env factories.
+
+    The trainer only hands us env factories, but the batched pool needs the
+    underlying env parameters, so this reads them off the
+    ``make_mappo_match_env`` partial that ``mappo_env_fn_from_config``
+    produces. Any configuration the pool backend cannot reproduce exactly
+    (self-play, snapshot opponents, mini-games, flat obs, legacy Python obs
+    assembly) is rejected loudly rather than approximated.
+    """
+    import functools
+
+    from envs.runtime_factory import make_mappo_match_env
+    from xushi2.sim_pool_env import SimPoolVectorEnv
+
+    fn = env_fns[0]
+    if not (isinstance(fn, functools.partial) and fn.func is make_mappo_match_env):
+        raise ValueError(
+            "vector_env 'sim_pool' requires envs built by "
+            "envs.runtime_factory.mappo_env_fn_from_config"
+        )
+    kw = dict(fn.keywords)
+
+    def _reject(condition: bool, what: str) -> None:
+        if condition:
+            raise ValueError(
+                f"vector_env 'sim_pool' does not support {what}; use "
+                "vector_env 'sync' or 'async' for this config"
+            )
+
+    _reject(bool(kw.get("self_play")), "current self-play")
+    _reject(kw.get("mini_game") not in (None, ""), "mini-games")
+    _reject(int(kw.get("n_agents", 3)) != 3, "six-agent (phase11) envs")
+    _reject(
+        str(kw.get("actor_obs")) != "multi_enemy_entity_grid",
+        f"actor_obs {kw.get('actor_obs')!r}",
+    )
+    _reject(
+        not bool(kw.get("native_entity_obs", False)),
+        "the legacy Python obs path (set env.native_entity_obs: true)",
+    )
+    opponent_bot = str(kw.get("opponent_bot", "basic"))
+    _reject(opponent_bot == "snapshot", "snapshot opponents")
+    fog_mode = kw.get("fog_mode")
+    _reject(
+        fog_mode not in (None, "", "none"),
+        f"fog_mode {fog_mode!r} on the 3-agent wrapper",
+    )
+    _reject(bool(kw.get("map_randomization")), "map randomization")
+
+    return SimPoolVectorEnv(
+        num_envs=len(env_fns),
+        sim_cfg=dict(kw.get("sim_cfg", {})),
+        opponent_bot=opponent_bot,
+        learner_team=str(kw.get("learner_team", "A")),
+        reward_cfg=dict(kw.get("reward_cfg", {}) or {}),
+        critic_obs_dim=critic_obs_dim,
+        seed_base=seed_base,
+        auto_reset=auto_reset,
+    )

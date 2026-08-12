@@ -34,8 +34,11 @@ __all__ = [
     "ACTOR_PHASE1_FIELDS",
     "CRITIC_DIM",
     "CRITIC_FIELDS",
+    "REWARD_FEATURE_DIM",
+    "REWARD_FEATURE_FIELDS",
     "actor_field_slice",
     "critic_field_slice",
+    "reward_feature_slice",
 ]
 
 # Each entry: (field_name, width_in_floats, short_description).
@@ -141,4 +144,51 @@ def critic_field_slice(name: str) -> slice:
     except KeyError as exc:
         raise KeyError(
             f"unknown critic obs field {name!r}; known: {sorted(_CRITIC_SLICES)}"
+        ) from exc
+
+
+# --- Reward feature block ---------------------------------------------------
+# Mirror of src/sim/include/xushi2/sim/reward_features.h. The two MUST stay
+# in lockstep; drift is caught by tests/observations/test_obs_dims.cpp and
+# python/tests/test_obs_manifest.py. This block is the SimPool boundary's
+# replacement for the ~30 per-step property reads RewardCalculator used to
+# make.
+REWARD_FEATURE_FIELDS: tuple[tuple[str, int, str], ...] = (
+    ("tick", 1, "sim tick"),
+    ("team_a_score_ticks", 1, "raw Team A score ticks"),
+    ("team_b_score_ticks", 1, "raw Team B score ticks"),
+    ("team_a_kills", 1, "Team A lifetime kills"),
+    ("team_b_kills", 1, "Team B lifetime kills"),
+    ("owner_sign_a", 1, "objective owner: +1 A, -1 B, 0 neutral"),
+    ("cap_sign_a", 1, "capturing team: +1 A, -1 B, 0 none"),
+    ("cap_progress_fraction", 1, "capture progress in [0, 1]"),
+    ("cap_progress_ticks", 1, "raw capture progress ticks"),
+    ("episode_over", 1, "1 if the episode ended"),
+    ("score_threshold_reached", 1, "1 if a team hit the win threshold"),
+    ("winner_sign", 1, "+1 A, -1 B, 0 draw/in-progress"),
+    ("kills_by_slot", 6, "lifetime kills per slot"),
+    ("deaths_by_slot", 6, "lifetime deaths per slot"),
+    ("damage_centi_by_slot", 6, "lifetime damage dealt per slot, centi-HP"),
+    ("alive_by_slot", 6, "1 if slot present and alive"),
+    ("on_point_by_slot", 6, "actor self_on_point rule per slot"),
+    ("dist_to_center_by_slot", 6, "hypot of team-frame normalized position"),
+)
+
+REWARD_FEATURE_DIM: int = sum(width for _, width, _ in REWARD_FEATURE_FIELDS)
+assert REWARD_FEATURE_DIM == 48, (
+    f"REWARD_FEATURE_DIM drifted to {REWARD_FEATURE_DIM}; expected 48. "
+    "Did the C++ kRewardFeatureDim get updated to match?"
+)
+
+_REWARD_FEATURE_SLICES: dict[str, slice] = _build_slice_table(REWARD_FEATURE_FIELDS)
+
+
+def reward_feature_slice(name: str) -> slice:
+    """Return the `slice` into the reward feature block for the named field."""
+    try:
+        return _REWARD_FEATURE_SLICES[name]
+    except KeyError as exc:
+        raise KeyError(
+            f"unknown reward feature field {name!r}; known: "
+            f"{sorted(_REWARD_FEATURE_SLICES)}"
         ) from exc

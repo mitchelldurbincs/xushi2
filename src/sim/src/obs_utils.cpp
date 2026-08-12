@@ -38,6 +38,21 @@ bool is_opposite_team(const HeroState& viewer,
            candidate.team != common::Team::Neutral;
 }
 
+VisibleEnemySlot make_visible_enemy_slot(const HeroState& h) noexcept {
+    VisibleEnemySlot out{};
+    out.present = true;
+    out.id = h.id;
+    out.alive = h.alive;
+    out.respawn_tick = h.respawn_tick;
+    out.world_position = h.position;
+    out.velocity = h.velocity;
+    out.health_centi_hp = h.health_centi_hp;
+    out.max_health_centi_hp = h.max_health_centi_hp;
+    return out;
+}
+
+}  // namespace
+
 bool observable_enemy(const Sim& sim,
                       std::uint32_t viewer_slot,
                       std::uint32_t enemy_slot) noexcept {
@@ -58,21 +73,6 @@ bool observable_enemy(const Sim& sim,
     }
     return sim.line_of_sight(viewer_slot, enemy_slot);
 }
-
-VisibleEnemySlot make_visible_enemy_slot(const HeroState& h) noexcept {
-    VisibleEnemySlot out{};
-    out.present = true;
-    out.id = h.id;
-    out.alive = h.alive;
-    out.respawn_tick = h.respawn_tick;
-    out.world_position = h.position;
-    out.velocity = h.velocity;
-    out.health_centi_hp = h.health_centi_hp;
-    out.max_health_centi_hp = h.max_health_centi_hp;
-    return out;
-}
-
-}  // namespace
 
 common::Vec2 mirror_position_for_team(common::Vec2 world_pos,
                                       common::Team viewer_team,
