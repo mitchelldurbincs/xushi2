@@ -2,6 +2,13 @@
 
 Scope: full repo (~45k lines of source: ~12k C++ across 101 files, ~10k `python/train`, ~7.3k `python/xushi2` + `python/envs`, ~3.5k scripts/eval, ~11k Python tests). No changes made — audit only. Churn data from git history (Apr–Aug 2026) used to weight findings toward frequently modified code.
 
+> **Status update (2026-08-13):** all four P0 items have been implemented on
+> this branch — checkpoint-bypass closed (P0.4), boundary enforcement wired
+> into CI with all violations fixed (P0.2), `_update_full_rollout` on the
+> shared PPO loss and decomposed into named stages (P0.3), and env
+> construction collapsed to the single `mappo_env_fn_from_config` pipeline
+> with runtime resolved once per run (P0.1). P1–P3 remain open.
+
 ---
 
 ## 1. Overall Assessment
