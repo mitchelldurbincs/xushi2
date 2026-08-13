@@ -245,7 +245,13 @@ bool Sim::line_of_sight(std::uint32_t from_slot,
     if (!from.present || !to.present || !from.alive || !to.alive) {
         return false;
     }
-    return !internal::segment_blocked_by_cover(from.position, to.position, config_);
+    // Qualified: the member function name hides the namespace-level overload.
+    return xushi2::sim::line_of_sight(from.position, to.position, config_);
+}
+
+bool line_of_sight(common::Vec2 from, common::Vec2 to,
+                   const MatchConfig& config) noexcept {
+    return !internal::segment_blocked_by_cover(from, to, config);
 }
 
 }  // namespace xushi2::sim

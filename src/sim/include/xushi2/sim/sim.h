@@ -249,4 +249,12 @@ class Sim {
     MatchState state_{};
 };
 
+// Position-based line-of-sight query: true when the segment from `from` to
+// `to` is not blocked by any cover circle in `config`. This is the public
+// form of the occlusion rule the tick pipeline uses internally; clients that
+// hold only MatchState/MatchConfig (e.g. scripted bots) must use this
+// instead of reaching into sim's internal headers.
+bool line_of_sight(common::Vec2 from, common::Vec2 to,
+                   const MatchConfig& config) noexcept;
+
 }  // namespace xushi2::sim

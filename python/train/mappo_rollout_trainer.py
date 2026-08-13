@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from train.cap_duel_distill import CapDuelDistillAnchor, CapDuelDistillBatch
 
+from envs.runtime_factory import make_vector_env
 from train.device import resolve_device
 from train.losses import (
     _masked_mean,
@@ -40,7 +41,6 @@ from train.recurrent_common import (
     set_optimizer_learning_rate,
 )
 from train.runtime_specs import resolve_runtime_spec
-from xushi2.vector_env import make_xushi_vector_env
 
 
 class MappoRollout:
@@ -91,7 +91,7 @@ class MappoTrainer:
         if cfg.torch_num_threads > 0:
             torch.set_num_threads(cfg.torch_num_threads)
         apply_global_seeds(self.seed)
-        self.vec_env = make_xushi_vector_env(
+        self.vec_env = make_vector_env(
             [env_fn for _ in range(cfg.num_envs)],
             critic_obs_dim=(
                 cfg.critic_obs_dim * cfg.n_agents if cfg.value_per_agent else cfg.critic_obs_dim

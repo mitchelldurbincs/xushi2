@@ -16,7 +16,11 @@ from dataclasses import dataclass
 
 from . import xushi2_cpp as _cpp
 
-_VALID_BOTS = frozenset(
+# Canonical Python-side list of scripted bot names accepted by the C++
+# make_bot_by_name registry. Every other module that validates a bot name
+# (xushi2.env, envs.phase4_mappo, train.opponent_mix, ...) must alias this
+# set rather than restate it, so a new bot is added in one place.
+VALID_BOT_NAMES = frozenset(
     {
         "walk_to_objective",
         "hold_and_shoot",
@@ -223,10 +227,10 @@ def run_episode(
     sim_cfg: dict, bot_a: str, bot_b: str, seed_override: int | None = None
 ) -> EpisodeResult:
     """Run one scripted-vs-scripted episode and return the hash trajectory."""
-    if bot_a not in _VALID_BOTS:
-        raise ValueError(f"unknown bot_a {bot_a!r}; valid: {sorted(_VALID_BOTS)}")
-    if bot_b not in _VALID_BOTS:
-        raise ValueError(f"unknown bot_b {bot_b!r}; valid: {sorted(_VALID_BOTS)}")
+    if bot_a not in VALID_BOT_NAMES:
+        raise ValueError(f"unknown bot_a {bot_a!r}; valid: {sorted(VALID_BOT_NAMES)}")
+    if bot_b not in VALID_BOT_NAMES:
+        raise ValueError(f"unknown bot_b {bot_b!r}; valid: {sorted(VALID_BOT_NAMES)}")
 
     cfg = _build_config(sim_cfg, seed_override=seed_override)
     hashes, final_tick, a_kills, b_kills, winner = _cpp.run_scripted_episode(cfg, bot_a, bot_b)

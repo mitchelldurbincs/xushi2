@@ -152,7 +152,7 @@ def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
         recent_self_cfg["lags"] = lags
     handicap_cfg = dict(env_cfg.get("opponent_handicap_curriculum", {}))
     if handicap_cfg:
-        from envs.phase4_mappo import VALID_OPPONENT_BOTS
+        from xushi2.runner import VALID_BOT_NAMES as VALID_OPPONENT_BOTS
 
         handicap_bot = str(handicap_cfg.get("bot", ""))
         if handicap_bot not in VALID_OPPONENT_BOTS:

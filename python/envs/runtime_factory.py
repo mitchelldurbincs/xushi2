@@ -7,12 +7,15 @@ through explicit runtime capabilities.
 
 from __future__ import annotations
 
+import functools
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
 import gymnasium as gym
+
+from xushi2.vector_env import make_xushi_vector_env
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -239,6 +242,98 @@ def make_mappo_match_env(
         reward_cfg=reward,
         opponent_policy=opponent_policy,
         opponent_snapshot_stochastic=bool(opponent_snapshot_stochastic),
+    )
+
+
+def make_vector_env(
+    env_fns: Sequence[Callable[[], gym.Env]],
+    *,
+    critic_obs_dim: int,
+    seed_base: int = 0,
+    auto_reset: bool = True,
+    backend: str = "sync",
+):
+    """Build the training vector env for any backend, including ``sim_pool``.
+
+    The ``sim_pool`` backend must live in this layer: it works by reading env
+    parameters back off the ``make_mappo_match_env`` partials this module
+    produces, which the phase-agnostic ``xushi2`` layer is not allowed to know
+    about. ``sync``/``async`` delegate to ``xushi2.vector_env`` unchanged.
+    """
+    if backend == "sim_pool":
+        return _make_sim_pool_vector_env(
+            env_fns,
+            critic_obs_dim=critic_obs_dim,
+            seed_base=seed_base,
+            auto_reset=auto_reset,
+        )
+    return make_xushi_vector_env(
+        env_fns,
+        critic_obs_dim=critic_obs_dim,
+        seed_base=seed_base,
+        auto_reset=auto_reset,
+        backend=backend,
+    )
+
+
+def _make_sim_pool_vector_env(
+    env_fns: Sequence[Callable[[], gym.Env]],
+    *,
+    critic_obs_dim: int,
+    seed_base: int,
+    auto_reset: bool,
+):
+    """Build a SimPoolVectorEnv from the trainer's env factories.
+
+    The trainer only hands us env factories, but the batched pool needs the
+    underlying env parameters, so this reads them off the
+    ``make_mappo_match_env`` partial that ``mappo_env_fn_from_config``
+    produces. Any configuration the pool backend cannot reproduce exactly
+    (self-play, snapshot opponents, mini-games, flat obs, legacy Python obs
+    assembly) is rejected loudly rather than approximated.
+    """
+    from xushi2.sim_pool_env import SimPoolVectorEnv
+
+    fn = env_fns[0]
+    if not (isinstance(fn, functools.partial) and fn.func is make_mappo_match_env):
+        raise ValueError(
+            "vector_env 'sim_pool' requires envs built by "
+            "envs.runtime_factory.mappo_env_fn_from_config"
+        )
+    kw = dict(fn.keywords)
+
+    def _reject(condition: bool, what: str) -> None:
+        if condition:
+            raise ValueError(
+                f"vector_env 'sim_pool' does not support {what}; use "
+                "vector_env 'sync' or 'async' for this config"
+            )
+
+    _reject(bool(kw.get("self_play")), "current self-play")
+    _reject(kw.get("mini_game") not in (None, ""), "mini-games")
+    _reject(int(kw.get("n_agents", 3)) != 3, "six-agent (phase11) envs")
+    _reject(
+        str(kw.get("actor_obs")) != "multi_enemy_entity_grid",
+        f"actor_obs {kw.get('actor_obs')!r}",
+    )
+    opponent_bot = str(kw.get("opponent_bot", "basic"))
+    _reject(opponent_bot == "snapshot", "snapshot opponents")
+    fog_mode = kw.get("fog_mode")
+    _reject(
+        fog_mode not in (None, "", "none"),
+        f"fog_mode {fog_mode!r} on the 3-agent wrapper",
+    )
+    _reject(bool(kw.get("map_randomization")), "map randomization")
+
+    return SimPoolVectorEnv(
+        num_envs=len(env_fns),
+        sim_cfg=dict(kw.get("sim_cfg", {})),
+        opponent_bot=opponent_bot,
+        learner_team=str(kw.get("learner_team", "A")),
+        reward_cfg=dict(kw.get("reward_cfg", {}) or {}),
+        critic_obs_dim=critic_obs_dim,
+        seed_base=seed_base,
+        auto_reset=auto_reset,
     )
 
 

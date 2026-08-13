@@ -15,8 +15,8 @@ import functools
 import numpy as np
 import pytest
 
-from envs.runtime_factory import make_mappo_match_env
-from xushi2.vector_env import XushiVectorEnv, make_xushi_vector_env
+from envs.runtime_factory import make_mappo_match_env, make_vector_env
+from xushi2.vector_env import XushiVectorEnv
 
 _SIM_CFG = {
     "seed": 20260812,
@@ -89,7 +89,7 @@ def test_sim_pool_env_matches_legacy_vector_env() -> None:
     seed_base = 991
     fns = _env_fns(num_envs)
     legacy = XushiVectorEnv(fns, critic_obs_dim=135, seed_base=seed_base)
-    pool = make_xushi_vector_env(
+    pool = make_vector_env(
         fns, critic_obs_dim=135, seed_base=seed_base, backend="sim_pool"
     )
     phase = np.linspace(0.0, 2.0, num_envs)
@@ -165,7 +165,7 @@ def test_sim_pool_backend_rejects_unsupported_configs() -> None:
         actor_obs="flat",
     )
     with pytest.raises(ValueError, match="actor_obs"):
-        make_xushi_vector_env([fn_flat], critic_obs_dim=135, backend="sim_pool")
+        make_vector_env([fn_flat], critic_obs_dim=135, backend="sim_pool")
 
     fn_snapshot = functools.partial(
         make_mappo_match_env,
@@ -174,4 +174,4 @@ def test_sim_pool_backend_rejects_unsupported_configs() -> None:
         actor_obs="multi_enemy_entity_grid",
     )
     with pytest.raises(ValueError, match="snapshot"):
-        make_xushi_vector_env([fn_snapshot], critic_obs_dim=135, backend="sim_pool")
+        make_vector_env([fn_snapshot], critic_obs_dim=135, backend="sim_pool")

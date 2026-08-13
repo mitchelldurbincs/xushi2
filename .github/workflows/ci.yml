@@ -72,6 +72,9 @@ jobs:
           cmake --build build-python --parallel
           python -c "from xushi2 import xushi2_cpp as m; print(m.__file__)"
 
+      - name: Check import boundaries
+        run: cd python && python -m scripts.check_import_boundaries
+
       - name: Run Python tests
         run: pytest python/tests
 

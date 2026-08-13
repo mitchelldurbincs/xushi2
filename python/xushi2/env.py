@@ -41,23 +41,13 @@ except ImportError as exc:  # pragma: no cover
 from . import xushi2_cpp as _cpp
 from .obs_manifest import ACTOR_PHASE1_DIM
 from .reward import RewardCalculator
-from .runner import _build_config
+from .runner import VALID_BOT_NAMES, _build_config
 
 __all__ = ["VALID_OPPONENT_BOTS", "XushiEnv"]
 
-# Must match the bot names exposed by the C++ layer. Matching the set
-# allowed by xushi2.runner so one failure mode (typo) fails the same
-# way in both entry points.
-VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
-    {
-        "walk_to_objective",
-        "hold_and_shoot",
-        "basic",
-        "weak_basic",
-        "weak_basic_v2",
-        "noop",
-    }
-)
+# Alias of the canonical set in xushi2.runner so a typo fails the same way
+# in both entry points and a new bot is added in one place.
+VALID_OPPONENT_BOTS: frozenset[str] = VALID_BOT_NAMES
 
 _TEAM_A_RANGER_SLOT = 0
 _TEAM_B_RANGER_SLOT = 3

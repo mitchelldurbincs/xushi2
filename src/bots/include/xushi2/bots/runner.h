@@ -26,8 +26,9 @@ struct ScriptedEpisodeResult {
     sim::Team winner = sim::Team::Neutral;       // Neutral = draw / unresolved
 };
 
-// Valid bot names: "walk_to_objective", "hold_and_shoot", "basic", "noop".
-// Unknown names abort via X2_REQUIRE.
+// Valid bot names: the keys of kBotFactories in runner.cpp (currently
+// "walk_to_objective", "hold_and_shoot", "basic", "weak_basic",
+// "weak_basic_v2", "noop"). Unknown names abort via X2_REQUIRE.
 ScriptedEpisodeResult run_scripted_episode(const sim::MatchConfig& config,
                                            std::string_view bot_a_name,
                                            std::string_view bot_b_name);

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from envs.phase4_mappo import VALID_OPPONENT_BOTS
+from xushi2.runner import VALID_BOT_NAMES as VALID_OPPONENT_BOTS
 
 
 def parse_opponent_bot_mix(raw: object) -> dict[str, float]:
