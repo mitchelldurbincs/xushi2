@@ -39,25 +39,15 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from . import xushi2_cpp as _cpp
+from .bots import VALID_SCRIPTED_BOT_SET
 from .obs_manifest import ACTOR_PHASE1_DIM
 from .reward import RewardCalculator
 from .runner import _build_config
 
 __all__ = ["VALID_OPPONENT_BOTS", "XushiEnv"]
 
-# Must match the bot names exposed by the C++ layer. Matching the set
-# allowed by xushi2.runner so one failure mode (typo) fails the same
-# way in both entry points.
-VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
-    {
-        "walk_to_objective",
-        "hold_and_shoot",
-        "basic",
-        "weak_basic",
-        "weak_basic_v2",
-        "noop",
-    }
-)
+# Backward-compatible export for existing imports in tests/callers.
+VALID_OPPONENT_BOTS: frozenset[str] = VALID_SCRIPTED_BOT_SET
 
 _TEAM_A_RANGER_SLOT = 0
 _TEAM_B_RANGER_SLOT = 3
@@ -95,7 +85,8 @@ class XushiEnv(gym.Env):
 
         if opponent_bot not in VALID_OPPONENT_BOTS:
             raise ValueError(
-                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
+                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}. "
+                "See xushi2.bots.VALID_SCRIPTED_BOTS."
             )
         if learner_team not in ("A", "B"):
             raise ValueError(f"learner_team must be 'A' or 'B', got {learner_team!r}")
