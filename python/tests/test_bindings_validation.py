@@ -43,6 +43,14 @@ def _valid_config(team_size: int = 1) -> _cpp.MatchConfig:
     return cfg
 
 
+def _valid_obs_config() -> _cpp.ObsConfig:
+    cfg = _cpp.ObsConfig()
+    cfg.fog_mode = _cpp.FogMode.NoFog
+    cfg.last_seen_enabled = False
+    cfg.zero_hidden_token_markers = False
+    return cfg
+
+
 def test_valid_config_still_constructs() -> None:
     """Guard against the validator rejecting good configs."""
     sim = _cpp.Sim(_valid_config())
@@ -157,6 +165,75 @@ def test_build_critic_obs_on_team_size_3_succeeds() -> None:
     out = np.zeros(CRITIC_DIM, dtype=np.float32)
     _cpp.build_critic_obs(sim, _cpp.Team.A, out)
     assert np.isfinite(out).all()
+
+
+def test_writable_obs_binding_rejects_float64_instead_of_writing_a_copy() -> None:
+    sim = _cpp.Sim(_valid_config())
+    out = np.full(_cpp.ACTOR_OBS_PHASE1_DIM, -7.0, dtype=np.float64)
+
+    with pytest.raises(TypeError):
+        _cpp.build_actor_obs(sim, 0, out)
+
+    np.testing.assert_array_equal(out, -7.0)
+
+
+def test_writable_obs_binding_rejects_non_contiguous_output() -> None:
+    sim = _cpp.Sim(_valid_config(team_size=3))
+    engine = _cpp.ObservationEngine(_valid_obs_config())
+    backing = np.full(_cpp.ENTITY_GRID_OBS_DIM * 2, -5.0, dtype=np.float32)
+    out = backing[::2]
+    assert not out.flags.c_contiguous
+
+    with pytest.raises(TypeError):
+        engine.build_entity_obs(sim, 0, out)
+
+    np.testing.assert_array_equal(backing, -5.0)
+
+
+def test_writable_obs_binding_rejects_read_only_output() -> None:
+    sim = _cpp.Sim(_valid_config())
+    out = np.zeros(_cpp.ACTOR_OBS_PHASE1_DIM, dtype=np.float32)
+    out.flags.writeable = False
+
+    with pytest.raises(ValueError, match="writable"):
+        _cpp.build_actor_obs(sim, 0, out)
+
+
+def test_sim_pool_rejects_output_that_would_require_forcecast() -> None:
+    pool = _cpp.SimPool(1, _valid_config(team_size=3), _valid_obs_config())
+    entity = np.full(
+        _cpp.AGENTS_PER_MATCH * _cpp.ENTITY_GRID_OBS_DIM,
+        -3.0,
+        dtype=np.float64,
+    )
+    critic = np.zeros(2 * CRITIC_DIM, dtype=np.float32)
+    features = np.zeros(_cpp.REWARD_FEATURE_DIM, dtype=np.float32)
+
+    with pytest.raises(TypeError):
+        pool.env_outputs(0, entity, critic, features)
+
+    np.testing.assert_array_equal(entity, -3.0)
+
+
+def test_sim_pool_rejects_wrong_dtype_status_output() -> None:
+    pool = _cpp.SimPool(1, _valid_config(team_size=3), _valid_obs_config())
+    actions = np.zeros(
+        _cpp.AGENTS_PER_MATCH * _cpp.POOL_ACTION_DIM,
+        dtype=np.float64,
+    )
+    entity = np.zeros(
+        _cpp.AGENTS_PER_MATCH * _cpp.ENTITY_GRID_OBS_DIM,
+        dtype=np.float32,
+    )
+    critic = np.zeros(2 * CRITIC_DIM, dtype=np.float32)
+    features = np.zeros(_cpp.REWARD_FEATURE_DIM, dtype=np.float32)
+    terminated = np.full(1, 9, dtype=np.int64)
+    truncated = np.zeros(1, dtype=np.uint8)
+
+    with pytest.raises(TypeError):
+        pool.step(actions, entity, critic, features, terminated, truncated)
+
+    assert terminated[0] == 9
 
 
 def test_scripted_bot_action_unknown_name_raises() -> None:

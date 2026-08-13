@@ -74,11 +74,12 @@ def save_mappo_checkpoint(
 ) -> None:
     """Write a checkpoint, optionally including everything needed to resume.
 
-    ``resume_state`` carries optimizer moments, the update index, RNG state and
-    the recurrent hidden state. Without it a checkpoint can only be warm-started
-    from, which resets Adam and restarts the LR schedule -- a large silent
-    optimization discontinuity that presents as "the run got worse after
-    restart".
+    ``resume_state`` carries optimizer moments, the update index, and RNG state.
+    Recurrent state intentionally restarts with the freshly reset environments;
+    environment state is not serializable at this boundary. Without resume
+    state a checkpoint can only be warm-started from, which resets Adam and
+    restarts the LR schedule -- a large silent optimization discontinuity that
+    presents as "the run got worse after restart".
     """
     payload: dict[str, Any] = {
         "model_state_dict": model_state_dict,

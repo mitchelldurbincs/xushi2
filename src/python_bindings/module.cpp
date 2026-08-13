@@ -478,14 +478,27 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     m.attr("ACTOR_OBS_PHASE1_DIM") = xushi2::sim::kActorObsPhase1Dim;
     m.attr("CRITIC_OBS_DIM") = xushi2::sim::kCriticObsDim;
 
+    // Output buffers must be exact, caller-owned NumPy storage. forcecast is
+    // intentionally excluded: converting a writable argument would direct
+    // C++ writes into a temporary and silently discard the result.
+    using FloatOutputArray = py::array_t<float, py::array::c_style>;
+    using U8OutputArray = py::array_t<std::uint8_t, py::array::c_style>;
+    auto require_writable = [](const char* name, const py::array& array) {
+        if (!array.writeable()) {
+            throw std::invalid_argument(std::string(name) +
+                                        " must be writable");
+        }
+    };
+
     // Write the Phase-1 actor observation for `agent_slot` into the
     // caller-provided float32 numpy buffer. Zero-copy: Python owns the
     // buffer; C++ writes directly. Any buffer smaller than
     // ACTOR_OBS_PHASE1_DIM raises ValueError.
     m.def(
         "build_actor_obs",
-        [](const xushi2::sim::Sim& sim, std::uint32_t agent_slot,
-           py::array_t<float, py::array::c_style | py::array::forcecast> out) {
+        [require_writable](const xushi2::sim::Sim& sim,
+                           std::uint32_t agent_slot, FloatOutputArray out) {
+            require_writable("out", out);
             if (out.ndim() != 1) {
                 throw std::invalid_argument(
                     "out buffer must be 1-D float32");
@@ -499,7 +512,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                 sim, agent_slot, out.mutable_data(0),
                 static_cast<std::uint32_t>(out.shape(0)));
         },
-        py::arg("sim"), py::arg("agent_slot"), py::arg("out"),
+        py::arg("sim"), py::arg("agent_slot"), py::arg("out").noconvert(),
         "Write the Phase-1 actor observation for agent_slot into `out`.");
 
     // Write the Phase-4 critic observation for `team_perspective` into the
@@ -507,8 +520,10 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     // Requires the Sim was constructed with MatchConfig::team_size == 3.
     m.def(
         "build_critic_obs",
-        [](const xushi2::sim::Sim& sim, xushi2::common::Team team_perspective,
-           py::array_t<float, py::array::c_style | py::array::forcecast> out) {
+        [require_writable](const xushi2::sim::Sim& sim,
+                           xushi2::common::Team team_perspective,
+                           FloatOutputArray out) {
+            require_writable("out", out);
             if (out.ndim() != 1) {
                 throw std::invalid_argument(
                     "out buffer must be 1-D float32");
@@ -537,7 +552,8 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                 sim, team_perspective, out.mutable_data(0),
                 static_cast<std::uint32_t>(out.shape(0)));
         },
-        py::arg("sim"), py::arg("team_perspective"), py::arg("out"),
+        py::arg("sim"), py::arg("team_perspective"),
+        py::arg("out").noconvert(),
         "Write the Phase-4 critic observation (kCriticObsDim floats) for a "
         "team perspective into `out`. Requires team_size == 3.");
 
@@ -601,14 +617,13 @@ PYBIND11_MODULE(xushi2_cpp, m) {
              "Clear last-seen memory. Call whenever the paired Sim resets.")
         .def(
             "build_entity_obs",
-            [validate_entity_obs_call](xushi2::sim::ObservationEngine& engine,
-                                       const xushi2::sim::Sim& sim,
-                                       std::uint32_t viewer_slot,
-                                       py::array_t<float,
-                                                   py::array::c_style |
-                                                       py::array::forcecast>
-                                           out) {
+            [validate_entity_obs_call,
+             require_writable](xushi2::sim::ObservationEngine& engine,
+                               const xushi2::sim::Sim& sim,
+                               std::uint32_t viewer_slot,
+                               FloatOutputArray out) {
                 validate_entity_obs_call(sim, viewer_slot, true);
+                require_writable("out", out);
                 if (out.ndim() != 1) {
                     throw std::invalid_argument("out buffer must be 1-D float32");
                 }
@@ -621,18 +636,18 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     sim, viewer_slot, out.mutable_data(0),
                     static_cast<std::uint32_t>(out.shape(0)));
             },
-            py::arg("sim"), py::arg("viewer_slot"), py::arg("out"),
+            py::arg("sim"), py::arg("viewer_slot"),
+            py::arg("out").noconvert(),
             "Write the entity-token/grid observation (ENTITY_GRID_OBS_DIM "
             "floats) for viewer_slot into `out`, updating last-seen memory.")
         .def(
             "build_entity_obs_all",
-            [validate_entity_obs_call](xushi2::sim::ObservationEngine& engine,
-                                       const xushi2::sim::Sim& sim,
-                                       py::array_t<float,
-                                                   py::array::c_style |
-                                                       py::array::forcecast>
-                                           out) {
+            [validate_entity_obs_call,
+             require_writable](xushi2::sim::ObservationEngine& engine,
+                               const xushi2::sim::Sim& sim,
+                               FloatOutputArray out) {
                 validate_entity_obs_call(sim, 0, false);
+                require_writable("out", out);
                 const std::uint32_t total =
                     static_cast<std::uint32_t>(xushi2::sim::kAgentsPerMatch) *
                     xushi2::sim::kEntityGridObsDim;
@@ -645,7 +660,7 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     sim, out.mutable_data(),
                     static_cast<std::uint32_t>(out.size()));
             },
-            py::arg("sim"), py::arg("out"),
+            py::arg("sim"), py::arg("out").noconvert(),
             "Write entity observations for all six viewer slots (ascending) "
             "into `out`, updating last-seen memory.")
         .def(
@@ -670,10 +685,8 @@ PYBIND11_MODULE(xushi2_cpp, m) {
     m.attr("REWARD_FEATURE_DIM") = xushi2::sim::kRewardFeatureDim;
     m.attr("POOL_ACTION_DIM") = xushi2::pool::SimPool::kActionDim;
 
-    using FloatArray =
+    using FloatInputArray =
         py::array_t<float, py::array::c_style | py::array::forcecast>;
-    using U8Array =
-        py::array_t<std::uint8_t, py::array::c_style | py::array::forcecast>;
 
     auto require_size = [](const char* name, py::ssize_t actual,
                            std::size_t expected) {
@@ -818,12 +831,16 @@ PYBIND11_MODULE(xushi2_cpp, m) {
             py::arg("env"), py::arg("seed"))
         .def(
             "env_outputs",
-            [require_size](xushi2::pool::SimPool& pool, std::uint32_t env,
-                           FloatArray entity_obs, FloatArray critic_obs,
-                           FloatArray features) {
+            [require_size, require_writable](
+                xushi2::pool::SimPool& pool, std::uint32_t env,
+                FloatOutputArray entity_obs, FloatOutputArray critic_obs,
+                FloatOutputArray features) {
                 if (env >= pool.num_envs()) {
                     throw std::invalid_argument("env index out of range");
                 }
+                require_writable("entity_obs", entity_obs);
+                require_writable("critic_obs", critic_obs);
+                require_writable("features", features);
                 constexpr std::size_t kAgents = xushi2::sim::kAgentsPerMatch;
                 require_size("entity_obs", entity_obs.size(),
                              kAgents * xushi2::sim::kEntityGridObsDim);
@@ -839,19 +856,29 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                     features.mutable_data(),
                     static_cast<std::uint32_t>(features.size()));
             },
-            py::arg("env"), py::arg("entity_obs"), py::arg("critic_obs"),
-            py::arg("features"),
+            py::arg("env"), py::arg("entity_obs").noconvert(),
+            py::arg("critic_obs").noconvert(),
+            py::arg("features").noconvert(),
             "Write env's current-state entity obs [6*ENTITY_GRID_OBS_DIM], "
             "critic obs [2*CRITIC_OBS_DIM] (Team A row then Team B), and "
             "reward features [REWARD_FEATURE_DIM].")
         .def(
             "step",
-            [require_size](xushi2::pool::SimPool& pool, FloatArray actions,
-                           FloatArray entity_obs, FloatArray critic_obs,
-                           FloatArray features, U8Array terminated,
-                           U8Array truncated) {
+            [require_size,
+             require_writable](xushi2::pool::SimPool& pool,
+                               FloatInputArray actions,
+                               FloatOutputArray entity_obs,
+                               FloatOutputArray critic_obs,
+                               FloatOutputArray features,
+                               U8OutputArray terminated,
+                               U8OutputArray truncated) {
                 const std::size_t n = pool.num_envs();
                 constexpr std::size_t kAgents = xushi2::sim::kAgentsPerMatch;
+                require_writable("entity_obs", entity_obs);
+                require_writable("critic_obs", critic_obs);
+                require_writable("features", features);
+                require_writable("terminated", terminated);
+                require_writable("truncated", truncated);
                 require_size("actions", actions.size(),
                              n * kAgents * xushi2::pool::SimPool::kActionDim);
                 require_size("entity_obs", entity_obs.size(),
@@ -884,8 +911,11 @@ PYBIND11_MODULE(xushi2_cpp, m) {
                               features_ptr, term_ptr, trunc_ptr);
                 }
             },
-            py::arg("actions"), py::arg("entity_obs"), py::arg("critic_obs"),
-            py::arg("features"), py::arg("terminated"), py::arg("truncated"),
+            py::arg("actions"), py::arg("entity_obs").noconvert(),
+            py::arg("critic_obs").noconvert(),
+            py::arg("features").noconvert(),
+            py::arg("terminated").noconvert(),
+            py::arg("truncated").noconvert(),
             "Advance every env one decision step. actions is "
             "[num_envs*6*POOL_ACTION_DIM] float32 team-relative controls; "
             "outputs are written into the caller-owned buffers. The GIL is "

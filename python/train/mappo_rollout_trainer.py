@@ -176,7 +176,6 @@ class MappoTrainer:
             "optimizer_state_dict": self.optimizer.state_dict(),
             "update_idx": int(self._active_update_idx),
             "update_counter": int(self._update_counter),
-            "hidden_state": self.h.detach().cpu(),
             "policy_sampling_generator_state": self.policy_sampling_generator.get_state(),
             "torch_rng_state": torch.get_rng_state(),
             "numpy_rng_state": np.random.get_state(),
@@ -184,21 +183,16 @@ class MappoTrainer:
         }
 
     def load_resume_state(self, state: dict[str, Any]) -> int:
-        """Restore optimizer/RNG/hidden state. Returns the completed update index.
+        """Restore optimizer and RNG state. Return the completed update index.
 
-        Shapes are checked rather than trusted: resuming into a differently
-        shaped run would otherwise fail deep inside the first update, or worse,
-        broadcast silently.
+        Environment state is not checkpointed, so construction starts every
+        resumed run from freshly reset episodes. Recurrent state must restart
+        at the same boundary; restoring hidden state from the interrupted
+        episodes would mix stale trajectory memory with the fresh observations.
+        ``hidden_state`` from older checkpoints is therefore intentionally
+        ignored for backward compatibility.
         """
-        expected_h = (self.cfg.num_envs, self.cfg.n_agents, self.cfg.gru_hidden)
-        hidden = state.get("hidden_state")
-        if hidden is not None:
-            if tuple(hidden.shape) != expected_h:
-                raise ValueError(
-                    f"resume hidden_state shape {tuple(hidden.shape)} does not match this "
-                    f"run's {expected_h}; num_envs/n_agents/gru_hidden must match to resume"
-                )
-            self.h = hidden.to(self.device)
+        self.h = torch.zeros_like(self.h)
         self.optimizer.load_state_dict(state["optimizer_state_dict"])
         self._update_counter = int(state.get("update_counter", 0))
         gen_state = state.get("policy_sampling_generator_state")

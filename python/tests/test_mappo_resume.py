@@ -54,8 +54,10 @@ def _assert_state_dicts_close(a: dict, b: dict, *, atol: float = 0.0) -> None:
 # NOT match an uninterrupted run bit for bit, and asserting that they do would
 # be asserting something the feature does not provide. What it does provide --
 # and what actually distinguishes resuming from warm-starting -- is that Adam's
-# moments, the LR schedule position, the RNG streams, the recurrent hidden
-# state, and the update index all continue instead of restarting.
+# moments, the LR schedule position, the RNG streams, and the update index all
+# continue instead of restarting. Recurrent state restarts at zero alongside
+# the freshly reset environment, so it cannot contain memory from an episode
+# whose state was not restored.
 
 
 @pytest.mark.slow
@@ -145,18 +147,18 @@ def test_periodic_checkpoints_carry_resume_state(tmp_path):
 
     raw = torch.load(_run_dir(output_dir) / "ckpt_0001.pt", map_location="cpu", weights_only=False)
     state = raw["resume_state"]
-    # Each of these is load-bearing: dropping any one makes a resumed run
-    # diverge from an uninterrupted one.
+    # Each of these is load-bearing continuation state. The environment and
+    # recurrent hidden state deliberately restart together instead.
     for key in (
         "optimizer_state_dict",
         "update_idx",
         "update_counter",
-        "hidden_state",
         "policy_sampling_generator_state",
         "torch_rng_state",
         "numpy_rng_state",
     ):
         assert key in state, key
+    assert "hidden_state" not in state
     assert state["update_idx"] == 1
 
 
@@ -193,7 +195,7 @@ def test_resume_reports_a_missing_file_clearly(tmp_path):
         train_mappo_from_config(config)
 
 
-def test_resume_rejects_a_differently_shaped_run(tmp_path):
+def test_resume_ignores_legacy_hidden_state_and_resets_recurrence(tmp_path):
     from train.mappo_rollout_trainer import MappoTrainer, make_mappo_config
 
     config = _base_config(tmp_path, total_updates=1, checkpoint_every=1)
@@ -204,9 +206,13 @@ def test_resume_rejects_a_differently_shaped_run(tmp_path):
     trainer = MappoTrainer(env_fn, cfg, seed=1)
     try:
         state = trainer.resume_state()
-        state["hidden_state"] = torch.zeros(99, 99, 99)
-        with pytest.raises(ValueError, match="does not match this run"):
-            trainer.load_resume_state(state)
+        # Older checkpoints carried episode-local recurrence even though the
+        # corresponding environment state was never serialized. Its shape is
+        # irrelevant now: it must not influence the fresh reset episode.
+        state["hidden_state"] = torch.full((99, 99, 99), 7.0)
+        trainer.h.fill_(3.0)
+        trainer.load_resume_state(state)
+        assert torch.count_nonzero(trainer.h).item() == 0
     finally:
         trainer.close()
 
