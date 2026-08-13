@@ -6,7 +6,7 @@ from typing import Any
 
 from train.mappo_rollout_trainer import make_mappo_config
 from train.opponent_mix import parse_opponent_bot_mix
-from train.runtime_adapter import resolve_runtime_env_factory
+from train.runtime_adapter import resolve_runtime_env_factory, validate_runtime_env_factory
 from xushi2.snapshot_retention import SnapshotRetention
 
 
@@ -46,12 +46,27 @@ class RuntimeContext:
     opponent_recent_self: dict[str, Any]
 
 
-def build_runtime_context(config: dict[str, Any]) -> RuntimeContext:
-    runtime, env_fn, _seed_base = resolve_runtime_env_factory(
-        config,
-        require_learner="mappo",
-        context="MAPPO runtime",
-    )
+def build_runtime_context(
+    config: dict[str, Any], *, runtime: Any | None = None
+) -> RuntimeContext:
+    """Build the trainer's runtime context from a validated config.
+
+    Pass ``runtime`` when the caller already resolved the runtime spec (the
+    training entrypoint resolves it once for dispatch); otherwise it is
+    resolved here so direct callers keep working.
+    """
+    if runtime is None:
+        runtime, env_fn, _seed_base = resolve_runtime_env_factory(
+            config,
+            require_learner="mappo",
+            context="MAPPO runtime",
+        )
+    else:
+        runtime, env_fn, _seed_base = validate_runtime_env_factory(
+            runtime,
+            require_learner="mappo",
+            context="MAPPO runtime",
+        )
     phase = runtime.phase_int
     phase_label = runtime.phase_label
     ckpt_env_cfg = runtime.ckpt_env_cfg
