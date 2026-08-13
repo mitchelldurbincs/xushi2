@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -20,6 +21,7 @@ from train.device import resolve_device
 from train.losses import (
     _masked_mean,
     action_logprob_and_entropy_parts,
+    compute_ppo_loss,
 )
 from train.mappo_advantage import compute_gae
 from train.mappo_metrics import rollout_metrics
@@ -41,6 +43,54 @@ from train.recurrent_common import (
     set_optimizer_learning_rate,
 )
 from train.runtime_specs import resolve_runtime_spec
+
+
+@dataclass
+class _PolicyUnroll:
+    """Everything the update step needs from re-running the recurrent policy
+    (and, when active, the frozen anchor policy) over a stored rollout.
+
+    Stacked tensors are shaped (N, A, L); the aux-head fields are scalar
+    tensors already reduced over the rollout.
+    """
+
+    logprob: torch.Tensor
+    entropy: torch.Tensor
+    move_entropy: torch.Tensor
+    aim_entropy: torch.Tensor
+    binary_entropy: torch.Tensor
+    other_entropy: torch.Tensor
+    aim_aux_loss: torch.Tensor
+    aim_aux_rmse: torch.Tensor
+    aim_aux_count: torch.Tensor
+    mode_aux_loss: torch.Tensor
+    mode_aux_acc: torch.Tensor
+    mode_aux_count: torch.Tensor
+    mean_p_combat: torch.Tensor
+    target_aux_loss: torch.Tensor
+    target_aux_acc: torch.Tensor
+    target_aux_count: torch.Tensor
+    target_aux_metrics: dict[str, torch.Tensor]
+    anchor_kl: torch.Tensor | None
+
+
+def _reduce_aux_triple(
+    losses: list[torch.Tensor],
+    metrics: list[torch.Tensor],
+    counts: list[torch.Tensor],
+    like: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Reduce one aux head's per-step (loss, metric, count) triples.
+
+    The metric (rmse/accuracy) is only meaningful when the head saw any valid
+    samples this rollout; report 0.0 otherwise instead of a NaN-ish mean.
+    """
+    loss = torch.stack(losses).mean()
+    count = torch.stack(counts).sum()
+    metric = (
+        torch.stack(metrics).mean() if float(count.item()) > 0.0 else like.new_tensor(0.0)
+    )
+    return loss, metric, count
 
 
 class MappoRollout:
@@ -421,8 +471,6 @@ class MappoTrainer:
         distill_batch: CapDuelDistillBatch | None = None,
     ) -> dict[str, float]:
         cfg = self.cfg
-        N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
-        flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
         critic_warmup_active = self._active_update_idx <= cfg.critic_warmup_updates
         anchor_coef = compute_anchor_kl_coef(
             update=self._active_update_idx,
@@ -432,20 +480,155 @@ class MappoTrainer:
         anchor_active = (
             self.anchor_model is not None and anchor_coef > 0.0 and not critic_warmup_active
         )
-        anchor_kls: list[torch.Tensor] = []
+        unroll = self._unroll_policy(rollout, anchor_active=anchor_active)
+        value, advantage, valid_agent, value_mask = self._values_and_advantage(rollout)
+        # entropy_coef=0.0: the entropy bonus is applied below via
+        # _entropy_bonus, which supports per-part coefficients and the
+        # entropy-scale curriculum that compute_ppo_loss knows nothing about.
+        ppo = compute_ppo_loss(
+            new_logprob=unroll.logprob,
+            old_logprob=rollout.logprob,
+            advantage=advantage,
+            value=value,
+            old_value=rollout.value,
+            return_=rollout.returns,
+            valid_mask=valid_agent,
+            clip_ratio=cfg.clip_ratio,
+            value_clip_ratio=cfg.value_clip_ratio,
+            value_coef=cfg.value_coef,
+            entropy_coef=0.0,
+            entropy=unroll.entropy,
+            return_mean=return_mean,
+            return_std=return_std,
+            value_mask=value_mask,
+        )
+        policy_loss = ppo.policy_loss
+        value_loss = ppo.value_loss
+        entropy_mean = ppo.entropy
+        (
+            entropy_bonus,
+            move_entropy_mean,
+            aim_entropy_mean,
+            binary_entropy_mean,
+            other_entropy_mean,
+        ) = self._entropy_bonus(
+            move_entropy=unroll.move_entropy,
+            aim_entropy=unroll.aim_entropy,
+            binary_entropy=unroll.binary_entropy,
+            other_entropy=unroll.other_entropy,
+            entropy=unroll.entropy,
+            valid_agent=valid_agent,
+        )
+        anchor_kl_mean = rollout.actor_obs.new_tensor(0.0)
+        if unroll.anchor_kl is not None:
+            anchor_kl_mean = _masked_mean(unroll.anchor_kl, valid_agent)
+        if critic_warmup_active:
+            # Critic warmup: fit the value function to the (frozen) warm-start
+            # policy's returns before any policy gradient is applied. The
+            # actor terms are excluded from the loss, so actor/trunk params
+            # receive no gradient during warmup.
+            total_loss = cfg.value_coef * value_loss
+        else:
+            total_loss = (
+                policy_loss
+                + cfg.value_coef * value_loss
+                - entropy_bonus
+                + cfg.aim_aux_coef * unroll.aim_aux_loss
+                + (cfg.mode_aux_coef * unroll.mode_aux_loss if cfg.mode_gated_combat else 0.0)
+                + cfg.target_selection_aux_coef * unroll.target_aux_loss
+            )
+            if anchor_active:
+                total_loss = total_loss + anchor_coef * anchor_kl_mean
+        distill_metric_tensors: dict[str, torch.Tensor] = {}
+        if distill_batch is not None and not critic_warmup_active:
+            if self.cap_duel_distill_anchor is None:
+                raise RuntimeError("distill_batch provided without configured anchor")
+            distill_scaled_loss, distill_metric_tensors = (
+                self.cap_duel_distill_anchor.loss_for_model(self.model, distill_batch)
+            )
+            total_loss = total_loss + distill_scaled_loss
+
+        self.optimizer.zero_grad()
+        total_loss.backward()
+        actor_grad_norm = self._group_grad_norm(self._actor_params)
+        critic_grad_norm = self._group_grad_norm(self._critic_params)
+        trunk_grad_norm = self._group_grad_norm(self._trunk_params)
+        nn.utils.clip_grad_norm_(self.model.parameters(), cfg.max_grad_norm)
+        self.optimizer.step()
+
+        metrics = {
+            "policy_loss": float(policy_loss.item()),
+            "value_loss": float(value_loss.item()),
+            "entropy": float(entropy_mean.item()),
+            "entropy_move": float(move_entropy_mean.item()),
+            "entropy_aim": float(aim_entropy_mean.item()),
+            "entropy_binary": float(binary_entropy_mean.item()),
+            "entropy_other": float(other_entropy_mean.item()),
+            "entropy_bonus": float(entropy_bonus.item()),
+            "approx_kl": float(ppo.approx_kl.item()),
+            "clip_fraction": float(ppo.clip_fraction.item()),
+            "total_loss": float(total_loss.item()),
+            "aim_aux_loss": float(unroll.aim_aux_loss.item()),
+            "aim_aux_rmse": float(unroll.aim_aux_rmse.item()),
+            "aim_aux_count": float(unroll.aim_aux_count.item()),
+            "mode_aux_loss": float(unroll.mode_aux_loss.item()),
+            "mode_accuracy": float(unroll.mode_aux_acc.item()),
+            "mode_aux_count": float(unroll.mode_aux_count.item()),
+            "mean_p_combat": float(unroll.mean_p_combat.item()),
+            "target_selection_aux_loss": float(unroll.target_aux_loss.item()),
+            "target_selection_aux_accuracy": float(unroll.target_aux_acc.item()),
+            "target_selection_aux_count": float(unroll.target_aux_count.item()),
+            "target_selection_label_entropy": float(
+                unroll.target_aux_metrics["target_selection_label_entropy"].item()
+            ),
+            "target_selection_same_target_fraction": float(
+                unroll.target_aux_metrics["target_selection_same_target_fraction"].item()
+            ),
+            "target_selection_fallback_rate": float(
+                unroll.target_aux_metrics["target_selection_fallback_rate"].item()
+            ),
+            "actor_grad_norm": actor_grad_norm,
+            "critic_grad_norm": critic_grad_norm,
+            "trunk_grad_norm": trunk_grad_norm,
+            "lr": self.current_learning_rate,
+        }
+        # Only emit the stabilizer metrics when the features are configured so
+        # legacy runs keep their existing W&B schema unchanged.
+        if cfg.critic_warmup_updates > 0:
+            metrics["critic_warmup_active"] = 1.0 if critic_warmup_active else 0.0
+        if cfg.anchor_kl_coef > 0.0:
+            metrics["anchor_kl"] = float(anchor_kl_mean.item())
+            metrics["anchor_kl_coef"] = float(anchor_coef)
+        for key, value in distill_metric_tensors.items():
+            metrics[f"distill/{key}"] = float(value.item())
+        return metrics
+
+    def _unroll_policy(self, rollout: MappoRollout, *, anchor_active: bool) -> _PolicyUnroll:
+        """Re-run the recurrent policy over the stored rollout.
+
+        Walks the rollout step by step (hidden state zeroed across episode
+        boundaries, matching collection), computing per-step log-probs and
+        entropy parts under the current parameters, the three auxiliary-head
+        losses, and — when ``anchor_active`` — the action KL against the
+        frozen anchor policy, which keeps its own hidden state.
+        """
+        cfg = self.cfg
+        N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
+        flat_h = rollout.h_init[:, :, 0].reshape(N * A, cfg.gru_hidden)
+        h = flat_h
         h_anchor = flat_h
+        anchor_kls: list[torch.Tensor] = []
         logprobs, entropies = [], []
         move_entropies, aim_entropies, binary_entropies = [], [], []
         aim_aux_losses, aim_aux_rmses, aim_aux_counts = [], [], []
         mode_aux_losses, mode_aux_accs, mode_aux_counts = [], [], []
-        p_combat_parts = []
+        p_combat_parts: list[torch.Tensor] = []
         target_aux_losses, target_aux_accs, target_aux_counts = [], [], []
         target_aux_metric_parts: dict[str, list[torch.Tensor]] = {
             "target_selection_label_entropy": [],
             "target_selection_same_target_fraction": [],
             "target_selection_fallback_rate": [],
         }
-        h = flat_h
         for t in range(L):
             obs_t = rollout.actor_obs[:, :, t].reshape(N * A, cfg.obs_dim)
             features, h = self.model.actor_head_features(obs_t, h)
@@ -472,34 +655,15 @@ class MappoTrainer:
                 mean, log_std, logits, target_logits, action_t
             )
             if anchor_active:
-                anchor = self.anchor_model
-                assert anchor is not None
-                with torch.no_grad():
-                    anchor_features, h_anchor = anchor.actor_head_features(obs_t, h_anchor)
-                    anchor_mean, anchor_logits, _anchor_sel = anchor.policy_heads_from_features(
-                        obs_t, anchor_features
-                    )
-                    anchor_logits = anchor.masked_binary_logits(obs_t, anchor_logits)
-                    anchor_target_logits = (
-                        anchor.actor_target_head(anchor_features)
-                        if anchor.actor_target_head is not None
-                        else None
-                    )
-                    anchor_target_logits = anchor._masked_target_logits(
-                        anchor_target_logits, anchor._target_mask(obs_t)
-                    )
-                anchor_kls.append(
-                    _anchor_action_kl(
-                        mean=mean,
-                        log_std=log_std,
-                        binary_logits=logits,
-                        target_logits=target_logits,
-                        anchor_mean=anchor_mean,
-                        anchor_log_std=anchor.log_std,
-                        anchor_binary_logits=anchor_logits,
-                        anchor_target_logits=anchor_target_logits,
-                    ).view(N, A)
+                anchor_kl_t, h_anchor = self._anchor_kl_step(
+                    obs_t,
+                    h_anchor,
+                    mean=mean,
+                    log_std=log_std,
+                    binary_logits=logits,
+                    target_logits=target_logits,
                 )
+                anchor_kls.append(anchor_kl_t.view(N, A))
             logprobs.append(logp.view(N, A))
             entropies.append(ent.view(N, A))
             move_entropies.append(move_ent.view(N, A))
@@ -518,14 +682,12 @@ class MappoTrainer:
             mode_aux_losses.append(mode_loss)
             mode_aux_accs.append(mode_acc)
             mode_aux_counts.append(mode_count)
-            target_aux_loss, target_aux_acc, target_aux_count = (
-                target_selection_aux_loss_and_accuracy(
-                    target_selection_logits, obs_t, cfg, mask=flat_mask
-                )
+            target_loss, target_acc, target_count = target_selection_aux_loss_and_accuracy(
+                target_selection_logits, obs_t, cfg, mask=flat_mask
             )
-            target_aux_losses.append(target_aux_loss)
-            target_aux_accs.append(target_aux_acc)
-            target_aux_counts.append(target_aux_count)
+            target_aux_losses.append(target_loss)
+            target_aux_accs.append(target_acc)
+            target_aux_counts.append(target_count)
             for key, value in target_selection_aux_metrics(obs_t, cfg, mask=flat_mask).items():
                 target_aux_metric_parts[key].append(value)
             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
@@ -534,39 +696,102 @@ class MappoTrainer:
             if anchor_active:
                 h_anchor = h_anchor.view(N, A, cfg.gru_hidden)
                 h_anchor = (h_anchor * (1.0 - done_mask)).reshape(N * A, cfg.gru_hidden)
-        new_logprob = torch.stack(logprobs, dim=2)
+
+        like = rollout.actor_obs
         entropy = torch.stack(entropies, dim=2)
         move_entropy = torch.stack(move_entropies, dim=2)
         aim_entropy = torch.stack(aim_entropies, dim=2)
         binary_entropy = torch.stack(binary_entropies, dim=2)
-        other_entropy = entropy - move_entropy - aim_entropy - binary_entropy
-        aim_aux_loss = torch.stack(aim_aux_losses).mean()
-        aim_aux_count_total = torch.stack(aim_aux_counts).sum()
-        if float(aim_aux_count_total.item()) > 0.0:
-            aim_aux_rmse = torch.stack(aim_aux_rmses).mean()
-        else:
-            aim_aux_rmse = rollout.actor_obs.new_tensor(0.0)
-        mode_aux_loss = torch.stack(mode_aux_losses).mean()
-        mode_aux_count_total = torch.stack(mode_aux_counts).sum()
-        if float(mode_aux_count_total.item()) > 0.0:
-            mode_aux_acc = torch.stack(mode_aux_accs).mean()
-        else:
-            mode_aux_acc = rollout.actor_obs.new_tensor(0.0)
-        mean_p_combat = (
-            torch.stack(p_combat_parts).mean()
-            if p_combat_parts
-            else rollout.actor_obs.new_tensor(0.0)
+        aim_aux_loss, aim_aux_rmse, aim_aux_count = _reduce_aux_triple(
+            aim_aux_losses, aim_aux_rmses, aim_aux_counts, like
         )
-        target_aux_loss = torch.stack(target_aux_losses).mean()
-        target_aux_count_total = torch.stack(target_aux_counts).sum()
-        if float(target_aux_count_total.item()) > 0.0:
-            target_aux_acc = torch.stack(target_aux_accs).mean()
-        else:
-            target_aux_acc = rollout.actor_obs.new_tensor(0.0)
-        target_aux_metrics = {
-            key: torch.stack(values).mean() if values else rollout.actor_obs.new_tensor(0.0)
-            for key, values in target_aux_metric_parts.items()
-        }
+        mode_aux_loss, mode_aux_acc, mode_aux_count = _reduce_aux_triple(
+            mode_aux_losses, mode_aux_accs, mode_aux_counts, like
+        )
+        target_aux_loss, target_aux_acc, target_aux_count = _reduce_aux_triple(
+            target_aux_losses, target_aux_accs, target_aux_counts, like
+        )
+        return _PolicyUnroll(
+            logprob=torch.stack(logprobs, dim=2),
+            entropy=entropy,
+            move_entropy=move_entropy,
+            aim_entropy=aim_entropy,
+            binary_entropy=binary_entropy,
+            other_entropy=entropy - move_entropy - aim_entropy - binary_entropy,
+            aim_aux_loss=aim_aux_loss,
+            aim_aux_rmse=aim_aux_rmse,
+            aim_aux_count=aim_aux_count,
+            mode_aux_loss=mode_aux_loss,
+            mode_aux_acc=mode_aux_acc,
+            mode_aux_count=mode_aux_count,
+            mean_p_combat=(
+                torch.stack(p_combat_parts).mean() if p_combat_parts else like.new_tensor(0.0)
+            ),
+            target_aux_loss=target_aux_loss,
+            target_aux_acc=target_aux_acc,
+            target_aux_count=target_aux_count,
+            target_aux_metrics={
+                key: torch.stack(values).mean() if values else like.new_tensor(0.0)
+                for key, values in target_aux_metric_parts.items()
+            },
+            anchor_kl=(torch.stack(anchor_kls, dim=2) if anchor_kls else None),
+        )
+
+    def _anchor_kl_step(
+        self,
+        obs_t: torch.Tensor,
+        h_anchor: torch.Tensor,
+        *,
+        mean: torch.Tensor,
+        log_std: torch.Tensor,
+        binary_logits: torch.Tensor,
+        target_logits: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """One no-grad forward of the frozen anchor policy at this step.
+
+        Returns the per-sample action KL(current || anchor) and the anchor's
+        next hidden state.
+        """
+        anchor = self.anchor_model
+        assert anchor is not None
+        with torch.no_grad():
+            anchor_features, h_anchor = anchor.actor_head_features(obs_t, h_anchor)
+            anchor_mean, anchor_logits, _anchor_sel = anchor.policy_heads_from_features(
+                obs_t, anchor_features
+            )
+            anchor_logits = anchor.masked_binary_logits(obs_t, anchor_logits)
+            anchor_target_logits = (
+                anchor.actor_target_head(anchor_features)
+                if anchor.actor_target_head is not None
+                else None
+            )
+            anchor_target_logits = anchor._masked_target_logits(
+                anchor_target_logits, anchor._target_mask(obs_t)
+            )
+        kl = _anchor_action_kl(
+            mean=mean,
+            log_std=log_std,
+            binary_logits=binary_logits,
+            target_logits=target_logits,
+            anchor_mean=anchor_mean,
+            anchor_log_std=anchor.log_std,
+            anchor_binary_logits=anchor_logits,
+            anchor_target_logits=anchor_target_logits,
+        )
+        return kl, h_anchor
+
+    def _values_and_advantage(
+        self, rollout: MappoRollout
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Current value predictions and the advantage/mask tensors.
+
+        Returns ``(value, advantage, valid_agent, value_mask)``, all shaped
+        (N, A, L) except that a scalar value head yields value shaped (N, L)
+        with a per-step ``value_mask`` (a step is valid for the value loss
+        when any agent is valid at it).
+        """
+        cfg = self.cfg
+        N, A, L = cfg.num_envs, cfg.n_agents, cfg.rollout_len
         valid_agent = rollout.agent_loss_mask.expand(N, A, L)
         if cfg.value_per_agent:
             value = (
@@ -577,139 +802,14 @@ class MappoTrainer:
                 .permute(0, 2, 1)
             )
             advantage = rollout.advantages
+            value_mask = valid_agent
         else:
             value = self.model.value(rollout.critic_obs.reshape(N * L, cfg.critic_obs_dim)).view(
                 N, L
             )
             advantage = rollout.advantages[:, None, :].expand(N, A, L)
-        adv_mean = _masked_mean(advantage, valid_agent)
-        adv_var = _masked_mean((advantage - adv_mean) ** 2, valid_agent)
-        norm_adv = (advantage - adv_mean) / adv_var.clamp(min=1e-8).sqrt()
-
-        ratio = (new_logprob - rollout.logprob).exp()
-        pg1 = ratio * norm_adv
-        pg2 = torch.clamp(ratio, 1.0 - cfg.clip_ratio, 1.0 + cfg.clip_ratio) * norm_adv
-        policy_loss = _masked_mean(-torch.min(pg1, pg2), valid_agent)
-
-        if cfg.value_per_agent:
-            value_n = (value - return_mean) / return_std
-            old_value_n = (rollout.value - return_mean) / return_std
-            return_n = (rollout.returns - return_mean) / return_std
-            value_mask = valid_agent
-        else:
-            value_n = (value - return_mean) / return_std
-            old_value_n = (rollout.value - return_mean) / return_std
-            return_n = (rollout.returns - return_mean) / return_std
             value_mask = (valid_agent.sum(dim=1) > 0.0).to(valid_agent.dtype)
-        value_clipped_n = old_value_n + torch.clamp(
-            value_n - old_value_n, -cfg.value_clip_ratio, cfg.value_clip_ratio
-        )
-        vl_unclipped = (value_n - return_n) ** 2
-        vl_clipped = (value_clipped_n - return_n) ** 2
-        value_loss = _masked_mean(0.5 * torch.max(vl_unclipped, vl_clipped), value_mask)
-        entropy_mean = _masked_mean(entropy, valid_agent)
-        (
-            entropy_bonus,
-            move_entropy_mean,
-            aim_entropy_mean,
-            binary_entropy_mean,
-            other_entropy_mean,
-        ) = self._entropy_bonus(
-            move_entropy=move_entropy,
-            aim_entropy=aim_entropy,
-            binary_entropy=binary_entropy,
-            other_entropy=other_entropy,
-            entropy=entropy,
-            valid_agent=valid_agent,
-        )
-        anchor_kl_mean = rollout.actor_obs.new_tensor(0.0)
-        if anchor_active and anchor_kls:
-            anchor_kl_mean = _masked_mean(torch.stack(anchor_kls, dim=2), valid_agent)
-        if critic_warmup_active:
-            # Critic warmup: fit the value function to the (frozen) warm-start
-            # policy's returns before any policy gradient is applied. The
-            # actor terms are excluded from the loss, so actor/trunk params
-            # receive no gradient during warmup.
-            total_loss = cfg.value_coef * value_loss
-        else:
-            total_loss = (
-                policy_loss
-                + cfg.value_coef * value_loss
-                - entropy_bonus
-                + cfg.aim_aux_coef * aim_aux_loss
-                + (cfg.mode_aux_coef * mode_aux_loss if cfg.mode_gated_combat else 0.0)
-                + cfg.target_selection_aux_coef * target_aux_loss
-            )
-            if anchor_active:
-                total_loss = total_loss + anchor_coef * anchor_kl_mean
-        distill_metric_tensors: dict[str, torch.Tensor] = {}
-        if distill_batch is not None and not critic_warmup_active:
-            if self.cap_duel_distill_anchor is None:
-                raise RuntimeError("distill_batch provided without configured anchor")
-            distill_scaled_loss, distill_metric_tensors = (
-                self.cap_duel_distill_anchor.loss_for_model(self.model, distill_batch)
-            )
-            total_loss = total_loss + distill_scaled_loss
-
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        actor_grad_norm = self._group_grad_norm(self._actor_params)
-        critic_grad_norm = self._group_grad_norm(self._critic_params)
-        trunk_grad_norm = self._group_grad_norm(self._trunk_params)
-        nn.utils.clip_grad_norm_(self.model.parameters(), cfg.max_grad_norm)
-        self.optimizer.step()
-
-        with torch.no_grad():
-            approx_kl = _masked_mean(rollout.logprob - new_logprob, valid_agent)
-            clip_fraction = _masked_mean(
-                ((ratio - 1.0).abs() > cfg.clip_ratio).float(), valid_agent
-            )
-        metrics = {
-            "policy_loss": float(policy_loss.item()),
-            "value_loss": float(value_loss.item()),
-            "entropy": float(entropy_mean.item()),
-            "entropy_move": float(move_entropy_mean.item()),
-            "entropy_aim": float(aim_entropy_mean.item()),
-            "entropy_binary": float(binary_entropy_mean.item()),
-            "entropy_other": float(other_entropy_mean.item()),
-            "entropy_bonus": float(entropy_bonus.item()),
-            "approx_kl": float(approx_kl.item()),
-            "clip_fraction": float(clip_fraction.item()),
-            "total_loss": float(total_loss.item()),
-            "aim_aux_loss": float(aim_aux_loss.item()),
-            "aim_aux_rmse": float(aim_aux_rmse.item()),
-            "aim_aux_count": float(aim_aux_count_total.item()),
-            "mode_aux_loss": float(mode_aux_loss.item()),
-            "mode_accuracy": float(mode_aux_acc.item()),
-            "mode_aux_count": float(mode_aux_count_total.item()),
-            "mean_p_combat": float(mean_p_combat.item()),
-            "target_selection_aux_loss": float(target_aux_loss.item()),
-            "target_selection_aux_accuracy": float(target_aux_acc.item()),
-            "target_selection_aux_count": float(target_aux_count_total.item()),
-            "target_selection_label_entropy": float(
-                target_aux_metrics["target_selection_label_entropy"].item()
-            ),
-            "target_selection_same_target_fraction": float(
-                target_aux_metrics["target_selection_same_target_fraction"].item()
-            ),
-            "target_selection_fallback_rate": float(
-                target_aux_metrics["target_selection_fallback_rate"].item()
-            ),
-            "actor_grad_norm": actor_grad_norm,
-            "critic_grad_norm": critic_grad_norm,
-            "trunk_grad_norm": trunk_grad_norm,
-            "lr": self.current_learning_rate,
-        }
-        # Only emit the stabilizer metrics when the features are configured so
-        # legacy runs keep their existing W&B schema unchanged.
-        if cfg.critic_warmup_updates > 0:
-            metrics["critic_warmup_active"] = 1.0 if critic_warmup_active else 0.0
-        if cfg.anchor_kl_coef > 0.0:
-            metrics["anchor_kl"] = float(anchor_kl_mean.item())
-            metrics["anchor_kl_coef"] = float(anchor_coef)
-        for key, value in distill_metric_tensors.items():
-            metrics[f"distill/{key}"] = float(value.item())
-        return metrics
+        return value, advantage, valid_agent, value_mask
 
 
 def _anchor_action_kl(
