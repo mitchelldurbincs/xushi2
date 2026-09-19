@@ -15,9 +15,16 @@ unproven.
 
 ## One implementation
 
-Port the existing cap-duel mini-task to the current native entity-grid actor
-observations. Keep the existing mini-task and runtime factory as the entry
-points; do not add a separate trainer. Use the same ObservationEngine semantics
+The existing cap-duel is a synthetic NumPy environment with flat observations
+and no C++ Sim. This is **not** a drop-in observation adapter: native
+ObservationEngine requires an actual Sim. First implement a Sim-backed version
+of the cap-duel task through the existing runtime factory, keeping the old
+synthetic variant available for historical reproduction and reusing the MAPPO
+trainer. Explicitly specify how active/inactive slots are represented by the
+native scenario; do not synthesize entity tokens in Python. If existing native
+scenario controls cannot express this, record that implementation gap before
+any training launch. The new mini-task semantics must be reviewed as such, not
+described as equivalent to the old NumPy dynamics. Use the same ObservationEngine semantics
 and tensor layout as v5. Preserve the current action and checkpoint shapes,
 including inactive-slot handling. Load v5 without replacing or widening learned
 layers. Do not revive missing flat-observation teacher artifacts.
