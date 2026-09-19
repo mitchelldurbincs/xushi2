@@ -9,6 +9,7 @@ checkpoints via the Phase-9 snapshot-opponent env.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from dataclasses import replace
@@ -140,6 +141,7 @@ def evaluate_matrix(
     canonical: bool = True,
     stochastic: bool = False,
     num_envs: int | None = None,
+    replay_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     if num_envs is not None and num_envs <= 0:
         raise ValueError("num_envs must be > 0")
@@ -149,6 +151,27 @@ def evaluate_matrix(
     timing = CANONICAL_OBJECTIVE_TIMING_SECONDS if canonical else None
     respawn = CANONICAL_RESPAWN_TICKS if canonical else None
     rows: list[dict[str, Any]] = []
+    if replay_dir is not None:
+        replay_dir = Path(replay_dir)
+        replay_dir.mkdir(parents=True, exist_ok=False)
+
+    def replay_kwargs(checkpoint: str, opponent: str, kind: str, team: str) -> dict:
+        if replay_dir is None:
+            return {}
+        metadata = {
+            "learner_checkpoint": checkpoint,
+            "learner_sha256": hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
+            "opponent": opponent,
+            "opponent_type": kind,
+            "learner_team": team,
+            "canonical": canonical,
+            "stochastic_snapshot": stochastic_snapshot if kind == "snapshot" else False,
+        }
+        if kind == "snapshot":
+            metadata["opponent_sha256"] = hashlib.sha256(Path(opponent).read_bytes()).hexdigest()
+        return {"replay_dir": replay_dir / f"cell-{len(rows):03d}",
+                "replay_metadata": metadata}
+
     for learner_idx, checkpoint in enumerate(checkpoints):
         model, ckpt_config = _load_checkpoint(checkpoint)
         label = Path(checkpoint).name
@@ -164,6 +187,7 @@ def evaluate_matrix(
                 respawn_ticks=respawn,
                 stochastic=stochastic,
                 num_envs=num_envs,
+                **replay_kwargs(checkpoint, bot, "bot", learner_team),
             )
             rows.append(
                 _result_row(
@@ -192,6 +216,7 @@ def evaluate_matrix(
                 respawn_ticks=respawn,
                 stochastic=stochastic,
                 num_envs=num_envs,
+                **replay_kwargs(checkpoint, opponent, "snapshot", "A"),
             )
             rows.append(
                 _result_row(
@@ -219,6 +244,10 @@ def main() -> int:
     parser.add_argument("--seed", type=lambda s: int(s, 0), default=0xE0A17)
     parser.add_argument("--learner-team", choices=["A", "B"], default="A")
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--replay-dir", type=Path, default=None,
+        help="new directory for exact per-episode viewer replays and state-hash sidecars",
+    )
     parser.add_argument(
         "--as-trained",
         action="store_true",
@@ -250,6 +279,7 @@ def main() -> int:
         stochastic=bool(args.stochastic),
         stochastic_snapshot=bool(args.stochastic_snapshot),
         num_envs=args.num_envs,
+        replay_dir=args.replay_dir,
     )
     if not rows:
         raise ValueError("no matchups requested; pass --anchor-bot or --opponent-checkpoint")

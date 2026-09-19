@@ -78,6 +78,7 @@ class Phase4MappoEnv(gym.Env):
         self._enemy_slots: tuple[int, int, int] = (3, 4, 5) if learner_team == "A" else (0, 1, 2)
 
         self._sim: _cpp.Sim | None = None
+        self._replay_capture = False
         self._applied_respawn_ticks: int | None = None
         self._opponent_policy = opponent_policy
         self._reward_cfg = dict(reward_cfg or {})
@@ -153,7 +154,16 @@ class Phase4MappoEnv(gym.Env):
         self._first_team_a_alive_edge_tick = None
         self._first_team_a_score_after_edge_tick = None
         self._build_actor_obs_all()
-        return self._actor_obs_buf.copy(), self._make_info()
+        info = self._make_info()
+        if self._replay_capture:
+            from xushi2.replay_capture import replay_header
+
+            info["replay_header"] = replay_header(cfg)
+        return self._actor_obs_buf.copy(), info
+
+    def set_replay_capture(self, enabled: bool) -> None:
+        """Opt into exact sim-input metadata; no policy or sim RNG is consumed."""
+        self._replay_capture = bool(enabled)
 
     def step(self, action: np.ndarray):
         if self._sim is None:
@@ -206,6 +216,11 @@ class Phase4MappoEnv(gym.Env):
         contested_majority_team = self._contested_majority_team(objective_before)
         combat_metrics = self._combat_metrics_before_step(actions, contested_majority_team)
 
+        decision = None
+        if self._replay_capture:
+            from xushi2.replay_capture import replay_decision
+
+            decision = replay_decision(int(self._sim.tick), actions)
         self._sim.step_decision(actions)
         damage_delta = np.asarray(self._sim.damage_dealt_by_slot, dtype=np.int64) - previous_damage
         self._attach_damage_metrics(combat_metrics, damage_delta, contested_majority_team)
@@ -238,6 +253,8 @@ class Phase4MappoEnv(gym.Env):
         info["objective_metrics"] = objective_metrics
         info["opponent_actions"] = opponent_actions.copy()
         info["combat_metrics"] = combat_metrics
+        if decision is not None:
+            info["replay_decision"] = decision
         return self._actor_obs_buf.copy(), reward, terminated, truncated, info
 
     @staticmethod

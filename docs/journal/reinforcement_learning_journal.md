@@ -3860,3 +3860,38 @@ Next: preserve v5 as the starting checkpoint; capture and inspect sampled
 failure trajectories; port one combat mini-task to the current entity-grid
 lineage and test combat improvement together with objective retention in
 one bounded pilot. The fixed-capacity-ceiling claim remains unproven.
+
+
+## 2026-09-19 — Exact sampled matrix replays; occupancy and contest diagnosis
+
+Implementation: `c386f8f7dad7036f8080b268da1702f8f1585bc8`, PR #120,
+resolving #118. Optional matrix replay capture records both teams' actual C++
+actions, resolved match settings and every decision hash. It adds no policy
+invocations or RNG draws. Repeated all five 96-game `0xA11CE` reference cells
+with eight envs at 600t/15s/8s; all five metric JSON files were byte-identical.
+Every one of 480 initial and 288,000 decision hashes reconstructed exactly.
+These repeats are not additional independent evidence. No W&B training run.
+
+[Report, commands/configs/seeds/platform and artifact identity](../reports/2026-09-19-sampled-replays/README.md).
+The separately delivered full replay archive is identified by SHA-256 in its
+manifest; all episode diagnostics and 15 outcome-selected timelines are recorded.
+
+V5's six weak-bot losses had zero learner deaths but averaged 16.90 unlocked
+seconds with no learner on point (wins: 3.53s). Its 24 draws occupied the point
+for 41.40 of 45 unlocked seconds yet produced only 6.89s uncontested occupation.
+L3 anchor draws were largely contested too; L4 losses against v5 occupied the
+point for only 5.96s. This supports training combat together with objective
+occupancy, not diagnosing every failure as isolated aim. No capacity ceiling
+or new champion is established; v5 remains the starting checkpoint.
+
+[Next plan](../plans/active/2026-09-19-combat-and-occupancy.md): one cap-duel
+port to current native entity-grid observations, unchanged v5 weight shapes,
+then a 100-update bounded pilot with existing retention/anchor mechanisms.
+Full-game acceptance still requires weak-bot score >=2 and a sampled-v5
+win-count edge on both reference seeds, followed by fresh-seed confirmation.
+No training was launched and no human replay approval or gate clearance claimed.
+
+Validation: 66 focused Python tests, import boundaries, and all C++/Python
+3.10–3.12 CI jobs passed on the implementation commit. Capture equality and
+round-trip tests include bot/snapshot sampling, either learner team, custom
+geometry, timing overrides, auto-resets and final partial batches.

@@ -1,0 +1,1 @@
+[mappo_matrix] learner=phase4_v5_upd300_stochastic_600t_converter.pt team=A opponent=bot:weak_basic_v2 win=0.688 draw=0.250 reward=+8.555 score=2.37/0.53
