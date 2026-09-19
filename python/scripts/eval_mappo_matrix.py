@@ -139,7 +139,10 @@ def evaluate_matrix(
     learner_team: str = "A",
     canonical: bool = True,
     stochastic: bool = False,
+    num_envs: int | None = None,
 ) -> list[dict[str, Any]]:
+    if num_envs is not None and num_envs <= 0:
+        raise ValueError("num_envs must be > 0")
     # Checkpoints embed the curriculum's initial (eased) sim settings, so
     # `canonical` (the default) overrides timing/respawn to the Phase 4 gate
     # values; pass canonical=False to evaluate at as-trained settings.
@@ -160,6 +163,7 @@ def evaluate_matrix(
                 objective_timing_seconds=timing,
                 respawn_ticks=respawn,
                 stochastic=stochastic,
+                num_envs=num_envs,
             )
             rows.append(
                 _result_row(
@@ -187,6 +191,7 @@ def evaluate_matrix(
                 objective_timing_seconds=timing,
                 respawn_ticks=respawn,
                 stochastic=stochastic,
+                num_envs=num_envs,
             )
             rows.append(
                 _result_row(
@@ -206,6 +211,11 @@ def main() -> int:
     parser.add_argument("--anchor-bot", action="append", default=[])
     parser.add_argument("--opponent-checkpoint", action="append", default=[])
     parser.add_argument("--episodes", type=int, default=2)
+    parser.add_argument(
+        "--num-envs", type=int, default=None,
+        help="pin evaluation batch width; it affects seeded action sampling "
+        "and otherwise defaults to the machine CPU count",
+    )
     parser.add_argument("--seed", type=lambda s: int(s, 0), default=0xE0A17)
     parser.add_argument("--learner-team", choices=["A", "B"], default="A")
     parser.add_argument("--output", type=Path, default=None)
@@ -239,6 +249,7 @@ def main() -> int:
         canonical=not bool(args.as_trained),
         stochastic=bool(args.stochastic),
         stochastic_snapshot=bool(args.stochastic_snapshot),
+        num_envs=args.num_envs,
     )
     if not rows:
         raise ValueError("no matchups requested; pass --anchor-bot or --opponent-checkpoint")

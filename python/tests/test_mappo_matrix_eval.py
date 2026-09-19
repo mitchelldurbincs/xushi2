@@ -144,6 +144,36 @@ def test_eval_mappo_matrix_writes_bot_rows(tmp_path: Path) -> None:
         assert isinstance(row["mean_reward"], float)
 
 
+def test_pinned_matrix_width_is_independent_of_host_cpu_count(tmp_path, monkeypatch):
+    import os
+
+    from scripts.eval_mappo_matrix import evaluate_matrix
+
+    checkpoint = _write_checkpoint(
+        tmp_path / "reference.pt",
+        "phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml",
+        phase=4,
+        mutate_config=lambda config: config["env"]["sim"].update(round_length_seconds=1),
+    )
+    kwargs = dict(
+        anchor_bots=["weak_basic_v2"],
+        opponent_checkpoints=[str(checkpoint)],
+        episodes=2,
+        num_envs=2,
+        seed=0xA11CE,
+        stochastic=True,
+        stochastic_snapshot=True,
+        canonical=False,
+    )
+    monkeypatch.setattr(os, "cpu_count", lambda: 1)
+    first = evaluate_matrix([str(checkpoint)], **kwargs)
+    monkeypatch.setattr(os, "cpu_count", lambda: 32)
+    second = evaluate_matrix([str(checkpoint)], **kwargs)
+    assert first == second
+    assert len(first) == 2
+    assert all(row["episodes"] == 2 for row in first)
+
+
 def test_eval_mappo_matrix_adapts_phase4_current_selfplay_checkpoint(
     tmp_path: Path,
 ) -> None:
