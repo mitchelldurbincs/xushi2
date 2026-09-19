@@ -1,0 +1,1 @@
+[mappo_matrix] learner=phase4_l3_upd800_best_fighter.pt team=A opponent=bot:weak_basic_v2 win=0.000 draw=0.677 reward=-9.737 score=0.00/1.60

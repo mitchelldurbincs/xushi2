@@ -3819,3 +3819,44 @@ fork stated on 08-11 is unchanged by this work, but note option 2's
 cost dropped: "touches the sim's obs layer" now means one ObsConfig /
 entity_obs.cpp change with an existing counterfactual harness around
 it.
+
+
+## 2026-09-19 — Pending integration merged; reference policies re-established
+
+The six-commit simplicity/runtime branch was merged in PR #117 after all
+four CI jobs passed. Integration SHA: `3da4c143542f7d99fbfcaa4146887a187670f2ea`.
+Evaluation source: `4e18bb745d797b7859a3944a946a0f4e5be77885` (adds an optional
+`--num-envs` matrix-CLI argument; preserves the merged evaluation loop).
+
+The preserved v5-0300, L3-0800 and L4-0300 checkpoints were re-evaluated at
+600t/15s/8s, sampled learner and snapshot actions, Team A, eight envs,
+one Torch thread, 96 episodes per cell at each of 0xA11CE and 0xBEEF.
+Linux x86-64 / GCC 13.3 / Python 3.12.14 / Torch 2.8 CPU. Full commands,
+checkpoint hashes, training-config paths, effective seeds, versions and
+artifacts: [reference report](../reports/2026-09-19-reference/README.md).
+
+| Learner | Opponent | W/L/D (192 episodes) | Mean score A/B |
+|---|---|---|---|
+| v5-0300 | weak_basic_v2 | 126/14/52 | 2.358/0.596 |
+| L3-0800 | weak_basic_v2 | 1/66/125 | 0.001/1.900 |
+| L4-0300 | weak_basic_v2 | 50/81/61 | 1.872/4.064 |
+| L3-0800 | sampled v5-0300 | 1/100/91 | 0.027/3.718 |
+| L4-0300 | sampled v5-0300 | 1/141/50 | 0.001/6.069 |
+
+**Decision:** v5 remains the reference; neither successor satisfies the
+retention-plus-fighting requirement. No new champion or phase clearance.
+This is a fresh platform-pinned baseline, not a causal comparison against
+August's incompletely specified execution environment. Pre-August-12
+snapshot standings also predate the corrected serving semantics.
+
+A separate 96-episode repeat of v5-vs-weak at 0xA11CE matched the first
+JSON byte for byte; it is not counted as independent evidence. Three
+separate greedy diagnostic replays are committed, with clear labels that
+they are not the sampled matrix episodes. Exact matrix replay export is
+explicitly deferred in issue #118. No W&B run was created for this offline
+evaluation, and no human replay approval is claimed.
+
+Next: preserve v5 as the starting checkpoint; capture and inspect sampled
+failure trajectories; port one combat mini-task to the current entity-grid
+lineage and test combat improvement together with objective retention in
+one bounded pilot. The fixed-capacity-ceiling claim remains unproven.

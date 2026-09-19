@@ -1,0 +1,1 @@
+[mappo_matrix] learner=phase4_l4_upd300_repair_candidate.pt team=A opponent=bot:weak_basic_v2 win=0.292 draw=0.271 reward=-3.972 score=2.05/4.20

@@ -1,0 +1,52 @@
+[
+  {
+    "learner": "v5-0300",
+    "opponent": "weak_basic_v2",
+    "episodes": 192,
+    "wins": 126,
+    "losses": 14,
+    "draws": 52,
+    "mean_score_a": 2.358159722222222,
+    "mean_score_b": 0.5960069444444444
+  },
+  {
+    "learner": "L3-0800",
+    "opponent": "weak_basic_v2",
+    "episodes": 192,
+    "wins": 1,
+    "losses": 66,
+    "draws": 125,
+    "mean_score_a": 0.0005208333333333333,
+    "mean_score_b": 1.8998263888888887
+  },
+  {
+    "learner": "L4-0300",
+    "opponent": "weak_basic_v2",
+    "episodes": 192,
+    "wins": 50,
+    "losses": 81,
+    "draws": 61,
+    "mean_score_a": 1.8715277777777777,
+    "mean_score_b": 4.063541666666666
+  },
+  {
+    "learner": "L3-0800",
+    "opponent": "v5-0300",
+    "episodes": 192,
+    "wins": 1,
+    "losses": 100,
+    "draws": 91,
+    "mean_score_a": 0.027256944444444445,
+    "mean_score_b": 3.7175347222222226
+  },
+  {
+    "learner": "L4-0300",
+    "opponent": "v5-0300",
+    "episodes": 192,
+    "wins": 1,
+    "losses": 141,
+    "draws": 50,
+    "mean_score_a": 0.0006944444444444445,
+    "mean_score_b": 6.068923611111111
+  }
+]
