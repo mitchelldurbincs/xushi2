@@ -1,0 +1,9 @@
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+env variant 'multi_enemy' ignores ['snapshot_league'] from the config; the run is unaffected but the config does not describe it accurately
+[mappo_matrix] learner=phase4_l4_upd300_repair_candidate.pt team=A opponent=snapshot:phase4_v5_upd300_stochastic_600t_converter.pt win=0.010 draw=0.208 reward=-14.112 score=0.00/6.63

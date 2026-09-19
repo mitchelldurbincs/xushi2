@@ -1,0 +1,32 @@
+[
+  {
+    "path": "docs/reports/2026-09-19-reference/diagnostic_replays/l3-greedy.replay.gz",
+    "sha256": "45fa3bded621813cfbfe1531df85d56cf97de4c1ae60cfcff848df157804a3f3",
+    "decisions": 600,
+    "header": "format=xushi2-replay-v1 phase=4 seed=659918 round_seconds=60 action_repeat=3 obj_unlock_ticks=450 obj_capture_ticks=240 mech_dmg=1000 mech_fcd=15 mech_hbr=0.75 mech_resp=600 team_size=3 loss_mask=1,1,1",
+    "policy": "greedy",
+    "opponent": "weak_basic_v2",
+    "seed": "0xA11CE",
+    "note": "Separate illustrative rollout; not part of the sampled matrix."
+  },
+  {
+    "path": "docs/reports/2026-09-19-reference/diagnostic_replays/l4-greedy.replay.gz",
+    "sha256": "e7bdf4388d984ae74c81fa865cd43f6855f64a81706d8c7b9463cb6c459e397f",
+    "decisions": 600,
+    "header": "format=xushi2-replay-v1 phase=4 seed=659918 round_seconds=60 action_repeat=3 obj_unlock_ticks=450 obj_capture_ticks=240 mech_dmg=1000 mech_fcd=15 mech_hbr=0.75 mech_resp=600 team_size=3 loss_mask=1,1,1",
+    "policy": "greedy",
+    "opponent": "weak_basic_v2",
+    "seed": "0xA11CE",
+    "note": "Separate illustrative rollout; not part of the sampled matrix."
+  },
+  {
+    "path": "docs/reports/2026-09-19-reference/diagnostic_replays/v5-greedy.replay.gz",
+    "sha256": "1d6715eaa7f0d180f0436ecd743c3b193c87951ff176951499db0ef10ace0177",
+    "decisions": 600,
+    "header": "format=xushi2-replay-v1 phase=4 seed=659918 round_seconds=60 action_repeat=3 obj_unlock_ticks=450 obj_capture_ticks=240 mech_dmg=1000 mech_fcd=15 mech_hbr=0.75 mech_resp=600 team_size=3 loss_mask=1,1,1",
+    "policy": "greedy",
+    "opponent": "weak_basic_v2",
+    "seed": "0xA11CE",
+    "note": "Separate illustrative rollout; not part of the sampled matrix."
+  }
+]
