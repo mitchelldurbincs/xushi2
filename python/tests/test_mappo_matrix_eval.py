@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import torch
+import pytest
 import yaml
 from _paths import config_path, script_path
 
@@ -172,6 +173,66 @@ def test_pinned_matrix_width_is_independent_of_host_cpu_count(tmp_path, monkeypa
     assert first == second
     assert len(first) == 2
     assert all(row["episodes"] == 2 for row in first)
+
+
+@pytest.mark.parametrize("learner_team,canonical", [("A", False), ("B", True)])
+def test_sampled_matrix_replays_preserve_metrics_and_reconstruct_every_hash(
+    tmp_path, learner_team, canonical,
+):
+    from scripts.analyze_replay_combat import _config_from_header, _load_replay
+    from scripts.eval_mappo_matrix import evaluate_matrix
+    from xushi2 import xushi2_cpp as cpp
+
+    def configure(config):
+        sim = config["env"]["sim"]
+        sim["round_length_seconds"] = 2
+        sim["mechanics"]["respawn_ticks"] = 600
+        sim["map"] = {"min_x": 0.0, "min_y": 0.0, "max_x": 47.123456, "max_y": 49.0}
+        sim["cover_circles"] = [{"x": 8.1234567, "y": 30.0, "radius": 0.81234567}]
+        sim["wall_segments"] = [{"x1": 30.123456, "y1": 8.0, "x2": 33.0,
+                                  "y2": 9.0, "half_width": 0.21234567}]
+
+    checkpoint = _write_checkpoint(
+        tmp_path / "reference.pt",
+        "phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml",
+        phase=4, mutate_config=configure,
+    )
+    kwargs = dict(anchor_bots=["weak_basic_v2"], opponent_checkpoints=[str(checkpoint)],
+                  episodes=3, num_envs=2, seed=0xA11CE, stochastic=True,
+                  stochastic_snapshot=True, canonical=canonical, learner_team=learner_team)
+    plain = evaluate_matrix([str(checkpoint)], **kwargs)
+    directory = tmp_path / "replays"
+    captured = evaluate_matrix([str(checkpoint)], replay_dir=directory, **kwargs)
+    assert captured == plain
+    for cell, row in zip(sorted(directory.iterdir()), captured, strict=True):
+        index = json.loads((cell / "index.json").read_text())
+        assert index["completed_episodes"] == 3
+        assert len(list(cell.glob("*.replay"))) == 3  # discard uncounted fourth completion
+        assert [ep["vector_lane"] for ep in index["episodes"]] == [0, 1, 0]
+        assert [ep["lane_episode"] for ep in index["episodes"]] == [0, 0, 1]
+        scores = []
+        for episode in index["episodes"]:
+            header, decisions = _load_replay(cell / episode["replay"])
+            cfg = _config_from_header(header)
+            assert cfg.seed == index["seed"] + episode["vector_lane"] + 10_000 * episode["lane_episode"]
+            assert cfg.mechanics.respawn_ticks == (240 if canonical else 600)
+            assert cfg.objective_unlock_ticks == round(row["objective_unlock_seconds"] * cpp.TICK_HZ)
+            assert cfg.objective_capture_ticks == round(row["objective_capture_seconds"] * cpp.TICK_HZ)
+            sim = cpp.Sim(cfg)
+            assert f"0x{sim.state_hash:016x}" == episode["initial_state_hash"]
+            sidecar = json.loads((cell / episode["sidecar"]).read_text())
+            for decision, (tick, expected_hash) in zip(decisions, sidecar["state_hashes"], strict=True):
+                assert sim.tick == decision.tick
+                sim.step_decision(decision.actions)
+                assert sim.tick == tick
+                assert f"0x{sim.state_hash:016x}" == expected_hash
+            assert sim.episode_over
+            assert sim.team_a_score == episode["final"]["team_a_score"]
+            assert sim.team_b_score == episode["final"]["team_b_score"]
+            scores.append(sim.team_a_score)
+        assert sum(scores) / len(scores) == row["mean_score_a"]
+    with pytest.raises(FileExistsError):
+        evaluate_matrix([str(checkpoint)], replay_dir=directory, **kwargs)
 
 
 def test_eval_mappo_matrix_adapts_phase4_current_selfplay_checkpoint(

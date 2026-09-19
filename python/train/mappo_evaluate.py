@@ -3,6 +3,8 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Callable
+from functools import partial
+from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
@@ -10,6 +12,7 @@ import numpy as np
 import torch
 
 from envs.runtime_factory import make_vector_env
+from train.mappo_eval_replay import EvalReplayWriter, recording_env
 from train.mappo_model import (
     MappoActorCritic,
     MappoEvalStats,
@@ -137,6 +140,8 @@ def evaluate_mappo(
     objective_timing_seconds: tuple[float, float] | None = None,
     respawn_ticks: int | None = None,
     stochastic: bool = False,
+    replay_dir: Path | None = None,
+    replay_metadata: dict | None = None,
 ) -> MappoEvalStats:
     episodes = int(episodes)
     if episodes <= 0:
@@ -145,6 +150,15 @@ def evaluate_mappo(
     if num_envs is None:
         num_envs = min(episodes, max(1, os.cpu_count() or 1))
     num_envs = max(1, min(int(num_envs), episodes))
+    recorder = None
+    if replay_dir is not None:
+        if backend != "sync":
+            raise ValueError("exact evaluation replay capture requires backend='sync'")
+        recorder = EvalReplayWriter(replay_dir, {
+            **(replay_metadata or {}), "seed": int(seed), "num_envs": num_envs,
+            "requested_episodes": episodes, "stochastic": bool(stochastic),
+        })
+        env_fn = partial(recording_env, env_fn)
 
     was_training = model.training
     model.eval()
@@ -192,6 +206,8 @@ def evaluate_mappo(
             # only (no live-sim setter).
             vec_env.set_respawn_ticks(int(respawn_ticks))
         obs_np, _critic_obs, _infos = vec_env.reset(seed=int(seed))
+        if recorder is not None:
+            recorder.reset(_infos)
         if objective_timing_seconds is not None:
             eval_unlock_seconds = float(objective_timing_seconds[0])
             eval_capture_seconds = float(objective_timing_seconds[1])
@@ -297,6 +313,8 @@ def evaluate_mappo(
             action_3d = action.view(num_envs, cfg.n_agents, cfg.action_dim)
             action_np = action_3d.cpu().numpy()
             next_obs_np, reward_np, term, trunc, _critic, infos = vec_env.step(action_np)
+            if recorder is not None:
+                recorder.append(infos)
             for env_i, info_i in enumerate(infos):
                 combat_metrics = info_i.get("combat_metrics")
                 if not isinstance(combat_metrics, dict):
@@ -350,6 +368,9 @@ def evaluate_mappo(
                     break
                 info_i = infos[i]
                 final_info = info_i.get("final_info", info_i)
+                if recorder is not None:
+                    recorder.complete(i, info_i, reward=float(ep_rewards[i]),
+                                      terminated=bool(term[i]), truncated=bool(trunc[i]))
                 won, lost, drew = _eval_outcome_counts(
                     winner=str(final_info.get("winner", "")),
                     learner_team=str(final_info.get("learner_team", "")),
@@ -381,6 +402,8 @@ def evaluate_mappo(
         if was_training:
             model.train()
 
+    if recorder is not None:
+        recorder.finish()
     combat_a = _combat_summary(combat_totals["A"])
     combat_b = _combat_summary(combat_totals["B"])
     focus_a_count = max(1, int(focus_totals["A"]["count"]))

@@ -271,6 +271,38 @@ Older text replays may omit objective timing keys. Loaders must treat missing
 fields as legacy defaults from `MatchConfig` (unlock `15 * tick_hz`, capture
 `8 * tick_hz`) so existing replay artifacts continue to load.
 
+### Exact matrix evaluation capture
+
+`python/scripts/eval_mappo_matrix.py --replay-dir NEW_DIRECTORY` optionally
+writes one existing-format text replay for each **counted** evaluation episode.
+This supports the synchronous three-agent flat/entity-grid match environments,
+scripted or sampled snapshot opponents, and either learner team for bot cells.
+Unsupported environments/backends and `randomize_map=True` fail explicitly;
+fixed custom map bounds, covers, walls, fog and hero assignments are preserved.
+The viewer format and simulator are unchanged.
+
+Each `cell-NNN/index.json` identifies the learner/opponent checkpoint paths and
+hashes, effective policy seed, sampling modes and actual vector width. Episodes
+map to their vector lane, lane-local episode number, resolved sim seed (in the
+replay header), scores and outcome. A `.replay.json` sidecar stores the initial
+state hash and the hash after every decision. Reconstruct with the same sim
+build and compare those hashes; the hashes are verification data, not policy
+inputs. No additional policy invocation or random draw is used for capture.
+
+Actions are serialized directly from the six world-frame C++ `Action` objects
+passed to `step_decision`, using nine significant digits to round-trip float32.
+This avoids reconstructing scripted/snapshot actions from diagnostic policy
+arrays, which differ in frame and can lose precision when aim is rescaled.
+Headers come from the resolved reset-time `MatchConfig`, after evaluation
+timing/respawn overrides. Auto-reset metadata starts the next replay; surplus
+completions in the last vector batch are excluded along with their metrics.
+An existing output directory is rejected so unrelated captures cannot mix.
+
+Keep the matrix JSON and run identity (commit, config paths, platform and W&B
+URL or explicit offline status) with the replay directory. Capture is opt-in
+for compatibility; evaluation callers that omit it still need to disclose
+their missing replay artifacts under the training checklist.
+
 ## Paths / conventions
 
 ```

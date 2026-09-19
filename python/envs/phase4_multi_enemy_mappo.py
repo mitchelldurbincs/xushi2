@@ -76,6 +76,9 @@ class Phase4MultiEnemyMappoEnv(gym.Env):
     def build_critic_obs(self, out: np.ndarray) -> None:
         self._base.build_critic_obs(out)
 
+    def set_replay_capture(self, enabled: bool) -> None:
+        self._base.set_replay_capture(enabled)
+
     # Runtime curriculum / reward setters must be forwarded explicitly: the
     # vector env discovers them with getattr() and silently skips envs that
     # lack them. Before these delegations existed, every multi-enemy run
