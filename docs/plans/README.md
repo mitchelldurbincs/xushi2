@@ -28,6 +28,8 @@ Use date-first filenames so files sort chronologically:
 
 Keep this list intentionally small and update it whenever canonical planning docs change.
 
+Current next experiment: [2026-09-19-combat-and-occupancy.md](active/2026-09-19-combat-and-occupancy.md). It follows the September reference rebaseline and exact sampled replay diagnosis; the older plans below retain design history.
+
 - [2026-05-08-phase4-cap-training-escalation.md](active/2026-05-08-phase4-cap-training-escalation.md)
 - [2026-05-08-phase4-cap-training-escalation-design.md](active/2026-05-08-phase4-cap-training-escalation-design.md)
 - [2026-05-08-team-spirit-per-agent-rewards.md](active/2026-05-08-team-spirit-per-agent-rewards.md)

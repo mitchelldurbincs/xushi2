@@ -1,0 +1,5290 @@
+{
+  "verified_episodes": 480,
+  "verified_decisions": 288000,
+  "measurement": "Post-decision native actor state, all six slots. Objective duration metrics start at unlock; decision-time approximation, not exact tick-integrated occupancy. Combat diagnostics reuse analyze_replay_combat, whose aim error is pre-action and to the nearest visible aim direction, not a measure of shot accuracy.",
+  "selection": "First episode of each outcome in completion order for each cell.",
+  "groups": [
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "outcome": "win",
+      "episodes": 1,
+      "never_on_point_a": 0,
+      "mean_score_a": 5.233333333333333,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 0.0,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 5.399999999999997,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 14.099999999999966,
+        "on_point_agent_seconds_b": 0.0,
+        "alive_but_off_point_seconds_a": 30.90000000000017,
+        "alive_but_off_point_seconds_b": 45.00000000000037,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 14.099999999999966,
+        "on_point_seconds_b": 0.0,
+        "uncontested_seconds_a": 14.099999999999966,
+        "uncontested_seconds_b": 0.0,
+        "contested_seconds": 0.0
+      }
+    },
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "outcome": "loss",
+      "episodes": 45,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 6.206666666666667,
+      "mean_kills_a": 0.08888888888888889,
+      "mean_kills_b": 1.0666666666666667,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.08222222222222222,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 127.27777777777727,
+        "alive_agent_seconds_b": 133.39555555555498,
+        "on_point_agent_seconds_a": 4.764444444444443,
+        "on_point_agent_seconds_b": 43.55777777777783,
+        "alive_but_off_point_seconds_a": 41.042222222222534,
+        "alive_but_off_point_seconds_b": 25.422222222222324,
+        "alive_advantage_off_point_seconds_a": 0.7733333333333319,
+        "on_point_seconds_a": 3.9577777777777756,
+        "on_point_seconds_b": 19.577777777777804,
+        "uncontested_seconds_a": 0.1111111111111111,
+        "uncontested_seconds_b": 15.73111111111111,
+        "contested_seconds": 3.8466666666666645
+      }
+    },
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "outcome": "draw",
+      "episodes": 50,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 0.1,
+      "mean_kills_b": 0.56,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.44600000000000006,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 130.71999999999946,
+        "alive_agent_seconds_b": 133.31199999999941,
+        "on_point_agent_seconds_a": 5.1120000000000125,
+        "on_point_agent_seconds_b": 13.617999999999993,
+        "alive_but_off_point_seconds_a": 40.770000000000316,
+        "alive_but_off_point_seconds_b": 39.196000000000296,
+        "alive_advantage_off_point_seconds_a": 0.7199999999999984,
+        "on_point_seconds_a": 4.230000000000008,
+        "on_point_seconds_b": 5.804000000000022,
+        "uncontested_seconds_a": 0.6799999999999996,
+        "uncontested_seconds_b": 2.2539999999999973,
+        "contested_seconds": 3.550000000000004
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "outcome": "win",
+      "episodes": 1,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.1,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 3.0,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 8.099999999999987,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 80.99999999999955,
+        "on_point_agent_seconds_a": 86.90000000000006,
+        "on_point_agent_seconds_b": 74.69999999999959,
+        "alive_but_off_point_seconds_a": 0.1,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 0.1,
+        "on_point_seconds_a": 44.90000000000037,
+        "on_point_seconds_b": 36.900000000000254,
+        "uncontested_seconds_a": 8.099999999999987,
+        "uncontested_seconds_b": 0.1,
+        "contested_seconds": 36.80000000000025
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "outcome": "loss",
+      "episodes": 35,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 6.027619047619048,
+      "mean_kills_a": 0.5428571428571428,
+      "mean_kills_b": 0.7142857142857143,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 130.42857142857096,
+        "alive_agent_seconds_b": 127.30285714285674,
+        "on_point_agent_seconds_a": 48.465714285714476,
+        "on_point_agent_seconds_b": 126.80285714285674,
+        "alive_but_off_point_seconds_a": 14.039999999999996,
+        "alive_but_off_point_seconds_b": 0.0,
+        "alive_advantage_off_point_seconds_a": 3.251428571428565,
+        "on_point_seconds_a": 30.96000000000017,
+        "on_point_seconds_b": 45.00000000000037,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 14.039999999999996,
+        "contested_seconds": 30.96000000000017
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "outcome": "draw",
+      "episodes": 60,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 0.5166666666666667,
+      "mean_kills_b": 0.2,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.11833333333333339,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 133.59999999999945,
+        "alive_agent_seconds_b": 130.25166666666613,
+        "on_point_agent_seconds_a": 66.4466666666668,
+        "on_point_agent_seconds_b": 130.1233333333328,
+        "alive_but_off_point_seconds_a": 4.304999999999996,
+        "alive_but_off_point_seconds_b": 0.05500000000000003,
+        "alive_advantage_off_point_seconds_a": 0.3466666666666667,
+        "on_point_seconds_a": 40.695000000000306,
+        "on_point_seconds_b": 44.88166666666703,
+        "uncontested_seconds_a": 0.11833333333333339,
+        "uncontested_seconds_b": 4.304999999999996,
+        "contested_seconds": 40.57666666666697
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "outcome": "win",
+      "episodes": 1,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.13333333333333333,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 0.0,
+      "mean_kills_b": 3.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 2.700000000000001,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 117.49999999999918,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 25.800000000000114,
+        "on_point_agent_seconds_b": 14.700000000000001,
+        "alive_but_off_point_seconds_a": 23.90000000000007,
+        "alive_but_off_point_seconds_b": 39.000000000000284,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 21.10000000000003,
+        "on_point_seconds_b": 5.999999999999995,
+        "uncontested_seconds_a": 15.99999999999996,
+        "uncontested_seconds_b": 0.8999999999999999,
+        "contested_seconds": 5.099999999999998
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "outcome": "loss",
+      "episodes": 75,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 8.486666666666666,
+      "mean_kills_a": 0.12,
+      "mean_kills_b": 1.04,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.5413333333333333,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 125.8066666666662,
+        "alive_agent_seconds_b": 132.81733333333273,
+        "on_point_agent_seconds_a": 7.1426666666666705,
+        "on_point_agent_seconds_b": 49.42266666666667,
+        "alive_but_off_point_seconds_a": 39.03733333333362,
+        "alive_but_off_point_seconds_b": 21.242666666666725,
+        "alive_advantage_off_point_seconds_a": 1.0199999999999991,
+        "on_point_seconds_a": 5.962666666666662,
+        "on_point_seconds_b": 23.757333333333413,
+        "uncontested_seconds_a": 0.7,
+        "uncontested_seconds_b": 18.494666666666685,
+        "contested_seconds": 5.262666666666661
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "outcome": "draw",
+      "episodes": 20,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 0.0,
+      "mean_kills_b": 0.6,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 0.7099999999999995,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 131.2749999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 3.7150000000000025,
+        "on_point_agent_seconds_b": 10.279999999999996,
+        "alive_but_off_point_seconds_a": 41.47000000000032,
+        "alive_but_off_point_seconds_b": 40.640000000000306,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 3.530000000000001,
+        "on_point_seconds_b": 4.359999999999996,
+        "uncontested_seconds_a": 1.174999999999998,
+        "uncontested_seconds_b": 2.004999999999998,
+        "contested_seconds": 2.354999999999996
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "outcome": "win",
+      "episodes": 22,
+      "never_on_point_a": 0,
+      "mean_score_a": 4.362121212121212,
+      "mean_score_b": 0.29696969696969694,
+      "mean_kills_a": 3.8636363636363638,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 6.9363636363636285,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 76.54545454545445,
+        "on_point_agent_seconds_a": 80.06363636363615,
+        "on_point_agent_seconds_b": 64.57272727272729,
+        "alive_but_off_point_seconds_a": 4.813636363636356,
+        "alive_but_off_point_seconds_b": 3.954545454545456,
+        "alive_advantage_off_point_seconds_a": 2.1636363636363622,
+        "on_point_seconds_a": 40.186363636363936,
+        "on_point_seconds_b": 30.936363636363808,
+        "uncontested_seconds_a": 12.972727272727246,
+        "uncontested_seconds_b": 3.7227272727272678,
+        "contested_seconds": 27.21363636363648
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "outcome": "loss",
+      "episodes": 39,
+      "never_on_point_a": 0,
+      "mean_score_a": 1.7094017094017095,
+      "mean_score_b": 9.496581196581197,
+      "mean_kills_a": 2.58974358974359,
+      "mean_kills_b": 0.02564102564102564,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 3.0846153846153808,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.6923076923071,
+        "alive_agent_seconds_b": 91.7923076923076,
+        "on_point_agent_seconds_a": 48.69487179487193,
+        "on_point_agent_seconds_b": 83.57948717948716,
+        "alive_but_off_point_seconds_a": 18.682051282051297,
+        "alive_but_off_point_seconds_b": 1.920512820512821,
+        "alive_advantage_off_point_seconds_a": 8.338461538461527,
+        "on_point_seconds_a": 26.317948717948827,
+        "on_point_seconds_b": 38.564102564102846,
+        "uncontested_seconds_a": 5.382051282051271,
+        "uncontested_seconds_b": 17.628205128205135,
+        "contested_seconds": 20.935897435897488
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "outcome": "draw",
+      "episodes": 35,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 2.8857142857142857,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 2.531428571428571,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 87.93428571428583,
+        "on_point_agent_seconds_a": 65.32285714285733,
+        "on_point_agent_seconds_b": 80.52571428571444,
+        "alive_but_off_point_seconds_a": 2.5999999999999988,
+        "alive_but_off_point_seconds_b": 2.288571428571429,
+        "alive_advantage_off_point_seconds_a": 1.6542857142857144,
+        "on_point_seconds_a": 42.40000000000033,
+        "on_point_seconds_b": 41.08000000000032,
+        "uncontested_seconds_a": 3.6914285714285677,
+        "uncontested_seconds_b": 2.37142857142857,
+        "contested_seconds": 38.70857142857171
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "outcome": "win",
+      "episodes": 66,
+      "never_on_point_a": 0,
+      "mean_score_a": 3.2702020202020203,
+      "mean_score_b": 0.054040404040404035,
+      "mean_kills_a": 4.515151515151516,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 5.748484848484844,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 73.30151515151502,
+        "on_point_agent_seconds_a": 83.56515151515158,
+        "on_point_agent_seconds_b": 60.40151515151513,
+        "alive_but_off_point_seconds_a": 3.5287878787878775,
+        "alive_but_off_point_seconds_b": 4.20909090909091,
+        "alive_advantage_off_point_seconds_a": 2.1106060606060613,
+        "on_point_seconds_a": 41.471212121212446,
+        "on_point_seconds_b": 31.52272727272745,
+        "uncontested_seconds_a": 12.28636363636361,
+        "uncontested_seconds_b": 2.337878787878787,
+        "contested_seconds": 29.18484848484863
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "outcome": "loss",
+      "episodes": 6,
+      "never_on_point_a": 0,
+      "mean_score_a": 1.988888888888889,
+      "mean_score_b": 7.883333333333333,
+      "mean_kills_a": 3.5,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 4.716666666666661,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 81.61666666666657,
+        "on_point_agent_seconds_a": 52.533333333333495,
+        "on_point_agent_seconds_b": 70.18333333333335,
+        "alive_but_off_point_seconds_a": 16.900000000000016,
+        "alive_but_off_point_seconds_b": 2.7333333333333343,
+        "alive_advantage_off_point_seconds_a": 6.733333333333324,
+        "on_point_seconds_a": 28.100000000000126,
+        "on_point_seconds_b": 36.35000000000024,
+        "uncontested_seconds_a": 7.749999999999983,
+        "uncontested_seconds_b": 16.000000000000007,
+        "contested_seconds": 20.350000000000076
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "outcome": "draw",
+      "episodes": 24,
+      "never_on_point_a": 0,
+      "mean_score_a": 0.0,
+      "mean_score_b": 0.0,
+      "mean_kills_a": 4.958333333333333,
+      "mean_kills_b": 0.0,
+      "objective_means": {
+        "longest_uncontested_seconds_a": 3.8875000000000006,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 67.80416666666707,
+        "on_point_agent_seconds_a": 74.466666666667,
+        "on_point_agent_seconds_b": 55.250000000000334,
+        "alive_but_off_point_seconds_a": 3.595833333333332,
+        "alive_but_off_point_seconds_b": 4.708333333333332,
+        "alive_advantage_off_point_seconds_a": 3.283333333333333,
+        "on_point_seconds_a": 41.40416666666699,
+        "on_point_seconds_b": 37.35000000000026,
+        "uncontested_seconds_a": 6.887499999999991,
+        "uncontested_seconds_b": 2.8333333333333326,
+        "contested_seconds": 34.516666666666886
+      }
+    }
+  ],
+  "selected": [
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0029.replay",
+      "verified_decisions": 600,
+      "outcome": "win",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0xb17e4f52338d8d30",
+        "winner": "A",
+        "learner_team": "A",
+        "team_a_score": 5.233333333333333,
+        "team_b_score": 0.0,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.3,
+      "objective": {
+        "longest_uncontested_seconds_a": 5.399999999999997,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 14.099999999999966,
+        "on_point_agent_seconds_b": 0.0,
+        "alive_but_off_point_seconds_a": 30.90000000000017,
+        "alive_but_off_point_seconds_b": 45.00000000000037,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 14.099999999999966,
+        "on_point_seconds_b": 0.0,
+        "uncontested_seconds_a": 14.099999999999966,
+        "uncontested_seconds_b": 0.0,
+        "contested_seconds": 0.0
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.13333333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 4.833333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 5.233333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0029.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "690923",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 5.233333333333333,
+          "team_b_score": 0.0,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.A",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.002777777777777778,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 1.756252312228658,
+            "aim_target_counts": {
+              "3": 443,
+              "4": 589,
+              "5": 768
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 22,
+            "damage_hit_per_fire_command": 0.012222222222222223,
+            "kill_deltas": 0,
+            "damage_centi_hp": 22000,
+            "mean_nearest_visible_aim_error_rad": 1.7387496114235732,
+            "aim_target_counts": {
+              "0": 945,
+              "1": 529,
+              "2": 326
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 2,
+            "damage_hit_per_fire_command": 0.0033333333333333335,
+            "kill_deltas": 0,
+            "damage_centi_hp": 2000,
+            "mean_nearest_visible_aim_error_rad": 1.765237899083548,
+            "aim_target_counts": {
+              "3": 160,
+              "4": 131,
+              "5": 309
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 1,
+            "damage_hit_per_fire_command": 0.0016666666666666668,
+            "kill_deltas": 0,
+            "damage_centi_hp": 1000,
+            "mean_nearest_visible_aim_error_rad": 1.7698491234935583,
+            "aim_target_counts": {
+              "3": 142,
+              "4": 245,
+              "5": 213
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 2,
+            "damage_hit_per_fire_command": 0.0033333333333333335,
+            "kill_deltas": 0,
+            "damage_centi_hp": 2000,
+            "mean_nearest_visible_aim_error_rad": 1.7336699141088676,
+            "aim_target_counts": {
+              "3": 141,
+              "4": 213,
+              "5": 246
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.008333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 1.8280723989792804,
+            "aim_target_counts": {
+              "0": 331,
+              "1": 168,
+              "2": 101
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 8,
+            "damage_hit_per_fire_command": 0.013333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 8000,
+            "mean_nearest_visible_aim_error_rad": 1.7127937154238437,
+            "aim_target_counts": {
+              "0": 313,
+              "1": 175,
+              "2": 112
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 9,
+            "damage_hit_per_fire_command": 0.015,
+            "kill_deltas": 0,
+            "damage_centi_hp": 9000,
+            "mean_nearest_visible_aim_error_rad": 1.6753827198675961,
+            "aim_target_counts": {
+              "0": 301,
+              "1": 186,
+              "2": 113
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0001.replay",
+      "verified_decisions": 600,
+      "outcome": "loss",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0xb3df83fd6c60be6c",
+        "winner": "B",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 5.966666666666667,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.3,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.1,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 4.5,
+        "on_point_agent_seconds_b": 41.80000000000026,
+        "alive_but_off_point_seconds_a": 40.500000000000306,
+        "alive_but_off_point_seconds_b": 18.9,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 4.5,
+        "on_point_seconds_b": 26.1000000000001,
+        "uncontested_seconds_a": 0.1,
+        "uncontested_seconds_b": 21.70000000000004,
+        "contested_seconds": 4.4
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 2.5,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 5.966666666666667,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0001.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "660919",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 5.966666666666667,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.B",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 18,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 18000,
+            "mean_nearest_visible_aim_error_rad": 1.527088725605027,
+            "aim_target_counts": {
+              "3": 525,
+              "4": 493,
+              "5": 782
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 13,
+            "damage_hit_per_fire_command": 0.007222222222222222,
+            "kill_deltas": 0,
+            "damage_centi_hp": 13000,
+            "mean_nearest_visible_aim_error_rad": 1.583177147941839,
+            "aim_target_counts": {
+              "0": 952,
+              "1": 367,
+              "2": 481
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.4780639886858402,
+            "aim_target_counts": {
+              "3": 173,
+              "4": 155,
+              "5": 272
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 11,
+            "damage_hit_per_fire_command": 0.018333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 11000,
+            "mean_nearest_visible_aim_error_rad": 1.400492634350818,
+            "aim_target_counts": {
+              "3": 179,
+              "4": 165,
+              "5": 256
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 1,
+            "damage_hit_per_fire_command": 0.0016666666666666668,
+            "kill_deltas": 0,
+            "damage_centi_hp": 1000,
+            "mean_nearest_visible_aim_error_rad": 1.702709553778423,
+            "aim_target_counts": {
+              "3": 173,
+              "4": 173,
+              "5": 254
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.664232896461514,
+            "aim_target_counts": {
+              "0": 334,
+              "1": 105,
+              "2": 161
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.7204642027556725,
+            "aim_target_counts": {
+              "0": 306,
+              "1": 130,
+              "2": 164
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.008333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 1.3648343446083309,
+            "aim_target_counts": {
+              "0": 312,
+              "1": 132,
+              "2": 156
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l3-vs-v5-a11ce",
+      "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0000.replay",
+      "verified_decisions": 600,
+      "outcome": "draw",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x974e83440f878484",
+        "winner": "Neutral",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 0.0,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.3,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 0.0,
+        "on_point_agent_seconds_b": 0.0,
+        "alive_but_off_point_seconds_a": 45.00000000000037,
+        "alive_but_off_point_seconds_b": 45.00000000000037,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 0.0,
+        "on_point_seconds_b": 0.0,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 0.0,
+        "contested_seconds": 0.0
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-v5-a11ce/cell-000/episode-0000.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "660918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 0.0,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.Neutral",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 13,
+            "damage_hit_per_fire_command": 0.007222222222222222,
+            "kill_deltas": 0,
+            "damage_centi_hp": 13000,
+            "mean_nearest_visible_aim_error_rad": 1.3581656751643203,
+            "aim_target_counts": {
+              "3": 470,
+              "4": 607,
+              "5": 723
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 12,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 12000,
+            "mean_nearest_visible_aim_error_rad": 1.636842654223649,
+            "aim_target_counts": {
+              "0": 710,
+              "1": 451,
+              "2": 639
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.4266014050604885,
+            "aim_target_counts": {
+              "3": 167,
+              "4": 190,
+              "5": 243
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 2,
+            "damage_hit_per_fire_command": 0.0033333333333333335,
+            "kill_deltas": 0,
+            "damage_centi_hp": 2000,
+            "mean_nearest_visible_aim_error_rad": 1.3523325532891008,
+            "aim_target_counts": {
+              "3": 160,
+              "4": 214,
+              "5": 226
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 8,
+            "damage_hit_per_fire_command": 0.013333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 8000,
+            "mean_nearest_visible_aim_error_rad": 1.295563067143372,
+            "aim_target_counts": {
+              "3": 143,
+              "4": 203,
+              "5": 254
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.6545939381220862,
+            "aim_target_counts": {
+              "0": 244,
+              "1": 137,
+              "2": 219
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.6479030821549032,
+            "aim_target_counts": {
+              "0": 239,
+              "1": 149,
+              "2": 212
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.008333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 1.6080309423939574,
+            "aim_target_counts": {
+              "0": 227,
+              "1": 165,
+              "2": 208
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0044.replay",
+      "verified_decisions": 600,
+      "outcome": "win",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x6baab6f703b8d3f4",
+        "winner": "A",
+        "learner_team": "A",
+        "team_a_score": 0.1,
+        "team_b_score": 0.0,
+        "team_a_kills": 3,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 8.099999999999987,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 80.99999999999955,
+        "on_point_agent_seconds_a": 86.90000000000006,
+        "on_point_agent_seconds_b": 74.69999999999959,
+        "alive_but_off_point_seconds_a": 0.1,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 0.1,
+        "on_point_seconds_a": 44.90000000000037,
+        "on_point_seconds_b": 36.900000000000254,
+        "uncontested_seconds_a": 8.099999999999987,
+        "uncontested_seconds_b": 0.1,
+        "contested_seconds": 36.80000000000025
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 2,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.1,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.1,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0044.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "709922",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.1,
+          "team_b_score": 0.0,
+          "team_a_kills": 3,
+          "team_b_kills": 0,
+          "winner": "Team.A",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1680,
+            "visible_fire_command_rate": 0.9333333333333333,
+            "damage_hits": 53,
+            "damage_hit_per_fire_command": 0.029444444444444443,
+            "kill_deltas": 3,
+            "damage_centi_hp": 53000,
+            "mean_nearest_visible_aim_error_rad": 0.9703461637113936,
+            "aim_target_counts": {
+              "3": 848,
+              "4": 361,
+              "5": 471
+            }
+          },
+          "B": {
+            "fire_commands": 64,
+            "visible_fire_commands": 64,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 14,
+            "damage_hit_per_fire_command": 0.21875,
+            "kill_deltas": 0,
+            "damage_centi_hp": 14000,
+            "mean_nearest_visible_aim_error_rad": 0.3720360973263741,
+            "aim_target_counts": {
+              "0": 28,
+              "1": 10,
+              "2": 26
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 560,
+            "visible_fire_command_rate": 0.9333333333333333,
+            "damage_hits": 26,
+            "damage_hit_per_fire_command": 0.043333333333333335,
+            "kill_deltas": 2,
+            "damage_centi_hp": 26000,
+            "mean_nearest_visible_aim_error_rad": 0.5940395255996485,
+            "aim_target_counts": {
+              "3": 301,
+              "4": 122,
+              "5": 137
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 560,
+            "visible_fire_command_rate": 0.9333333333333333,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.4370272799317085,
+            "aim_target_counts": {
+              "3": 300,
+              "4": 122,
+              "5": 138
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 560,
+            "visible_fire_command_rate": 0.9333333333333333,
+            "damage_hits": 23,
+            "damage_hit_per_fire_command": 0.03833333333333333,
+            "kill_deltas": 1,
+            "damage_centi_hp": 23000,
+            "mean_nearest_visible_aim_error_rad": 0.8799716856028235,
+            "aim_target_counts": {
+              "3": 247,
+              "4": 117,
+              "5": 196
+            }
+          },
+          "3": {
+            "fire_commands": 24,
+            "visible_fire_commands": 24,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.16666666666666666,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.3968992336173543,
+            "aim_target_counts": {
+              "0": 10,
+              "1": 2,
+              "2": 12
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.3,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 0.28748648336644533,
+            "aim_target_counts": {
+              "0": 9,
+              "1": 4,
+              "2": 7
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.4267499477371265,
+            "aim_target_counts": {
+              "0": 9,
+              "1": 4,
+              "2": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0008.replay",
+      "verified_decisions": 600,
+      "outcome": "loss",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0xd6c249563641607a",
+        "winner": "B",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 21.133333333333333,
+        "team_a_kills": 1,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 122.59999999999978,
+        "on_point_agent_seconds_a": 15.79999999999996,
+        "on_point_agent_seconds_b": 122.59999999999978,
+        "alive_but_off_point_seconds_a": 29.200000000000145,
+        "alive_but_off_point_seconds_b": 0.0,
+        "alive_advantage_off_point_seconds_a": 12.399999999999972,
+        "on_point_seconds_a": 15.79999999999996,
+        "on_point_seconds_b": 45.00000000000037,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 29.200000000000145,
+        "contested_seconds": 15.79999999999996
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 1.1333333333333333,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 6.133333333333334,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 0,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 11.133333333333333,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 0,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 16.133333333333333,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 0,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 21.133333333333333,
+          "kills_a": 1,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0008.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "669918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 21.133333333333333,
+          "team_a_kills": 1,
+          "team_b_kills": 0,
+          "winner": "Team.B",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 28,
+            "damage_hit_per_fire_command": 0.015555555555555555,
+            "kill_deltas": 1,
+            "damage_centi_hp": 28000,
+            "mean_nearest_visible_aim_error_rad": 1.39519407808654,
+            "aim_target_counts": {
+              "3": 229,
+              "4": 642,
+              "5": 929
+            }
+          },
+          "B": {
+            "fire_commands": 84,
+            "visible_fire_commands": 84,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 17,
+            "damage_hit_per_fire_command": 0.20238095238095238,
+            "kill_deltas": 0,
+            "damage_centi_hp": 17000,
+            "mean_nearest_visible_aim_error_rad": 0.4305683063876535,
+            "aim_target_counts": {
+              "0": 40,
+              "1": 26,
+              "2": 18
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 15,
+            "damage_hit_per_fire_command": 0.025,
+            "kill_deltas": 0,
+            "damage_centi_hp": 15000,
+            "mean_nearest_visible_aim_error_rad": 1.1642614391217991,
+            "aim_target_counts": {
+              "3": 121,
+              "4": 181,
+              "5": 298
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.011666666666666667,
+            "kill_deltas": 1,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 1.3434582040198315,
+            "aim_target_counts": {
+              "3": 53,
+              "4": 208,
+              "5": 339
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.6778625911179894,
+            "aim_target_counts": {
+              "3": 55,
+              "4": 253,
+              "5": 292
+            }
+          },
+          "3": {
+            "fire_commands": 24,
+            "visible_fire_commands": 24,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.20833333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.41976224021073155,
+            "aim_target_counts": {
+              "0": 14,
+              "1": 7,
+              "2": 3
+            }
+          },
+          "4": {
+            "fire_commands": 30,
+            "visible_fire_commands": 30,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.16666666666666666,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.3266193037469802,
+            "aim_target_counts": {
+              "0": 12,
+              "1": 11,
+              "2": 7
+            }
+          },
+          "5": {
+            "fire_commands": 30,
+            "visible_fire_commands": 30,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.23333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 0.5431621619698642,
+            "aim_target_counts": {
+              "0": 14,
+              "1": 8,
+              "2": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l3-vs-weak-a11ce",
+      "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0000.replay",
+      "verified_decisions": 600,
+      "outcome": "draw",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0xa5e8f95b3380eae7",
+        "winner": "Neutral",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 0.0,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 57.40000000000029,
+        "on_point_agent_seconds_b": 134.9999999999994,
+        "alive_but_off_point_seconds_a": 5.599999999999996,
+        "alive_but_off_point_seconds_b": 0.0,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 39.40000000000029,
+        "on_point_seconds_b": 45.00000000000037,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 5.599999999999996,
+        "contested_seconds": 39.40000000000029
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l3-vs-weak-a11ce/cell-000/episode-0000.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 0.0,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.Neutral",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1799,
+            "visible_fire_commands": 1799,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 20,
+            "damage_hit_per_fire_command": 0.011117287381878822,
+            "kill_deltas": 0,
+            "damage_centi_hp": 20000,
+            "mean_nearest_visible_aim_error_rad": 1.3435693335074725,
+            "aim_target_counts": {
+              "3": 526,
+              "4": 392,
+              "5": 881
+            }
+          },
+          "B": {
+            "fire_commands": 90,
+            "visible_fire_commands": 90,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 19,
+            "damage_hit_per_fire_command": 0.2111111111111111,
+            "kill_deltas": 0,
+            "damage_centi_hp": 19000,
+            "mean_nearest_visible_aim_error_rad": 0.3325452125154749,
+            "aim_target_counts": {
+              "0": 25,
+              "1": 15,
+              "2": 50
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 1,
+            "damage_hit_per_fire_command": 0.0016666666666666668,
+            "kill_deltas": 0,
+            "damage_centi_hp": 1000,
+            "mean_nearest_visible_aim_error_rad": 1.813076882918184,
+            "aim_target_counts": {
+              "3": 181,
+              "4": 147,
+              "5": 272
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.0672815933879882,
+            "aim_target_counts": {
+              "3": 163,
+              "4": 124,
+              "5": 313
+            }
+          },
+          "2": {
+            "fire_commands": 599,
+            "visible_fire_commands": 599,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 13,
+            "damage_hit_per_fire_command": 0.021702838063439065,
+            "kill_deltas": 0,
+            "damage_centi_hp": 13000,
+            "mean_nearest_visible_aim_error_rad": 1.1500269535830374,
+            "aim_target_counts": {
+              "3": 182,
+              "4": 121,
+              "5": 296
+            }
+          },
+          "3": {
+            "fire_commands": 30,
+            "visible_fire_commands": 30,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 0.3056152811458418,
+            "aim_target_counts": {
+              "0": 9,
+              "1": 5,
+              "2": 16
+            }
+          },
+          "4": {
+            "fire_commands": 30,
+            "visible_fire_commands": 30,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 0.2681615525721818,
+            "aim_target_counts": {
+              "0": 4,
+              "1": 6,
+              "2": 20
+            }
+          },
+          "5": {
+            "fire_commands": 30,
+            "visible_fire_commands": 30,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.23333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 0.4238588038284012,
+            "aim_target_counts": {
+              "0": 12,
+              "1": 4,
+              "2": 14
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0011.replay",
+      "verified_decisions": 600,
+      "outcome": "win",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x823af56eb99b53cb",
+        "winner": "A",
+        "learner_team": "A",
+        "team_a_score": 0.13333333333333333,
+        "team_b_score": 0.0,
+        "team_a_kills": 0,
+        "team_b_kills": 3
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.6,
+      "objective": {
+        "longest_uncontested_seconds_a": 2.700000000000001,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 117.49999999999918,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 25.800000000000114,
+        "on_point_agent_seconds_b": 14.700000000000001,
+        "alive_but_off_point_seconds_a": 23.90000000000007,
+        "alive_but_off_point_seconds_b": 39.000000000000284,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 21.10000000000003,
+        "on_point_seconds_b": 5.999999999999995,
+        "uncontested_seconds_a": 15.99999999999996,
+        "uncontested_seconds_b": 0.8999999999999999,
+        "contested_seconds": 5.099999999999998
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 2,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 2,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 2,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 2,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.13333333333333333,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 3
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0011.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "670921",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.13333333333333333,
+          "team_b_score": 0.0,
+          "team_a_kills": 0,
+          "team_b_kills": 3,
+          "winner": "Team.A",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1600,
+            "visible_fire_command_rate": 0.8888888888888888,
+            "damage_hits": 20,
+            "damage_hit_per_fire_command": 0.011111111111111112,
+            "kill_deltas": 0,
+            "damage_centi_hp": 20000,
+            "mean_nearest_visible_aim_error_rad": 1.5899268635584036,
+            "aim_target_counts": {
+              "3": 665,
+              "4": 295,
+              "5": 640
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 31,
+            "damage_hit_per_fire_command": 0.017222222222222222,
+            "kill_deltas": 3,
+            "damage_centi_hp": 31000,
+            "mean_nearest_visible_aim_error_rad": 1.5953243277985163,
+            "aim_target_counts": {
+              "0": 536,
+              "1": 454,
+              "2": 810
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 400,
+            "visible_fire_command_rate": 0.6666666666666666,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.011666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 1.584892741255882,
+            "aim_target_counts": {
+              "3": 121,
+              "4": 56,
+              "5": 223
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 8,
+            "damage_hit_per_fire_command": 0.013333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 8000,
+            "mean_nearest_visible_aim_error_rad": 1.5448076987072683,
+            "aim_target_counts": {
+              "3": 248,
+              "4": 125,
+              "5": 227
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.008333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 1.6384021099445534,
+            "aim_target_counts": {
+              "3": 296,
+              "4": 114,
+              "5": 190
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 10,
+            "damage_hit_per_fire_command": 0.016666666666666666,
+            "kill_deltas": 1,
+            "damage_centi_hp": 10000,
+            "mean_nearest_visible_aim_error_rad": 1.6044976798102801,
+            "aim_target_counts": {
+              "0": 183,
+              "1": 167,
+              "2": 250
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 11,
+            "damage_hit_per_fire_command": 0.018333333333333333,
+            "kill_deltas": 1,
+            "damage_centi_hp": 11000,
+            "mean_nearest_visible_aim_error_rad": 1.617820236157295,
+            "aim_target_counts": {
+              "0": 175,
+              "1": 146,
+              "2": 279
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 10,
+            "damage_hit_per_fire_command": 0.016666666666666666,
+            "kill_deltas": 1,
+            "damage_centi_hp": 10000,
+            "mean_nearest_visible_aim_error_rad": 1.5636550674279739,
+            "aim_target_counts": {
+              "0": 178,
+              "1": 141,
+              "2": 281
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0000.replay",
+      "verified_decisions": 600,
+      "outcome": "loss",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x3af8f8d5e86f8dca",
+        "winner": "B",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 10.1,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.6,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 0.0,
+        "on_point_agent_seconds_b": 32.49999999999998,
+        "alive_but_off_point_seconds_a": 45.00000000000037,
+        "alive_but_off_point_seconds_b": 26.900000000000112,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 0.0,
+        "on_point_seconds_b": 18.099999999999987,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 18.099999999999987,
+        "contested_seconds": 0.0
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.8666666666666667,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 5.866666666666666,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 10.1,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0000.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "660918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 10.1,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.B",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 20,
+            "damage_hit_per_fire_command": 0.011111111111111112,
+            "kill_deltas": 0,
+            "damage_centi_hp": 20000,
+            "mean_nearest_visible_aim_error_rad": 1.3092803258916526,
+            "aim_target_counts": {
+              "3": 537,
+              "4": 531,
+              "5": 732
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 15,
+            "damage_hit_per_fire_command": 0.008333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 15000,
+            "mean_nearest_visible_aim_error_rad": 1.6873094755646145,
+            "aim_target_counts": {
+              "0": 454,
+              "1": 522,
+              "2": 824
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 8,
+            "damage_hit_per_fire_command": 0.013333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 8000,
+            "mean_nearest_visible_aim_error_rad": 1.2519717889226571,
+            "aim_target_counts": {
+              "3": 185,
+              "4": 170,
+              "5": 245
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.3411145772141115,
+            "aim_target_counts": {
+              "3": 179,
+              "4": 198,
+              "5": 223
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.334754611538189,
+            "aim_target_counts": {
+              "3": 173,
+              "4": 163,
+              "5": 264
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.7130346548396707,
+            "aim_target_counts": {
+              "0": 149,
+              "1": 181,
+              "2": 270
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.01,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 1.7190373074326333,
+            "aim_target_counts": {
+              "0": 145,
+              "1": 186,
+              "2": 269
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.62985646442154,
+            "aim_target_counts": {
+              "0": 160,
+              "1": 155,
+              "2": 285
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-v5-a11ce",
+      "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0007.replay",
+      "verified_decisions": 600,
+      "outcome": "draw",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x8abcd2de1e661c9d",
+        "winner": "Neutral",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 0.0,
+        "team_a_kills": 0,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.4,
+      "objective": {
+        "longest_uncontested_seconds_a": 0.0,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 134.9999999999994,
+        "on_point_agent_seconds_a": 0.0,
+        "on_point_agent_seconds_b": 0.0,
+        "alive_but_off_point_seconds_a": 45.00000000000037,
+        "alive_but_off_point_seconds_b": 45.00000000000037,
+        "alive_advantage_off_point_seconds_a": 0.0,
+        "on_point_seconds_a": 0.0,
+        "on_point_seconds_b": 0.0,
+        "uncontested_seconds_a": 0.0,
+        "uncontested_seconds_b": 0.0,
+        "contested_seconds": 0.0
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-v5-a11ce/cell-000/episode-0007.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "660925",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 0.0,
+          "team_a_kills": 0,
+          "team_b_kills": 0,
+          "winner": "Team.Neutral",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.0038888888888888888,
+            "kill_deltas": 0,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 1.5862990679925941,
+            "aim_target_counts": {
+              "3": 395,
+              "4": 577,
+              "5": 828
+            }
+          },
+          "B": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1800,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 10,
+            "damage_hit_per_fire_command": 0.005555555555555556,
+            "kill_deltas": 0,
+            "damage_centi_hp": 10000,
+            "mean_nearest_visible_aim_error_rad": 1.7115203476071619,
+            "aim_target_counts": {
+              "0": 742,
+              "1": 523,
+              "2": 535
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 1,
+            "damage_hit_per_fire_command": 0.0016666666666666668,
+            "kill_deltas": 0,
+            "damage_centi_hp": 1000,
+            "mean_nearest_visible_aim_error_rad": 1.5322358379584637,
+            "aim_target_counts": {
+              "3": 142,
+              "4": 218,
+              "5": 240
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.5751608251212414,
+            "aim_target_counts": {
+              "3": 125,
+              "4": 190,
+              "5": 285
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.6515005408980774,
+            "aim_target_counts": {
+              "3": 128,
+              "4": 169,
+              "5": 303
+            }
+          },
+          "3": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.7267350204481913,
+            "aim_target_counts": {
+              "0": 263,
+              "1": 169,
+              "2": 168
+            }
+          },
+          "4": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.7124739010689667,
+            "aim_target_counts": {
+              "0": 251,
+              "1": 167,
+              "2": 182
+            }
+          },
+          "5": {
+            "fire_commands": 600,
+            "visible_fire_commands": 600,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.005,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 1.6953521213043274,
+            "aim_target_counts": {
+              "0": 228,
+              "1": 187,
+              "2": 185
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0002.replay",
+      "verified_decisions": 600,
+      "outcome": "win",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0xc055d387e5589ab8",
+        "winner": "A",
+        "learner_team": "A",
+        "team_a_score": 3.1333333333333333,
+        "team_b_score": 0.0,
+        "team_a_kills": 4,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 4.899999999999999,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 74.99999999999983,
+        "on_point_agent_seconds_a": 92.29999999999902,
+        "on_point_agent_seconds_b": 62.09999999999995,
+        "alive_but_off_point_seconds_a": 1.4000000000000001,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 1.3,
+        "on_point_seconds_a": 43.60000000000035,
+        "on_point_seconds_b": 31.400000000000176,
+        "uncontested_seconds_a": 12.299999999999972,
+        "uncontested_seconds_b": 0.1,
+        "contested_seconds": 31.300000000000175
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 3,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 2,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 2,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 3,
+          "on_point_b": 0,
+          "score_a": 2.1,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 1,
+          "score_a": 3.1333333333333333,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 2,
+          "score_a": 3.1333333333333333,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 3.1333333333333333,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 3.1333333333333333,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0002.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659920",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 3.1333333333333333,
+          "team_b_score": 0.0,
+          "team_a_kills": 4,
+          "team_b_kills": 0,
+          "winner": "Team.A",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1515,
+            "visible_fire_command_rate": 0.8416666666666667,
+            "damage_hits": 53,
+            "damage_hit_per_fire_command": 0.029444444444444443,
+            "kill_deltas": 4,
+            "damage_centi_hp": 53000,
+            "mean_nearest_visible_aim_error_rad": 0.8049932824130367,
+            "aim_target_counts": {
+              "3": 653,
+              "4": 356,
+              "5": 506
+            }
+          },
+          "B": {
+            "fire_commands": 60,
+            "visible_fire_commands": 60,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 14,
+            "damage_hit_per_fire_command": 0.23333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 14000,
+            "mean_nearest_visible_aim_error_rad": 0.35294227071956574,
+            "aim_target_counts": {
+              "0": 18,
+              "1": 22,
+              "2": 20
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 505,
+            "visible_fire_command_rate": 0.8416666666666667,
+            "damage_hits": 16,
+            "damage_hit_per_fire_command": 0.02666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 16000,
+            "mean_nearest_visible_aim_error_rad": 0.9749751500760078,
+            "aim_target_counts": {
+              "3": 243,
+              "4": 120,
+              "5": 142
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 505,
+            "visible_fire_command_rate": 0.8416666666666667,
+            "damage_hits": 23,
+            "damage_hit_per_fire_command": 0.03833333333333333,
+            "kill_deltas": 2,
+            "damage_centi_hp": 23000,
+            "mean_nearest_visible_aim_error_rad": 0.5848368936056751,
+            "aim_target_counts": {
+              "3": 206,
+              "4": 115,
+              "5": 184
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 505,
+            "visible_fire_command_rate": 0.8416666666666667,
+            "damage_hits": 14,
+            "damage_hit_per_fire_command": 0.023333333333333334,
+            "kill_deltas": 2,
+            "damage_centi_hp": 14000,
+            "mean_nearest_visible_aim_error_rad": 0.8551678035574276,
+            "aim_target_counts": {
+              "3": 204,
+              "4": 121,
+              "5": 180
+            }
+          },
+          "3": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.2884216378612687,
+            "aim_target_counts": {
+              "0": 8,
+              "1": 7,
+              "2": 5
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 6,
+            "damage_hit_per_fire_command": 0.3,
+            "kill_deltas": 0,
+            "damage_centi_hp": 6000,
+            "mean_nearest_visible_aim_error_rad": 0.3680257016695108,
+            "aim_target_counts": {
+              "0": 4,
+              "1": 7,
+              "2": 9
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.4023794726279178,
+            "aim_target_counts": {
+              "0": 6,
+              "1": 8,
+              "2": 6
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0000.replay",
+      "verified_decisions": 600,
+      "outcome": "loss",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x25d1ae01285e9e48",
+        "winner": "B",
+        "learner_team": "A",
+        "team_a_score": 5.166666666666667,
+        "team_b_score": 5.966666666666667,
+        "team_a_kills": 3,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.5,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 5.299999999999997,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 74.99999999999973,
+        "on_point_agent_seconds_a": 74.79999999999994,
+        "on_point_agent_seconds_b": 62.09999999999986,
+        "alive_but_off_point_seconds_a": 14.699999999999964,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 2.0000000000000004,
+        "on_point_seconds_a": 30.30000000000016,
+        "on_point_seconds_b": 31.200000000000173,
+        "uncontested_seconds_a": 13.299999999999969,
+        "uncontested_seconds_b": 14.199999999999966,
+        "contested_seconds": 16.99999999999997
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 3,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 3,
+          "on_point_b": 0,
+          "score_a": 3.966666666666667,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 5.166666666666667,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 1,
+          "score_a": 5.166666666666667,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 5.166666666666667,
+          "score_b": 0.9666666666666667,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 5.166666666666667,
+          "score_b": 5.966666666666667,
+          "kills_a": 3,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0000.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 5.166666666666667,
+          "team_b_score": 5.966666666666667,
+          "team_a_kills": 3,
+          "team_b_kills": 0,
+          "winner": "Team.B",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1799,
+            "visible_fire_commands": 1508,
+            "visible_fire_command_rate": 0.8382434685936632,
+            "damage_hits": 50,
+            "damage_hit_per_fire_command": 0.027793218454697052,
+            "kill_deltas": 3,
+            "damage_centi_hp": 50000,
+            "mean_nearest_visible_aim_error_rad": 0.8423158788772193,
+            "aim_target_counts": {
+              "3": 388,
+              "4": 542,
+              "5": 578
+            }
+          },
+          "B": {
+            "fire_commands": 60,
+            "visible_fire_commands": 60,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 15,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 15000,
+            "mean_nearest_visible_aim_error_rad": 0.3304581923397118,
+            "aim_target_counts": {
+              "0": 30,
+              "1": 16,
+              "2": 14
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 503,
+            "visible_fire_command_rate": 0.8383333333333334,
+            "damage_hits": 21,
+            "damage_hit_per_fire_command": 0.035,
+            "kill_deltas": 1,
+            "damage_centi_hp": 21000,
+            "mean_nearest_visible_aim_error_rad": 0.8188653709611742,
+            "aim_target_counts": {
+              "3": 145,
+              "4": 173,
+              "5": 185
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 503,
+            "visible_fire_command_rate": 0.8383333333333334,
+            "damage_hits": 14,
+            "damage_hit_per_fire_command": 0.023333333333333334,
+            "kill_deltas": 2,
+            "damage_centi_hp": 14000,
+            "mean_nearest_visible_aim_error_rad": 0.7862554068181589,
+            "aim_target_counts": {
+              "3": 149,
+              "4": 170,
+              "5": 184
+            }
+          },
+          "2": {
+            "fire_commands": 599,
+            "visible_fire_commands": 502,
+            "visible_fire_command_rate": 0.8380634390651085,
+            "damage_hits": 15,
+            "damage_hit_per_fire_command": 0.025041736227045076,
+            "kill_deltas": 0,
+            "damage_centi_hp": 15000,
+            "mean_nearest_visible_aim_error_rad": 0.9219852472586497,
+            "aim_target_counts": {
+              "3": 94,
+              "4": 199,
+              "5": 209
+            }
+          },
+          "3": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.26005497563696933,
+            "aim_target_counts": {
+              "0": 14,
+              "1": 2,
+              "2": 4
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.3431400474303379,
+            "aim_target_counts": {
+              "0": 8,
+              "1": 6,
+              "2": 6
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.3881795539518282,
+            "aim_target_counts": {
+              "0": 8,
+              "1": 8,
+              "2": 4
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "l4-vs-weak-a11ce",
+      "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0001.replay",
+      "verified_decisions": 600,
+      "outcome": "draw",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x16f341dbf06249b0",
+        "winner": "Neutral",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 0.0,
+        "team_a_kills": 3,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 4.5,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 76.00000000000067,
+        "on_point_agent_seconds_a": 76.49999999999979,
+        "on_point_agent_seconds_b": 67.50000000000055,
+        "alive_but_off_point_seconds_a": 3.1000000000000014,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 3.1000000000000014,
+        "on_point_seconds_a": 41.900000000000325,
+        "on_point_seconds_b": 36.200000000000244,
+        "uncontested_seconds_a": 8.199999999999987,
+        "uncontested_seconds_b": 2.500000000000001,
+        "contested_seconds": 33.70000000000021
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/l4-vs-weak-a11ce/cell-000/episode-0001.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659919",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 0.0,
+          "team_a_kills": 3,
+          "team_b_kills": 0,
+          "winner": "Team.Neutral",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1659,
+            "visible_fire_command_rate": 0.9216666666666666,
+            "damage_hits": 48,
+            "damage_hit_per_fire_command": 0.02666666666666667,
+            "kill_deltas": 3,
+            "damage_centi_hp": 48000,
+            "mean_nearest_visible_aim_error_rad": 1.2933818588376025,
+            "aim_target_counts": {
+              "3": 723,
+              "4": 436,
+              "5": 500
+            }
+          },
+          "B": {
+            "fire_commands": 61,
+            "visible_fire_commands": 61,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 15,
+            "damage_hit_per_fire_command": 0.2459016393442623,
+            "kill_deltas": 0,
+            "damage_centi_hp": 15000,
+            "mean_nearest_visible_aim_error_rad": 0.38973011811147773,
+            "aim_target_counts": {
+              "0": 23,
+              "1": 17,
+              "2": 21
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 553,
+            "visible_fire_command_rate": 0.9216666666666666,
+            "damage_hits": 22,
+            "damage_hit_per_fire_command": 0.03666666666666667,
+            "kill_deltas": 2,
+            "damage_centi_hp": 22000,
+            "mean_nearest_visible_aim_error_rad": 0.8962951077922601,
+            "aim_target_counts": {
+              "3": 297,
+              "4": 161,
+              "5": 95
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 553,
+            "visible_fire_command_rate": 0.9216666666666666,
+            "damage_hits": 14,
+            "damage_hit_per_fire_command": 0.023333333333333334,
+            "kill_deltas": 0,
+            "damage_centi_hp": 14000,
+            "mean_nearest_visible_aim_error_rad": 1.5232938496124633,
+            "aim_target_counts": {
+              "3": 185,
+              "4": 138,
+              "5": 230
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 553,
+            "visible_fire_command_rate": 0.9216666666666666,
+            "damage_hits": 12,
+            "damage_hit_per_fire_command": 0.02,
+            "kill_deltas": 1,
+            "damage_centi_hp": 12000,
+            "mean_nearest_visible_aim_error_rad": 1.4605566191080845,
+            "aim_target_counts": {
+              "3": 241,
+              "4": 137,
+              "5": 175
+            }
+          },
+          "3": {
+            "fire_commands": 21,
+            "visible_fire_commands": 21,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 7,
+            "damage_hit_per_fire_command": 0.3333333333333333,
+            "kill_deltas": 0,
+            "damage_centi_hp": 7000,
+            "mean_nearest_visible_aim_error_rad": 0.38187280917203215,
+            "aim_target_counts": {
+              "0": 9,
+              "1": 5,
+              "2": 7
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.15,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 0.3011620050408689,
+            "aim_target_counts": {
+              "0": 7,
+              "1": 6,
+              "2": 7
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.4865484055685044,
+            "aim_target_counts": {
+              "0": 7,
+              "1": 6,
+              "2": 7
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0000.replay",
+      "verified_decisions": 600,
+      "outcome": "win",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x746e2a2f2b715ffa",
+        "winner": "A",
+        "learner_team": "A",
+        "team_a_score": 1.0333333333333334,
+        "team_b_score": 0.0,
+        "team_a_kills": 6,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 5.099999999999998,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 74.99999999999984,
+        "on_point_agent_seconds_a": 84.80000000000032,
+        "on_point_agent_seconds_b": 62.09999999999997,
+        "alive_but_off_point_seconds_a": 1.7000000000000004,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 1.2,
+        "on_point_seconds_a": 43.300000000000345,
+        "on_point_seconds_b": 35.90000000000024,
+        "uncontested_seconds_a": 8.999999999999984,
+        "uncontested_seconds_b": 1.6000000000000003,
+        "contested_seconds": 34.30000000000022
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 3,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 2,
+          "on_point_b": 0,
+          "score_a": 0.9,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 1,
+          "score_a": 1.0333333333333334,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 1.0333333333333334,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 1.0333333333333334,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 1.0333333333333334,
+          "score_b": 0.0,
+          "kills_a": 4,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 1.0333333333333334,
+          "score_b": 0.0,
+          "kills_a": 6,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0000.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659918",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 1.0333333333333334,
+          "team_b_score": 0.0,
+          "team_a_kills": 6,
+          "team_b_kills": 0,
+          "winner": "Team.A",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1799,
+            "visible_fire_commands": 1649,
+            "visible_fire_command_rate": 0.9166203446359088,
+            "damage_hits": 66,
+            "damage_hit_per_fire_command": 0.03668704836020011,
+            "kill_deltas": 6,
+            "damage_centi_hp": 66000,
+            "mean_nearest_visible_aim_error_rad": 0.683244983581503,
+            "aim_target_counts": {
+              "3": 650,
+              "4": 581,
+              "5": 418
+            }
+          },
+          "B": {
+            "fire_commands": 59,
+            "visible_fire_commands": 59,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 9,
+            "damage_hit_per_fire_command": 0.15254237288135594,
+            "kill_deltas": 0,
+            "damage_centi_hp": 9000,
+            "mean_nearest_visible_aim_error_rad": 0.33329338764948874,
+            "aim_target_counts": {
+              "0": 17,
+              "1": 19,
+              "2": 23
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 550,
+            "visible_fire_command_rate": 0.9166666666666666,
+            "damage_hits": 17,
+            "damage_hit_per_fire_command": 0.028333333333333332,
+            "kill_deltas": 0,
+            "damage_centi_hp": 17000,
+            "mean_nearest_visible_aim_error_rad": 1.155581492300337,
+            "aim_target_counts": {
+              "3": 243,
+              "4": 163,
+              "5": 144
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 550,
+            "visible_fire_command_rate": 0.9166666666666666,
+            "damage_hits": 22,
+            "damage_hit_per_fire_command": 0.03666666666666667,
+            "kill_deltas": 2,
+            "damage_centi_hp": 22000,
+            "mean_nearest_visible_aim_error_rad": 0.4642721545146689,
+            "aim_target_counts": {
+              "3": 210,
+              "4": 231,
+              "5": 109
+            }
+          },
+          "2": {
+            "fire_commands": 599,
+            "visible_fire_commands": 549,
+            "visible_fire_command_rate": 0.9165275459098498,
+            "damage_hits": 27,
+            "damage_hit_per_fire_command": 0.045075125208681135,
+            "kill_deltas": 4,
+            "damage_centi_hp": 27000,
+            "mean_nearest_visible_aim_error_rad": 0.4294198036022678,
+            "aim_target_counts": {
+              "3": 197,
+              "4": 187,
+              "5": 165
+            }
+          },
+          "3": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 2,
+            "damage_hit_per_fire_command": 0.1,
+            "kill_deltas": 0,
+            "damage_centi_hp": 2000,
+            "mean_nearest_visible_aim_error_rad": 0.240904110126493,
+            "aim_target_counts": {
+              "0": 10,
+              "1": 4,
+              "2": 6
+            }
+          },
+          "4": {
+            "fire_commands": 19,
+            "visible_fire_commands": 19,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.21052631578947367,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.3392599748045158,
+            "aim_target_counts": {
+              "0": 3,
+              "1": 7,
+              "2": 9
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 3,
+            "damage_hit_per_fire_command": 0.15,
+            "kill_deltas": 0,
+            "damage_centi_hp": 3000,
+            "mean_nearest_visible_aim_error_rad": 0.4200144073752089,
+            "aim_target_counts": {
+              "0": 4,
+              "1": 8,
+              "2": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0003.replay",
+      "verified_decisions": 600,
+      "outcome": "loss",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x62bb53e4c2791444",
+        "winner": "B",
+        "learner_team": "A",
+        "team_a_score": 1.2,
+        "team_b_score": 1.9666666666666666,
+        "team_a_kills": 3,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 5.599999999999996,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 75.00000000000001,
+        "on_point_agent_seconds_a": 67.80000000000022,
+        "on_point_agent_seconds_b": 62.10000000000014,
+        "alive_but_off_point_seconds_a": 10.19999999999998,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 1.7000000000000004,
+        "on_point_seconds_a": 34.800000000000225,
+        "on_point_seconds_b": 35.40000000000023,
+        "uncontested_seconds_a": 9.399999999999983,
+        "uncontested_seconds_b": 9.99999999999998,
+        "contested_seconds": 25.40000000000009
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 2,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 3,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 2,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 2,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 0,
+          "score_a": 0.06666666666666667,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 1.2,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 1.2,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 2,
+          "score_a": 1.2,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 1.2,
+          "score_b": 1.9666666666666666,
+          "kills_a": 3,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0003.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659921",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 1.2,
+          "team_b_score": 1.9666666666666666,
+          "team_a_kills": 3,
+          "team_b_kills": 0,
+          "winner": "Team.B",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1635,
+            "visible_fire_command_rate": 0.9083333333333333,
+            "damage_hits": 52,
+            "damage_hit_per_fire_command": 0.028888888888888888,
+            "kill_deltas": 3,
+            "damage_centi_hp": 52000,
+            "mean_nearest_visible_aim_error_rad": 0.9634226038322876,
+            "aim_target_counts": {
+              "3": 630,
+              "4": 626,
+              "5": 379
+            }
+          },
+          "B": {
+            "fire_commands": 60,
+            "visible_fire_commands": 60,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 13,
+            "damage_hit_per_fire_command": 0.21666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 13000,
+            "mean_nearest_visible_aim_error_rad": 0.361392723802063,
+            "aim_target_counts": {
+              "0": 23,
+              "1": 12,
+              "2": 25
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 545,
+            "visible_fire_command_rate": 0.9083333333333333,
+            "damage_hits": 20,
+            "damage_hit_per_fire_command": 0.03333333333333333,
+            "kill_deltas": 1,
+            "damage_centi_hp": 20000,
+            "mean_nearest_visible_aim_error_rad": 0.7491497064053428,
+            "aim_target_counts": {
+              "3": 225,
+              "4": 217,
+              "5": 103
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 545,
+            "visible_fire_command_rate": 0.9083333333333333,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.006666666666666667,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 1.3223252866311208,
+            "aim_target_counts": {
+              "3": 233,
+              "4": 204,
+              "5": 108
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 545,
+            "visible_fire_command_rate": 0.9083333333333333,
+            "damage_hits": 28,
+            "damage_hit_per_fire_command": 0.04666666666666667,
+            "kill_deltas": 2,
+            "damage_centi_hp": 28000,
+            "mean_nearest_visible_aim_error_rad": 0.8187928184603992,
+            "aim_target_counts": {
+              "3": 172,
+              "4": 205,
+              "5": 168
+            }
+          },
+          "3": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 5,
+            "damage_hit_per_fire_command": 0.25,
+            "kill_deltas": 0,
+            "damage_centi_hp": 5000,
+            "mean_nearest_visible_aim_error_rad": 0.33589557457666885,
+            "aim_target_counts": {
+              "0": 7,
+              "1": 3,
+              "2": 10
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.31535345872244935,
+            "aim_target_counts": {
+              "0": 7,
+              "1": 6,
+              "2": 7
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.4329291381070707,
+            "aim_target_counts": {
+              "0": 9,
+              "1": 3,
+              "2": 8
+            }
+          }
+        }
+      }
+    },
+    {
+      "cell": "v5-vs-weak-a11ce",
+      "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0002.replay",
+      "verified_decisions": 600,
+      "outcome": "draw",
+      "final": {
+        "tick": 1800,
+        "state_hash": "0x00b3053733bf7992",
+        "winner": "Neutral",
+        "learner_team": "A",
+        "team_a_score": 0.0,
+        "team_b_score": 0.0,
+        "team_a_kills": 5,
+        "team_b_kills": 0
+      },
+      "first_on_point_seconds_a": 3.6,
+      "first_on_point_seconds_b": 4.1,
+      "objective": {
+        "longest_uncontested_seconds_a": 4.899999999999999,
+        "unlocked_seconds": 45.00000000000037,
+        "alive_agent_seconds_a": 134.9999999999994,
+        "alive_agent_seconds_b": 79.19999999999987,
+        "on_point_agent_seconds_a": 53.900000000000304,
+        "on_point_agent_seconds_b": 66.30000000000001,
+        "alive_but_off_point_seconds_a": 5.4999999999999964,
+        "alive_but_off_point_seconds_b": 4.100000000000001,
+        "alive_advantage_off_point_seconds_a": 3.3000000000000016,
+        "on_point_seconds_a": 39.50000000000029,
+        "on_point_seconds_b": 37.000000000000256,
+        "uncontested_seconds_a": 7.799999999999988,
+        "uncontested_seconds_b": 5.299999999999997,
+        "contested_seconds": 31.70000000000018
+      },
+      "timeline": [
+        {
+          "seconds": 5.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 10.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 3,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 0,
+          "kills_b": 0
+        },
+        {
+          "seconds": 15.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 20.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 2,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 1,
+          "kills_b": 0
+        },
+        {
+          "seconds": 25.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 0,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 3,
+          "kills_b": 0
+        },
+        {
+          "seconds": 30.0,
+          "alive_a": 3,
+          "alive_b": 0,
+          "on_point_a": 0,
+          "on_point_b": 0,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 35.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 40.0,
+          "alive_a": 3,
+          "alive_b": 1,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 45.0,
+          "alive_a": 3,
+          "alive_b": 2,
+          "on_point_a": 1,
+          "on_point_b": 1,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 50.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 2,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 55.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 1,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        },
+        {
+          "seconds": 60.0,
+          "alive_a": 3,
+          "alive_b": 3,
+          "on_point_a": 0,
+          "on_point_b": 3,
+          "score_a": 0.0,
+          "score_b": 0.0,
+          "kills_a": 5,
+          "kills_b": 0
+        }
+      ],
+      "combat": {
+        "replay": "captures/v5-vs-weak-a11ce/cell-000/episode-0002.replay",
+        "header": {
+          "format": "xushi2-replay-v1",
+          "seed": "659920",
+          "round_seconds": "60",
+          "action_repeat": "3",
+          "team_size": "3",
+          "target_slot": "1",
+          "fog": "0",
+          "obj_unlock_ticks": "450",
+          "obj_capture_ticks": "240",
+          "mech_dmg": "1000",
+          "mech_fcd": "15",
+          "mech_hbr": "0.75",
+          "mech_resp": "600",
+          "map_min_x": "0.0",
+          "map_min_y": "0.0",
+          "map_max_x": "50.0",
+          "map_max_y": "50.0",
+          "heroes": "ranger,ranger,ranger,ranger,ranger,ranger"
+        },
+        "decisions": 600,
+        "episodes_detected": 1,
+        "final": {
+          "tick": 1800,
+          "team_a_score": 0.0,
+          "team_b_score": 0.0,
+          "team_a_kills": 5,
+          "team_b_kills": 0,
+          "winner": "Team.Neutral",
+          "note": "final state is for the last detected episode; aggregates span all episodes"
+        },
+        "teams": {
+          "A": {
+            "fire_commands": 1800,
+            "visible_fire_commands": 1683,
+            "visible_fire_command_rate": 0.935,
+            "damage_hits": 64,
+            "damage_hit_per_fire_command": 0.035555555555555556,
+            "kill_deltas": 5,
+            "damage_centi_hp": 64000,
+            "mean_nearest_visible_aim_error_rad": 1.0240729090296523,
+            "aim_target_counts": {
+              "3": 535,
+              "4": 659,
+              "5": 489
+            }
+          },
+          "B": {
+            "fire_commands": 60,
+            "visible_fire_commands": 60,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 12,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 12000,
+            "mean_nearest_visible_aim_error_rad": 0.32746398540291677,
+            "aim_target_counts": {
+              "0": 14,
+              "1": 11,
+              "2": 35
+            }
+          }
+        },
+        "slots": {
+          "0": {
+            "fire_commands": 600,
+            "visible_fire_commands": 561,
+            "visible_fire_command_rate": 0.935,
+            "damage_hits": 10,
+            "damage_hit_per_fire_command": 0.016666666666666666,
+            "kill_deltas": 0,
+            "damage_centi_hp": 10000,
+            "mean_nearest_visible_aim_error_rad": 1.6072938863016892,
+            "aim_target_counts": {
+              "3": 158,
+              "4": 241,
+              "5": 162
+            }
+          },
+          "1": {
+            "fire_commands": 600,
+            "visible_fire_commands": 561,
+            "visible_fire_command_rate": 0.935,
+            "damage_hits": 18,
+            "damage_hit_per_fire_command": 0.03,
+            "kill_deltas": 2,
+            "damage_centi_hp": 18000,
+            "mean_nearest_visible_aim_error_rad": 0.9964387140279853,
+            "aim_target_counts": {
+              "3": 182,
+              "4": 234,
+              "5": 145
+            }
+          },
+          "2": {
+            "fire_commands": 600,
+            "visible_fire_commands": 561,
+            "visible_fire_command_rate": 0.935,
+            "damage_hits": 36,
+            "damage_hit_per_fire_command": 0.06,
+            "kill_deltas": 3,
+            "damage_centi_hp": 36000,
+            "mean_nearest_visible_aim_error_rad": 0.46848612675928264,
+            "aim_target_counts": {
+              "3": 195,
+              "4": 184,
+              "5": 182
+            }
+          },
+          "3": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.2781773464166598,
+            "aim_target_counts": {
+              "0": 5,
+              "1": 4,
+              "2": 11
+            }
+          },
+          "4": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.31212108271567635,
+            "aim_target_counts": {
+              "0": 2,
+              "1": 4,
+              "2": 14
+            }
+          },
+          "5": {
+            "fire_commands": 20,
+            "visible_fire_commands": 20,
+            "visible_fire_command_rate": 1.0,
+            "damage_hits": 4,
+            "damage_hit_per_fire_command": 0.2,
+            "kill_deltas": 0,
+            "damage_centi_hp": 4000,
+            "mean_nearest_visible_aim_error_rad": 0.3920935270764143,
+            "aim_target_counts": {
+              "0": 7,
+              "1": 3,
+              "2": 10
+            }
+          }
+        }
+      }
+    }
+  ]
+}
