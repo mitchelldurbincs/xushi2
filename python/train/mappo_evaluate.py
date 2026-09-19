@@ -9,6 +9,7 @@ import gymnasium as gym
 import numpy as np
 import torch
 
+from envs.runtime_factory import make_vector_env
 from train.mappo_model import (
     MappoActorCritic,
     MappoEvalStats,
@@ -17,7 +18,6 @@ from train.mappo_model import (
     target_selection_policy_metrics,
 )
 from xushi2.obs_manifest import actor_field_slice
-from xushi2.vector_env import make_xushi_vector_env
 
 
 def _empty_combat_totals() -> dict[str, Any]:
@@ -169,7 +169,7 @@ def evaluate_mappo(
     self_on_point_slice = actor_field_slice("self_on_point")
     completed_objective_totals: list[dict[str, float]] = []
 
-    vec_env = make_xushi_vector_env(
+    vec_env = make_vector_env(
         [env_fn for _ in range(num_envs)],
         critic_obs_dim=(
             cfg.critic_obs_dim * cfg.n_agents if cfg.value_per_agent else cfg.critic_obs_dim

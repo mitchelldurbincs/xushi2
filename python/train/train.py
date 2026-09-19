@@ -28,6 +28,10 @@ class NormalizedEntryConfig:
     base_seed: int
     learner_kind: str
     env_kind: str
+    # The resolved runtime spec, threaded through so the training job does
+    # not resolve (and build a second env factory) again. None only in tests
+    # that construct this dataclass by hand.
+    runtime: object | None = None
 
 
 def load_config(path: Path) -> dict:
@@ -148,6 +152,7 @@ def normalize_entry_config(config: dict) -> NormalizedEntryConfig:
         env_cfg=env_cfg,
         run_cfg=run_cfg,
         base_seed=runtime.seed_base if runtime.seed_base is not None else base_seed,
+        runtime=runtime,
     )
 
 
@@ -207,7 +212,7 @@ def run_phase(normalized: NormalizedEntryConfig, full_config: dict) -> int:
     if normalized.learner_kind == "mappo":
         from train.mappo_eval_checkpoint import train_mappo_from_config
 
-        result = train_mappo_from_config(full_config)
+        result = train_mappo_from_config(full_config, runtime=normalized.runtime)
         print(f"[{normalized.phase_label}] mappo_final={float(result['mappo']):.3f}")
         return 0
 

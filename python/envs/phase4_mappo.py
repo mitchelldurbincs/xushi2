@@ -26,20 +26,12 @@ from xushi2.obs_manifest import (
     critic_field_slice,
 )
 from xushi2.reward import RewardCalculator
-from xushi2.runner import _build_config
+from xushi2.runner import VALID_BOT_NAMES, _build_config
 
 __all__ = ["VALID_OPPONENT_BOTS", "Phase4MappoEnv"]
 
-VALID_OPPONENT_BOTS: frozenset[str] = frozenset(
-    {
-        "walk_to_objective",
-        "hold_and_shoot",
-        "basic",
-        "weak_basic",
-        "weak_basic_v2",
-        "noop",
-    }
-)
+# Alias of the canonical set in xushi2.runner; do not restate the names here.
+VALID_OPPONENT_BOTS: frozenset[str] = VALID_BOT_NAMES
 
 _AGENTS_PER_MATCH = _cpp.AGENTS_PER_MATCH
 

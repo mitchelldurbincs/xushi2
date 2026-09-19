@@ -8,7 +8,6 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-import torch
 import yaml
 
 from train.full_env_rehearsal import (
@@ -16,6 +15,7 @@ from train.full_env_rehearsal import (
     full_env_rehearsal_pretrain,
     run_full_env_rehearsal_gate,
 )
+from train.mappo_checkpoint_outputs import save_mappo_checkpoint
 from train.mappo_pretrain_hooks import maybe_warm_start
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import build_runtime_context
@@ -85,12 +85,13 @@ def run_bridge_gate(config: dict[str, Any]) -> dict[str, Any]:
             else "ckpt_multi_enemy_supervised_bridge.pt"
         )
         checkpoint_path = context.output_dir / checkpoint_name
-        torch.save(
-            {
-                "model_state_dict": trainer.model.state_dict(),
-                "config": {"mappo": trainer.model.cfg.__dict__, "env": context.ckpt_env_cfg},
-            },
-            checkpoint_path,
+        save_mappo_checkpoint(
+            path=checkpoint_path,
+            model_state_dict=trainer.model.state_dict(),
+            phase=context.phase,
+            phase_label=context.phase_label,
+            ckpt_env_cfg=context.ckpt_env_cfg,
+            mappo_cfg=trainer.model.cfg,
         )
         gate = run_full_env_rehearsal_gate(
             trainer.model,

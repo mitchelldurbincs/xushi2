@@ -102,11 +102,17 @@ def _parse_phase_int(raw_phase: Any) -> int | None:
         return None
 
 
-def _resolve_seed_base(env_cfg: dict[str, Any], sim_cfg: dict[str, Any]) -> int:
+def resolve_seed_base(env_cfg: dict[str, Any], sim_cfg: dict[str, Any]) -> int:
+    """Canonical seed derivation, shared by the explicit and phase paths."""
     return int(env_cfg.get("seed_base", sim_cfg.get("seed", 0)))
 
 
-def _base_env_cfg(env_cfg: dict[str, Any], *, opponent_default: str = "basic") -> dict[str, Any]:
+def base_env_cfg(env_cfg: dict[str, Any], *, opponent_default: str = "basic") -> dict[str, Any]:
+    """The sim/opponent/team/reward core every mappo env config carries.
+
+    Shared by the explicit and phase resolution paths so the two cannot
+    drift in how they read these four keys.
+    """
     opponent_cfg = dict(env_cfg.get("opponent", {}))
     return {
         "sim": dict(env_cfg.get("sim", {})),
@@ -131,7 +137,7 @@ def _resolve_explicit_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
 def _explicit_mappo_match_spec(
     config: dict[str, Any], learner_kind: str, env_cfg: dict[str, Any]
 ) -> RuntimeSpec:
-    base_cfg = _base_env_cfg(env_cfg)
+    base_cfg = base_env_cfg(env_cfg)
     features_cfg = dict(env_cfg.get("features", {}))
     actor_obs = str(env_cfg.get("actor_obs", "flat"))
     fog_mode = str(env_cfg.get("fog_mode", features_cfg.get("fog", "none")))
@@ -193,7 +199,7 @@ def _explicit_mappo_match_spec(
         shapes=shapes,
         env_fn=mappo_env_fn_from_config(ckpt_env_cfg),
         ckpt_env_cfg=ckpt_env_cfg,
-        seed_base=_resolve_seed_base(env_cfg, base_cfg["sim"]),
+        seed_base=resolve_seed_base(env_cfg, base_cfg["sim"]),
     )
 
 

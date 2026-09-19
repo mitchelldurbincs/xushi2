@@ -12,6 +12,11 @@ PHASE_RUNTIME_BRANCH_ALLOWLIST = {
     "train.phases",
     "train.runtime_specs",
     "train.checkpoint_runtime",
+    # snapshot_obs_config branches on the phase RECORDED IN A CHECKPOINT to
+    # reconstruct that checkpoint's training-time observation semantics. That
+    # is interpretation of stored data, not runtime behavior keyed on the
+    # current run's phase, which is what this rule exists to prevent.
+    "xushi2.entity_obs_native",
 }
 TRAIN_PHASE_IMPORT_ALLOWLIST = {
     "train.runtime_specs",

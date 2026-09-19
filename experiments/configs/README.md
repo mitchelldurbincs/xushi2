@@ -32,11 +32,6 @@ Phases are progress metadata. New runtime behavior should be selected by explici
 ### Explicit runtime specs
 - **MAPPO flat smoke:** `runtime/mappo_flat_smoke.yaml`
 
-### Phase 3
-- **Baseline:** `phase3/baseline/phase3_ranger_recurrent.yaml`
-- **Smoke:** `phase3/smoke/phase3_ranger_smoke.yaml`
-- **Probe:** `phase3/probe/phase3_ranger_noop_probe.yaml`
-
 ### Phase 4
 - **Baseline:** `phase4/baseline/phase4_mappo_basic.yaml`
 - **Smoke:** `phase4/smoke/phase4_mappo_smoke.yaml`
@@ -67,7 +62,7 @@ or old W&B run records.
 
 Each actively maintained config should include a top-level `metadata` mapping:
 
-- `phase`: phase identifier (`phase3`, `phase4`, etc.)
+- `phase`: phase identifier (`phase4`, `phase11`, etc.)
 - `purpose`: run intent (`baseline`, `smoke`, `probe`, `legacy`)
 - `status`: lifecycle state (`active`, `deprecated`, `diagnostic`)
 - `expected_runtime`: coarse runtime class (`short`, `medium`, `long`, `extended`)

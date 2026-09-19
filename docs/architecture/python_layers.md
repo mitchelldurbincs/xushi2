@@ -16,7 +16,7 @@ This document defines import-direction and ownership boundaries for the Python s
 ### 2) `python/envs/` — phase wrappers and compositions
 
 `envs` owns phase-specific Gymnasium env definitions and compositions:
-- phase-specific wrappers (`phase3_*`, `phase4_*`, ...), plus standalone envs (e.g., memory toy).
+- phase-specific wrappers (`phase4_*`, `phase11_*`) and the pure-NumPy mini-game envs (`phase4_aim_only_mappo`, `phase4_combat_1v1_mappo`, `phase4_cap_duel_mappo`).
 - adaptation from `xushi2` primitives into per-phase observation/action contracts.
 - public env entrypoints/factories exported by `envs.__init__`.
 
@@ -58,3 +58,5 @@ python -m scripts.check_import_boundaries
 ```
 
 The check fails on forbidden import directions and prints file+line diagnostics.
+It runs in CI (`.github/workflows/ci.yml`, python-tests job), so a violating
+import fails the build rather than waiting for someone to run it by hand.

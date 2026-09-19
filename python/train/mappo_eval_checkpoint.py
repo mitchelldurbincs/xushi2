@@ -5,23 +5,34 @@ from train.common_orchestration import LoopConfig, run_training_loop
 from train.mappo_checkpoint_outputs import save_final_mappo_checkpoints
 from train.mappo_post_training import maybe_run_post_training_matrix_eval
 from train.mappo_pretrain_hooks import (
+    maybe_resume,
     maybe_run_bc_pretrain,
     maybe_run_composition_pretrain,
     maybe_run_full_env_rehearsal,
     maybe_run_multi_enemy_supervised_bridge,
-    maybe_resume,
     maybe_warm_start,
 )
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import build_runtime_context
-from train.runtime_adapter import resolve_runtime_env_factory
 from train.mappo_training_hooks import MappoTrainingHooks
+from train.runtime_adapter import resolve_runtime_env_factory
+from train.runtime_specs import RuntimeSpec
 from train.wandb_logger import make_logger
 
 
-def train_mappo_from_config(config: dict) -> dict[str, float]:
-    resolve_runtime_env_factory(config, require_learner="mappo", context="MAPPO train")
-    context = build_runtime_context(config)
+def train_mappo_from_config(
+    config: dict, *, runtime: RuntimeSpec | None = None
+) -> dict[str, float]:
+    """Run a full MAPPO training job from a validated config.
+
+    ``runtime`` is the entrypoint's already-resolved runtime spec; direct
+    callers may omit it and the spec is resolved here, once.
+    """
+    if runtime is None:
+        runtime, _env_fn, _seed_base = resolve_runtime_env_factory(
+            config, require_learner="mappo", context="MAPPO train"
+        )
+    context = build_runtime_context(config, runtime=runtime)
     phase = context.phase
     phase_label = context.phase_label
     ckpt_env_cfg = context.ckpt_env_cfg

@@ -252,7 +252,9 @@ def test_multi_enemy_supervised_bridge_dispatches_closed_loop_opt_in(
         fake_closed_loop,
     )
     monkeypatch.setattr("train.mappo_pretrain_hooks.run_full_env_rehearsal_gate", fake_gate)
-    monkeypatch.setattr("train.mappo_pretrain_hooks.torch.save", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "train.mappo_pretrain_hooks.save_mappo_checkpoint", lambda *args, **kwargs: None
+    )
 
     context = SimpleNamespace(
         run_cfg={
@@ -268,6 +270,7 @@ def test_multi_enemy_supervised_bridge_dispatches_closed_loop_opt_in(
         seed_base=123,
         output_dir=tmp_path,
         ckpt_env_cfg={},
+        phase=4,
         phase_label="phase4",
     )
     trainer = SimpleNamespace(model=SimpleNamespace(state_dict=lambda: {}, cfg=SimpleNamespace()))

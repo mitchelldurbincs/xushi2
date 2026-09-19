@@ -3,8 +3,7 @@
 #include <cmath>
 
 #include <xushi2/common/math.hpp>
-
-#include "../../../sim/src/internal/sim_combat.h"
+#include <xushi2/sim/sim.h>
 
 namespace xushi2::bots::internal {
 
@@ -23,8 +22,7 @@ bool observable_enemy(const sim::MatchState&,
                       const sim::MatchConfig& config) {
     return candidate.present && candidate.alive && candidate.team != self.team &&
            candidate.team != common::Team::Neutral &&
-           !sim::internal::segment_blocked_by_cover(
-               self.position, candidate.position, config);
+           sim::line_of_sight(self.position, candidate.position, config);
 }
 
 }  // namespace

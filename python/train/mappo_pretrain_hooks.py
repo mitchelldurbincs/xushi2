@@ -21,6 +21,7 @@ from train.mappo_bc_pretrain import (
     bc_pretrain_walk_and_shoot_to_objective,
     bc_pretrain_walk_to_objective,
 )
+from train.mappo_checkpoint_outputs import save_mappo_checkpoint
 from train.mappo_evaluate import eval_stats_dict, evaluate_mappo
 from train.mappo_rollout_trainer import MappoTrainer
 from train.mappo_runtime_context import RuntimeContext
@@ -272,12 +273,13 @@ def maybe_run_full_env_rehearsal(
     if metrics:
         logger.log({f"full_env_rehearsal/{k}": float(v) for k, v in metrics.items()}, step=0)
     checkpoint_path = context.output_dir / "ckpt_full_env_rehearsal.pt"
-    torch.save(
-        {
-            "model_state_dict": trainer.model.state_dict(),
-            "config": {"mappo": trainer.model.cfg.__dict__, "env": context.ckpt_env_cfg},
-        },
-        checkpoint_path,
+    save_mappo_checkpoint(
+        path=checkpoint_path,
+        model_state_dict=trainer.model.state_dict(),
+        phase=context.phase,
+        phase_label=context.phase_label,
+        ckpt_env_cfg=context.ckpt_env_cfg,
+        mappo_cfg=trainer.model.cfg,
     )
     gate = run_full_env_rehearsal_gate(
         trainer.model,
@@ -346,12 +348,13 @@ def maybe_run_multi_enemy_supervised_bridge(
             step=0,
         )
     checkpoint_path = context.output_dir / "ckpt_multi_enemy_supervised_bridge.pt"
-    torch.save(
-        {
-            "model_state_dict": trainer.model.state_dict(),
-            "config": {"mappo": trainer.model.cfg.__dict__, "env": context.ckpt_env_cfg},
-        },
-        checkpoint_path,
+    save_mappo_checkpoint(
+        path=checkpoint_path,
+        model_state_dict=trainer.model.state_dict(),
+        phase=context.phase,
+        phase_label=context.phase_label,
+        ckpt_env_cfg=context.ckpt_env_cfg,
+        mappo_cfg=trainer.model.cfg,
     )
     gate = run_full_env_rehearsal_gate(
         trainer.model,
